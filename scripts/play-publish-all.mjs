@@ -123,13 +123,22 @@ const releaseObj = {
   ...(notes ? { releaseNotes: notes } : {}),
 };
 
-const trackRes = await call(`${API}/applications/${PKG}/edits/${editId}/tracks/${TRACK}`, {
-  method: 'PUT',
-  token,
-  body: { track: TRACK, releases: [releaseObj] },
-});
-if (!trackRes.ok) die(`Track (${TRACK}) atama hatası (${trackRes.status}): ${JSON.stringify(trackRes.json, null, 2)}`);
-console.log(`    ✔ Track "${TRACK}" güncellendi (${DRAFT ? 'draft' : 'completed'})`);
+  const trackRes = await call(`${API}/applications/${PKG}/edits/${editId}/tracks/${TRACK}`, {
+    method: 'PUT',
+    token,
+    body: { track: TRACK, releases: [releaseObj] },
+  });
+  if (!trackRes.ok) die(`Track (${TRACK}) atama hatası (${trackRes.status}): ${JSON.stringify(trackRes.json, null, 2)}`);
+  console.log(`    ✔ Track "${TRACK}" güncellendi (${DRAFT ? 'draft' : 'completed'})`);
+
+  if (TRACK !== 'internal') {
+    await call(`${API}/applications/${PKG}/edits/${editId}/tracks/internal`, {
+      method: 'PUT',
+      token,
+      body: { track: 'internal', releases: [releaseObj] },
+    });
+    console.log(`    ✔ Track "internal" güncellendi (${DRAFT ? 'draft' : 'completed'})`);
+  }
 
 // 4. Update 6-Language Store Listings
 const listingsDir = resolve(ROOT, 'play-store-publish/store-listings');
@@ -162,15 +171,17 @@ for (const playLocale of ['tr-TR', 'en-US']) {
   await call(`${UPLOAD}/applications/${PKG}/edits/${editId}/listings/${playLocale}/featureGraphic?uploadType=media`, {
     method: 'POST', token, raw: fgBytes, contentType: 'image/png',
   });
-  await call(`${API}/applications/${PKG}/edits/${editId}/listings/${playLocale}/phoneScreenshots`, {
-    method: 'DELETE', token,
-  });
-  for (const sf of screenFiles) {
-    await call(`${UPLOAD}/applications/${PKG}/edits/${editId}/listings/${playLocale}/phoneScreenshots?uploadType=media`, {
-      method: 'POST', token, raw: readFileSync(resolve(screenDir, sf)), contentType: 'image/png',
+  for (const imgType of ['phoneScreenshots', 'sevenInchScreenshots', 'tenInchScreenshots']) {
+    await call(`${API}/applications/${PKG}/edits/${editId}/listings/${playLocale}/${imgType}`, {
+      method: 'DELETE', token,
     });
+    for (const sf of screenFiles) {
+      await call(`${UPLOAD}/applications/${PKG}/edits/${editId}/listings/${playLocale}/${imgType}?uploadType=media`, {
+        method: 'POST', token, raw: readFileSync(resolve(screenDir, sf)), contentType: 'image/png',
+      });
+    }
   }
-  console.log(`    ✔ Görseller (${playLocale}: ikon, feature graphic, ${screenFiles.length} ekran görüntüsü) yüklendi`);
+  console.log(`    ✔ Görseller (${playLocale}: ikon, feature graphic, telefon + 7" + 10" tablet ekran görüntüleri) yüklendi`);
 }
 
 // 6. Commit Edit
