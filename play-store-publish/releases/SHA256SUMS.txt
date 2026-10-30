@@ -1,0 +1,2 @@
+cd76e15ec86f0f92a832d805cbe2fab852c588a4845de3ddc27b4ef7958da58b  play-store-publish/releases/TurkishIceCreamChallenge-v1.0.0-release.aab
+c4d1e6b3a413ea3727e972473e79d99a270f1e8619b77ddecd79213075d91263  play-store-publish/releases/TurkishIceCreamChallenge-v1.0.0-release.apk

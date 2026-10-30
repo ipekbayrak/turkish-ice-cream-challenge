@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bgGrad" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#3a120a"/>
+      <stop offset="65%" stop-color="#1c0805"/>
+      <stop offset="100%" stop-color="#0e0302"/>
+    </radialGradient>
+    <linearGradient id="goldRing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffe07d"/>
+      <stop offset="50%" stop-color="#f5b942"/>
+      <stop offset="100%" stop-color="#b87914"/>
+    </linearGradient>
+    <linearGradient id="coneGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e39d52"/>
+      <stop offset="100%" stop-color="#9e591c"/>
+    </linearGradient>
+    <linearGradient id="fezGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#b81422"/>
+      <stop offset="100%" stop-color="#6b0810"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rich Grand Bazaar Background -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+
+  <!-- Ornate Ottoman Gold Medallion Frame -->
+  <circle cx="256" cy="256" r="214" fill="#4a090e" stroke="url(#goldRing)" stroke-width="14"/>
+  <circle cx="256" cy="256" r="192" fill="none" stroke="#f5b942" stroke-width="3" stroke-dasharray="12 10" opacity="0.55"/>
+
+  <!-- Iron Maraş Paddle (Diagonal behind cone) -->
+  <g transform="rotate(-28 256 256)">
+    <rect x="247" y="42" width="18" height="390" rx="9" fill="#cfd6e0" stroke="#5d6675" stroke-width="4"/>
+    <ellipse cx="256" cy="395" rx="32" ry="18" fill="#dfe5ed" stroke="#5d6675" stroke-width="4"/>
+  </g>
+
+  <!-- Crispy Waffle Cone -->
+  <polygon points="184,268 328,268 256,448" fill="url(#coneGrad)" stroke="#6e390c" stroke-width="8" stroke-linejoin="round"/>
+  <!-- Waffle Grid Lines -->
+  <line x1="204" y1="268" x2="274" y2="404" stroke="#7d4312" stroke-width="5" opacity="0.65"/>
+  <line x1="244" y1="268" x2="290" y2="362" stroke="#7d4312" stroke-width="5" opacity="0.65"/>
+  <line x1="308" y1="268" x2="238" y2="404" stroke="#7d4312" stroke-width="5" opacity="0.65"/>
+  <line x1="268" y1="268" x2="222" y2="362" stroke="#7d4312" stroke-width="5" opacity="0.65"/>
+
+  <!-- Scoop 1: Maraş Vanilla (Creamy Stretchy Base) -->
+  <circle cx="256" cy="240" r="68" fill="#fff8eb" stroke="#e0cfa9" stroke-width="6"/>
+
+  <!-- Scoop 2: Antep Pistachio Green -->
+  <circle cx="212" cy="182" r="54" fill="#68c947" stroke="#3f8c25" stroke-width="6"/>
+
+  <!-- Scoop 3: Dark Chocolate -->
+  <circle cx="298" cy="184" r="52" fill="#5e2c15" stroke="#381708" stroke-width="6"/>
+
+  <!-- Top Crown: Traditional Crimson Fez with Gold Tassel -->
+  <polygon points="214,132 298,132 284,68 228,68" fill="url(#fezGrad)" stroke="#f5b942" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M256,68 Q305,72 312,126" fill="none" stroke="#f5b942" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="256" cy="68" r="9" fill="#ffe07d"/>
+
+  <!-- Iconic Pala Mustache Accent -->
+  <path d="M256,246 C225,232 186,258 166,236 C182,272 228,268 256,256 C284,268 330,272 346,236 C326,258 287,232 256,246 Z" fill="#24120b" stroke="#f5b942" stroke-width="3"/>
+</svg>

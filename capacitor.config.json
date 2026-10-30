@@ -1,0 +1,13 @@
+{
+  "appId": "tr.com.ipekbayrak.turkishicecream",
+  "appName": "Maraş Ice Cream",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "backgroundColor": "#140805",
+  "android": {
+    "backgroundColor": "#140805",
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  }
+}

@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.DS_Store
+android/.gradle/
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+android/local.properties
+android/keystore/
+android/keystore.properties
+android/play-service-account.json
+android/app/play-oauth-*.json
+play-store-publish/releases/*.aab
+play-store-publish/releases/*.apk
+play-store-publish/releases/mapping.txt

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Maraş Ice Cream</string>
+    <string name="title_activity_main">Maraş Ice Cream</string>
+    <string name="package_name">tr.com.ipekbayrak.turkishicecream</string>
+    <string name="custom_url_scheme">tr.com.ipekbayrak.turkishicecream</string>
+</resources>

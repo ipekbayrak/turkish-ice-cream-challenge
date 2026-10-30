@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="tr" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#140805" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <title>Turkish Ice Cream Challenge</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="game-container" class="gesture-surface" aria-label="3D Game View">
+    <canvas id="game-canvas"></canvas>
+    <canvas id="trail-canvas" aria-hidden="true"></canvas>
+
+    <!-- Sleek Top Pill with Integrated Routine Progress -->
+    <header class="hud-top">
+      <div class="top-minimal-pill">
+        <button type="button" id="btn-switch-usta" class="usta-badge-btn" title="Switch Master">
+          👨‍🍳 <span id="hud-level">Çırak Kadir</span> ↻
+        </button>
+
+        <div class="scoop-dots" aria-label="Scoops">
+          <span class="s-dot dot-vanilla" id="dot-1" title="1"></span>
+          <span class="s-dot dot-pistachio" id="dot-2" title="2"></span>
+          <span class="s-dot dot-choco" id="dot-3" title="3"></span>
+          <span class="s-dot dot-crown" id="dot-4" title="4">★</span>
+        </div>
+
+        <div class="score-minimal" id="hud-score">0</div>
+
+        <button type="button" id="btn-lang" class="lang-mini-btn" title="Language &amp; Settings">
+          🇹🇷 TR ⚙️
+        </button>
+        <button type="button" id="btn-audio" class="mini-audio-btn" aria-label="Sound">🔊</button>
+
+        <div class="routine-progress-track" aria-hidden="true">
+          <div class="routine-progress-fill" id="hud-routine-fill"></div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Visual-First Gesture Cue Pill -->
+    <footer class="hud-bottom">
+      <div class="gesture-hud-card theme-green" id="hud-card">
+        <div class="visual-cue-row">
+          <span class="gesture-pictogram" id="hud-gesture-icon">🤚⬆️</span>
+          <span class="action-mode-label" id="hud-action-badge">UZAT &amp; TUT</span>
+        </div>
+        <div class="stage-timer-track" aria-hidden="true">
+          <div class="stage-timer-fill" id="hud-stage-fill"></div>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Visual Start Card -->
+    <div id="start-overlay" class="start-sheet-backdrop">
+      <div class="start-sheet-card">
+        <h1 class="sheet-title" id="start-title">🍦 Maraş Dondurma</h1>
+
+        <div class="legend-pills" aria-hidden="true">
+          <span class="leg-pill leg-green" id="leg-reach">🟢 🤚⬆️ Uzat</span>
+          <span class="leg-pill leg-red" id="leg-pull">🔴 🤚⬇️ Çek</span>
+          <span class="leg-pill leg-amber" id="leg-flick">🧻 🤚💨 Savur</span>
+        </div>
+
+        <div class="usta-selector" role="group" aria-label="Master Selection">
+          <button type="button" class="usta-chip active" data-usta="0">
+            <span class="u-name" id="uname-0">Çırak Kadir</span>
+            <small class="u-stars" id="stars-0"></small>
+          </button>
+          <button type="button" class="usta-chip" data-usta="1">
+            <span class="u-name" id="uname-1">Pala Usta</span>
+            <small class="u-stars" id="stars-1"></small>
+          </button>
+          <button type="button" class="usta-chip" data-usta="2">
+            <span class="u-name" id="uname-2">Cezmi Dede</span>
+            <small class="u-stars" id="stars-2"></small>
+          </button>
+        </div>
+
+        <button type="button" id="btn-start-game" class="play-giant-btn">
+          ▶ ŞOVA BAŞLA
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Language & Settings Modal (<dialog>) -->
+  <dialog id="dialog-settings" closedby="any" aria-labelledby="settings-title">
+    <div class="modal-card settings-modal-card">
+      <h2 id="settings-title" class="result-title">Dil ve Ayarlar</h2>
+
+      <div class="lang-grid" id="lang-grid" role="group" aria-label="Languages">
+        <button type="button" class="lang-card-btn active" data-lang="tr">
+          <span class="l-flag">🇹🇷</span>
+          <span class="l-name">Türkçe</span>
+        </button>
+        <button type="button" class="lang-card-btn" data-lang="en">
+          <span class="l-flag">🇬🇧</span>
+          <span class="l-name">English</span>
+        </button>
+        <button type="button" class="lang-card-btn" data-lang="ar">
+          <span class="l-flag">🇸🇦</span>
+          <span class="l-name">العربية</span>
+        </button>
+        <button type="button" class="lang-card-btn" data-lang="ru">
+          <span class="l-flag">🇷🇺</span>
+          <span class="l-name">Русский</span>
+        </button>
+        <button type="button" class="lang-card-btn" data-lang="de">
+          <span class="l-flag">🇩🇪</span>
+          <span class="l-name">Deutsch</span>
+        </button>
+        <button type="button" class="lang-card-btn" data-lang="ja">
+          <span class="l-flag">🇯🇵</span>
+          <span class="l-name">日本語</span>
+        </button>
+      </div>
+
+      <div class="settings-toggles">
+        <button type="button" id="btn-toggle-sound" class="setting-row-btn">
+          <span id="lbl-sound">🔊 Ses ve Müzik</span>
+          <strong id="val-sound" class="toggle-pill on">ON</strong>
+        </button>
+        <button type="button" id="btn-toggle-haptics" class="setting-row-btn">
+          <span id="lbl-haptics">📳 Titreşim (Haptic)</span>
+          <strong id="val-haptics" class="toggle-pill on">ON</strong>
+        </button>
+        <button type="button" id="btn-toggle-fullscreen" class="setting-row-btn">
+          <span id="lbl-fullscreen">⛶ Tam Ekran</span>
+          <strong id="val-fullscreen" class="toggle-pill">⛶</strong>
+        </button>
+      </div>
+
+      <button type="button" id="btn-close-settings" class="play-giant-btn">
+        Tamam
+      </button>
+
+      <div class="settings-footer-links">
+        <a href="/privacy-policy.html" target="_blank" rel="noopener" id="link-privacy" class="privacy-link">
+          🔒 Privacy Policy • v1.0.0
+        </a>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Round Result Modal (<dialog>) -->
+  <dialog id="dialog-result" aria-labelledby="result-title">
+    <div class="modal-card result-modal-card">
+      <div class="result-badge" id="result-badge">SONUÇ</div>
+      <div class="result-icon-large" id="result-icon">🏆</div>
+      <h2 id="result-title" class="result-title">DONDURMAYI KAPTIN!</h2>
+      <p id="result-desc" class="result-desc">3 top bol fıstıklı Maraş dondurması senin!</p>
+
+      <div class="stars-row" id="result-stars">⭐⭐⭐</div>
+
+      <div class="stats-row-clean">
+        <div><span id="lbl-score">Puan</span><strong id="res-score">1,200</strong></div>
+        <div><span id="lbl-best">Rekor</span><strong id="res-best">1,200</strong></div>
+        <div><span id="lbl-cone">Sonuç</span><strong id="res-scoops">3 Top + Fıstık</strong></div>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" id="btn-next-round" class="play-giant-btn" autofocus>
+          ▶ SONRAKİ USTA
+        </button>
+        <button type="button" id="btn-retry-round" class="secondary-pill-btn">
+          🔄 TEKRAR
+        </button>
+      </div>
+    </div>
+  </dialog>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

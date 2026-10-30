@@ -1,0 +1,48 @@
+{
+  "appId": "com.maras.dondurmachallenge",
+  "versionCode": 1,
+  "versionName": "1.0.0",
+  "category": "GAME_ARCADE",
+  "tags": ["Arcade", "Action", "Casual", "Single player", "Stylized", "Offline"],
+  "contactDetails": {
+    "defaultLanguage": "tr-TR",
+    "privacyPolicyPath": "/privacy-policy.html"
+  },
+  "dataSafety": {
+    "collectsUserData": false,
+    "sharesUserData": false,
+    "encryptedInTransit": false,
+    "dataDeletionMechanism": "Not applicable — zero personal or device data is collected or transmitted off-device. Local game progress is cleared automatically upon app uninstallation."
+  },
+  "contentRatingIARC": {
+    "category": "GAME",
+    "violence": "NONE",
+    "fear": "NONE",
+    "sexuality": "NONE",
+    "simulatedGambling": "NONE",
+    "language": "NONE",
+    "controlledSubstances": "NONE",
+    "crudeHumor": "NONE",
+    "usersInteract": false,
+    "sharesLocation": false,
+    "digitalPurchases": false,
+    "expectedRating": {
+      "PEGI": "PEGI 3",
+      "ESRB": "Everyone (E)",
+      "USK": "USK 0",
+      "GRAC": "All"
+    }
+  },
+  "governmentApps": {
+    "isGovernmentApp": false
+  },
+  "financialFeatures": {
+    "hasFinancialFeatures": false
+  },
+  "healthApps": {
+    "isHealthApp": false
+  },
+  "advertisingId": {
+    "usesAdvertisingId": false
+  }
+}
