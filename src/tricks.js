@@ -114,10 +114,12 @@ export class TrickDirector {
       color: isPos ? 'green' : 'red',
       life: 1.0,
     });
-    this.vignetteFlash = {
-      color: isPos ? 'green' : 'red',
-      alpha: isPos ? 0.28 : 0.48,
-    };
+    if (!isPos) {
+      this.vignetteFlash = {
+        color: 'red',
+        alpha: 0.16,
+      };
+    }
   }
 
   _loseHeart(worldPos = this.coneWorldPos, icon = '💔') {

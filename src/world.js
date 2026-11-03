@@ -238,6 +238,8 @@ export class GameWorld {
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.width = 1024;
     keyLight.shadow.mapSize.height = 1024;
+    keyLight.shadow.bias = -0.0008;
+    keyLight.shadow.normalBias = 0.025;
     this.scene.add(keyLight);
 
     const rimLight = new THREE.PointLight(0xff7b29, 2.4, 8);
@@ -262,28 +264,46 @@ export class GameWorld {
     floor.receiveShadow = true;
     this.scene.add(floor);
 
-    // Traditional Anatolian Carpet Runner in front of the Ice Cream Cart
+    // Traditional Anatolian Carpet Runner in front of the Ice Cream Cart (spaced & polygonOffset to prevent Z-fighting)
     const rugGroup = new THREE.Group();
-    rugGroup.position.set(0, 0.004, 0.35);
+    rugGroup.position.set(0, 0.008, 0.35);
     const rugOuter = new THREE.Mesh(
       new THREE.PlaneGeometry(2.2, 1.15),
-      new THREE.MeshStandardMaterial({ color: 0x7f1d1d, roughness: 0.9 })
+      new THREE.MeshStandardMaterial({
+        color: 0x7f1d1d,
+        roughness: 0.9,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
+      })
     );
     rugOuter.rotation.x = -Math.PI / 2;
     rugGroup.add(rugOuter);
     const rugBorder = new THREE.Mesh(
       new THREE.PlaneGeometry(1.98, 0.95),
-      new THREE.MeshStandardMaterial({ color: 0xf5b942, roughness: 0.85 })
+      new THREE.MeshStandardMaterial({
+        color: 0xf5b942,
+        roughness: 0.85,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      })
     );
     rugBorder.rotation.x = -Math.PI / 2;
-    rugBorder.position.y = 0.002;
+    rugBorder.position.y = 0.006;
     rugGroup.add(rugBorder);
     const rugInner = new THREE.Mesh(
       new THREE.PlaneGeometry(1.82, 0.8),
-      new THREE.MeshStandardMaterial({ color: 0x4a0e17, roughness: 0.9 })
+      new THREE.MeshStandardMaterial({
+        color: 0x4a0e17,
+        roughness: 0.9,
+        polygonOffset: true,
+        polygonOffsetFactor: -3,
+        polygonOffsetUnits: -3,
+      })
     );
     rugInner.rotation.x = -Math.PI / 2;
-    rugInner.position.y = 0.004;
+    rugInner.position.y = 0.012;
     rugGroup.add(rugInner);
     this.scene.add(rugGroup);
 
@@ -367,23 +387,51 @@ export class GameWorld {
     });
 
     const baseMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(1.76, 0.92, 0.68),
+      new THREE.BoxGeometry(1.76, 0.78, 0.68),
       copperMat
     );
-    baseMesh.position.y = 0.46;
+    baseMesh.position.y = 0.39;
     baseMesh.castShadow = true;
     baseMesh.receiveShadow = true;
     this.cartGroup.add(baseMesh);
 
+    // Perimeter upper copper cabinet skirts around the recessed cooling basin
+    // (Leaves the interior hollow at y = 0.78..0.96 so the tilted basin & 6 steel buckets never Z-fight with baseMesh!)
+    const frontUpperSkirt = new THREE.Mesh(
+      new THREE.BoxGeometry(1.76, 0.11, 0.05),
+      copperMat
+    );
+    frontUpperSkirt.position.set(0, 0.835, 0.315);
+    this.cartGroup.add(frontUpperSkirt);
+
+    const backUpperSkirt = new THREE.Mesh(
+      new THREE.BoxGeometry(1.76, 0.22, 0.05),
+      copperMat
+    );
+    backUpperSkirt.position.set(0, 0.89, -0.315);
+    this.cartGroup.add(backUpperSkirt);
+
+    [-0.855, 0.855].forEach((sx) => {
+      const sideUpperSkirt = new THREE.Mesh(
+        new THREE.BoxGeometry(0.05, 0.16, 0.68),
+        copperMat
+      );
+      sideUpperSkirt.position.set(sx, 0.86, 0);
+      this.cartGroup.add(sideUpperSkirt);
+    });
+
     const signPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.58, 0.72),
+      new THREE.PlaneGeometry(1.58, 0.68),
       new THREE.MeshStandardMaterial({
         map: this.cartSignTexture,
         roughness: 0.35,
         metalness: 0.3,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
       })
     );
-    signPlane.position.set(0, 0.44, 0.345);
+    signPlane.position.set(0, 0.4, 0.348);
     this.cartGroup.add(signPlane);
 
     // =========================================================================
@@ -392,19 +440,20 @@ export class GameWorld {
     // =========================================================================
     const chromeSteelMat = new THREE.MeshStandardMaterial({
       color: 0xf1f5f9,
-      metalness: 0.95,
-      roughness: 0.09,
+      metalness: 0.94,
+      roughness: 0.11,
+      side: THREE.DoubleSide,
     });
     const brushedSteelMat = new THREE.MeshStandardMaterial({
       color: 0xcbd5e1,
-      metalness: 0.88,
-      roughness: 0.2,
-      side: THREE.DoubleSide,
+      metalness: 0.86,
+      roughness: 0.22,
     });
     const darkBasinWellMat = new THREE.MeshStandardMaterial({
       color: 0x0f172a,
       metalness: 0.65,
       roughness: 0.45,
+      side: THREE.DoubleSide,
     });
     const frostRimMat = new THREE.MeshStandardMaterial({
       color: 0xe0f2fe,
@@ -413,6 +462,10 @@ export class GameWorld {
       roughness: 0.65,
       transparent: true,
       opacity: 0.82,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
     });
 
     // Forward-tilted showcase basin deck so the player clearly sees inside the counter well and steel buckets!
@@ -447,10 +500,10 @@ export class GameWorld {
 
     // Deep dark chilled freezer well ("Hazne Çukuru") beneath the steel deck
     const freezerWellFloor = new THREE.Mesh(
-      new THREE.BoxGeometry(1.74, 0.04, 0.6),
+      new THREE.BoxGeometry(1.74, 0.03, 0.6),
       darkBasinWellMat
     );
-    freezerWellFloor.position.set(0, -0.11, 0);
+    freezerWellFloor.position.set(0, -0.135, 0);
     this.basinDeckGroup.add(freezerWellFloor);
 
     // Brushed Stainless-Steel Recessed Basin Deck Plate ("Çelik Hazne Tezgahı")
@@ -458,17 +511,17 @@ export class GameWorld {
       new THREE.BoxGeometry(1.74, 0.018, 0.6),
       brushedSteelMat
     );
-    steelDeckPlate.position.set(0, -0.018, 0);
+    steelDeckPlate.position.set(0, -0.022, 0);
     steelDeckPlate.receiveShadow = true;
     this.basinDeckGroup.add(steelDeckPlate);
 
-    // Frosted cooling rails running along the steel basin
+    // Frosted cooling rails running cleanly above the steel basin deck
     [-0.22, 0.22].forEach((fz) => {
       const frostStrip = new THREE.Mesh(
         new THREE.BoxGeometry(1.62, 0.01, 0.028),
         frostRimMat
       );
-      frostStrip.position.set(0, -0.005, fz);
+      frostStrip.position.set(0, 0.002, fz);
       this.basinDeckGroup.add(frostStrip);
     });
 
@@ -489,38 +542,30 @@ export class GameWorld {
       bucketGroup.position.set(tub.x, 0.0, 0.01);
       this.basinDeckGroup.add(bucketGroup);
 
-      // 1. Dark recessed socket shadow ring in the basin
+      // 1. Open-ended dark recessed socket shadow sleeve (no top cap so it never Z-fights with deck or ice!)
       const socketWell = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.116, 0.112, 0.12, 24),
+        new THREE.CylinderGeometry(0.116, 0.112, 0.11, 24, 1, true),
         darkBasinWellMat
       );
-      socketWell.position.y = -0.062;
+      socketWell.position.y = -0.068;
       bucketGroup.add(socketWell);
 
-      // 2. Frosted cold condensation collar around each steel bucket
+      // 2. Frosted cold condensation collar cleanly above the steel deck plate
       const frostCollar = new THREE.Mesh(
-        new THREE.TorusGeometry(0.115, 0.008, 10, 24),
+        new THREE.TorusGeometry(0.115, 0.007, 10, 24),
         frostRimMat
       );
       frostCollar.rotation.x = Math.PI / 2;
-      frostCollar.position.y = -0.004;
+      frostCollar.position.y = 0.004;
       bucketGroup.add(frostCollar);
 
       // 3. Tall Shiny Stainless-Steel Bucket Cylinder Wall ("Parlak Çelik Kova Gövdesi")
       const steelBucketWall = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.106, 0.096, 0.135, 26, 1, true),
+        new THREE.CylinderGeometry(0.105, 0.095, 0.135, 26, 1, true),
         chromeSteelMat
       );
       steelBucketWall.position.y = -0.015;
       bucketGroup.add(steelBucketWall);
-
-      // Inner brushed steel wall so the inside of the bucket gleams around the ice cream
-      const innerBucketWall = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.102, 0.094, 0.13, 24, 1, true),
-        brushedSteelMat
-      );
-      innerBucketWall.position.y = -0.015;
-      bucketGroup.add(innerBucketWall);
 
       // 4. Mirror-Polished Rolled Steel Lip Flange ("Parlak Çelik Kova Ağzı Çemberi")
       const steelRimFlange = new THREE.Mesh(
@@ -553,19 +598,19 @@ export class GameWorld {
         metalness: 0.04,
       });
 
-      // Base full-bucket ice cream layer
+      // Base full-bucket ice cream layer (radius 0.088 so it sits cleanly inside the 0.105 steel wall without Z-fighting)
       const iceBase = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.097, 0.09, 0.055, 22),
+        new THREE.CylinderGeometry(0.088, 0.082, 0.052, 22),
         iceMat
       );
-      iceBase.position.y = -0.008;
+      iceBase.position.y = -0.006;
       iceBase.userData.flavorIndex = tub.index;
       iceGroup.add(iceBase);
 
       // Main sculpted stretchy dome with paddle-churned ridges
       const iceDome = new THREE.Mesh(
         new THREE.SphereGeometry(
-          0.094,
+          0.089,
           22,
           14,
           0,
@@ -575,7 +620,7 @@ export class GameWorld {
         ),
         iceMat
       );
-      iceDome.position.y = 0.008;
+      iceDome.position.y = 0.01;
       iceDome.scale.set(1.0, 0.72, 1.0);
       iceDome.userData.flavorIndex = tub.index;
       iceGroup.add(iceDome);
@@ -620,9 +665,9 @@ export class GameWorld {
           speckMat
         );
         speck.position.set(
-          Math.cos(ga) * 0.048,
+          Math.cos(ga) * 0.046,
           0.052 + (g % 2) * 0.006,
-          Math.sin(ga) * 0.048
+          Math.sin(ga) * 0.046
         );
         iceGroup.add(speck);
       }
@@ -641,6 +686,7 @@ export class GameWorld {
       color: 0xe0f2fe,
       transparent: true,
       opacity: 0.22,
+      depthWrite: false,
     });
     for (let m = 0; m < 16; m++) {
       const mote = new THREE.Mesh(
@@ -733,6 +779,7 @@ export class GameWorld {
     const bellHollowMat = new THREE.MeshStandardMaterial({
       color: 0x1a0b05,
       roughness: 0.85,
+      side: THREE.DoubleSide,
     });
     const crimsonSilkMat = new THREE.MeshStandardMaterial({
       color: 0xd90429,
@@ -778,7 +825,6 @@ export class GameWorld {
         polishedBrassBellMat
       );
       upperDome.position.y = -0.068;
-      upperDome.castShadow = true;
       bellPivot.add(upperDome);
 
       const lowerSkirt = new THREE.Mesh(
@@ -786,7 +832,6 @@ export class GameWorld {
         polishedBrassBellMat
       );
       lowerSkirt.position.y = -0.122;
-      lowerSkirt.castShadow = true;
       bellPivot.add(lowerSkirt);
 
       // 4. Engraved Decorative Waist Bands ("İşlemeli Kuşaklar")
@@ -811,11 +856,11 @@ export class GameWorld {
       bellPivot.add(acousticLip);
 
       const hollowInterior = new THREE.Mesh(
-        new THREE.CircleGeometry(0.068, 20),
+        new THREE.CircleGeometry(0.064, 20),
         bellHollowMat
       );
       hollowInterior.rotation.x = Math.PI / 2;
-      hollowInterior.position.y = -0.148;
+      hollowInterior.position.y = -0.143;
       bellPivot.add(hollowInterior);
 
       // 6. Glowing Golden Acoustic Shimmer Ring when struck!
@@ -823,14 +868,16 @@ export class GameWorld {
         color: 0xffe194,
         transparent: true,
         opacity: 0,
+        depthWrite: false,
         side: THREE.DoubleSide,
       });
       const shimmerRing = new THREE.Mesh(
-        new THREE.RingGeometry(0.075, 0.095, 24),
+        new THREE.RingGeometry(0.078, 0.098, 24),
         shimmerMat
       );
       shimmerRing.rotation.x = Math.PI / 2;
-      shimmerRing.position.y = -0.152;
+      shimmerRing.position.y = -0.156;
+      shimmerRing.visible = false;
       bellPivot.add(shimmerRing);
 
       // 7. Articulated Independent Inner Clapper Pendulum + Red Silk Tassel ("Sallanan Çan Dili & Püskülü")
@@ -1191,17 +1238,17 @@ export class GameWorld {
     this.vendorTorso.add(vestRight);
 
     const trimLeft = new THREE.Mesh(
-      new THREE.BoxGeometry(0.032, 0.52, 0.36),
+      new THREE.BoxGeometry(0.032, 0.526, 0.354),
       this.vendorGoldMat
     );
-    trimLeft.position.set(-0.04, 0.29, 0.05);
+    trimLeft.position.set(-0.04, 0.29, 0.054);
     this.vendorTorso.add(trimLeft);
 
     const trimRight = new THREE.Mesh(
-      new THREE.BoxGeometry(0.032, 0.52, 0.36),
+      new THREE.BoxGeometry(0.032, 0.526, 0.354),
       this.vendorGoldMat
     );
-    trimRight.position.set(0.04, 0.29, 0.05);
+    trimRight.position.set(0.04, 0.29, 0.054);
     this.vendorTorso.add(trimRight);
 
     // Neck
@@ -2637,11 +2684,13 @@ export class GameWorld {
       if (b.shimmerTimer > 0) {
         b.shimmerTimer = Math.max(0, b.shimmerTimer - dt);
         const norm = b.shimmerTimer / 0.52;
+        b.shimmerRing.visible = true;
         b.shimmerMat.opacity = norm * 0.85;
         const sScale = 1 + (1 - norm) * 0.9;
         b.shimmerRing.scale.set(sScale, sScale, 1);
       } else if (b.shimmerMat) {
         b.shimmerMat.opacity = 0;
+        b.shimmerRing.visible = false;
       }
     });
 

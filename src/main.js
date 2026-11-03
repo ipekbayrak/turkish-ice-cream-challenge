@@ -776,11 +776,11 @@ gameContainer.addEventListener('pointermove', (event) => {
     gameContainer.hasPointerCapture?.(event.pointerId) ||
     director.active
   ) {
+    updateNormalizedPointer(event.clientX, event.clientY, dt);
     gestureState.isReaching =
       gestureState.isPointerDown ||
       gameContainer.hasPointerCapture?.(event.pointerId) ||
-      gestureState.normY > -0.45;
-    updateNormalizedPointer(event.clientX, event.clientY, dt);
+      gestureState.normY > -0.68;
   }
 });
 
@@ -851,43 +851,99 @@ btnAudio.addEventListener('click', () => {
   applyLanguageUI();
 });
 
+const hudCache = {
+  levelText: '',
+  scoreText: '',
+  hearts: -1,
+  scoopCount: -1,
+  crownActive: false,
+  cardClass: '',
+  iconText: '',
+  badgeText: '',
+  trickTitle: '',
+  routineWidth: '',
+  stageWidth: '',
+};
+const heartSpanEls = hudHearts
+  ? Array.from(hudHearts.querySelectorAll('.h-icon'))
+  : [];
+
 function updateHUD(guide) {
   const ustaName = saveManager.getUstaName(director.levelIndex);
-  hudLevel.textContent = `${director.currentStage} • ${ustaName}`;
-  hudScore.textContent = saveManager.formatNumber(director.score);
+  const levelText = `${director.currentStage} • ${ustaName}`;
+  if (hudCache.levelText !== levelText) {
+    hudCache.levelText = levelText;
+    hudLevel.textContent = levelText;
+  }
 
-  if (hudHearts) {
-    const heartSpans = hudHearts.querySelectorAll('.h-icon');
-    heartSpans.forEach((hEl, idx) => {
+  const scoreText = saveManager.formatNumber(director.score);
+  if (hudCache.scoreText !== scoreText) {
+    hudCache.scoreText = scoreText;
+    hudScore.textContent = scoreText;
+  }
+
+  if (hudCache.hearts !== director.hearts) {
+    hudCache.hearts = director.hearts;
+    heartSpanEls.forEach((hEl, idx) => {
       hEl.classList.toggle('lost', idx >= director.hearts);
     });
   }
 
-  scoopDotEls.forEach((dotEl, idx) => {
-    if (!dotEl) return;
-    dotEl.classList.toggle('active', director.scoopCount >= idx + 1);
-  });
-  if (dotCrown) {
-    dotCrown.classList.toggle(
-      'active',
-      director.scoopCount >= director.targetScoopCount &&
-        director.currentMechanic === 'FINAL_PISTACHIO_CATCH'
-    );
+  if (hudCache.scoopCount !== director.scoopCount) {
+    hudCache.scoopCount = director.scoopCount;
+    scoopDotEls.forEach((dotEl, idx) => {
+      if (!dotEl) return;
+      dotEl.classList.toggle('active', director.scoopCount >= idx + 1);
+    });
+  }
+
+  const crownActive =
+    director.scoopCount >= director.targetScoopCount &&
+    director.currentMechanic === 'FINAL_PISTACHIO_CATCH';
+  if (dotCrown && hudCache.crownActive !== crownActive) {
+    hudCache.crownActive = crownActive;
+    dotCrown.classList.toggle('active', crownActive);
   }
 
   if (guide) {
-    hudCard.className = `gesture-hud-card theme-${guide.theme}`;
-    if (hudGestureIcon) hudGestureIcon.textContent = guide.icon || '🤚⬆️';
-    hudActionBadge.textContent = guide.badgeText;
-    if (hudTrickTitle) {
-      hudTrickTitle.textContent = guide.trickTitle || '';
+    const nextCardClass = `gesture-hud-card theme-${guide.theme}`;
+    if (hudCache.cardClass !== nextCardClass) {
+      hudCache.cardClass = nextCardClass;
+      hudCard.className = nextCardClass;
     }
-    hudRoutineFill.style.width = `${Math.round(
+
+    const nextIcon = guide.icon || '🤚⬆️';
+    if (hudGestureIcon && hudCache.iconText !== nextIcon) {
+      hudCache.iconText = nextIcon;
+      hudGestureIcon.textContent = nextIcon;
+    }
+
+    if (hudCache.badgeText !== guide.badgeText) {
+      hudCache.badgeText = guide.badgeText;
+      hudActionBadge.textContent = guide.badgeText;
+    }
+
+    const nextTrickTitle = guide.trickTitle || '';
+    if (hudTrickTitle && hudCache.trickTitle !== nextTrickTitle) {
+      hudCache.trickTitle = nextTrickTitle;
+      hudTrickTitle.textContent = nextTrickTitle;
+    }
+
+    const nextRoutineWidth = `${Math.round(
       Math.max(12, guide.routineProgress * 100)
     )}%`;
-    hudStageFill.style.width = `${Math.round(
+    if (hudCache.routineWidth !== nextRoutineWidth) {
+      hudCache.routineWidth = nextRoutineWidth;
+      hudRoutineFill.style.width = nextRoutineWidth;
+    }
+
+    const nextStageWidth = `${Math.round(
       THREE.MathUtils.clamp(guide.stageProgress * 100, 8, 100)
     )}%`;
+    if (hudCache.stageWidth !== nextStageWidth) {
+      hudCache.stageWidth = nextStageWidth;
+      hudStageFill.style.width = nextStageWidth;
+    }
   }
 }
 
@@ -1119,6 +1175,7 @@ function renderVisualCometsAndTrails(dt, elapsed, guide) {
   }
 }
 
+const targetHandWorldPos = new THREE.Vector3(0.22, 1.04, 0.64);
 let prevTime = performance.now();
 
 function animate(now) {
@@ -1146,10 +1203,10 @@ function animate(now) {
   gestureState.isMoving = gestureState.speed > 0.05;
 
   if (director.roundEnded) {
-    gestureState.handWorldPos.set(0.05, 1.24, 0.58);
+    targetHandWorldPos.set(0.05, 1.24, 0.58);
     gestureState.grabCurl = 0.92;
   } else if (director.isGraspingPaddleCone) {
-    gestureState.handWorldPos.set(
+    targetHandWorldPos.set(
       director.coneWorldPos.x,
       director.coneWorldPos.y - 0.03,
       director.coneWorldPos.z + 0.04
@@ -1163,14 +1220,19 @@ function animate(now) {
     const dynamicZ = director.heldItem
       ? 0.26
       : THREE.MathUtils.lerp(0.48, 0.26, reachDepthT);
-    gestureState.handWorldPos.set(
+    targetHandWorldPos.set(
       THREE.MathUtils.clamp(gestureState.normX * 0.54, -0.5, 0.5),
       THREE.MathUtils.clamp(1.22 + gestureState.normY * 0.36, 0.92, 1.72),
       dynamicZ
     );
   } else {
-    gestureState.handWorldPos.set(0.22, 1.04, 0.64);
+    targetHandWorldPos.set(0.22, 1.04, 0.64);
   }
+
+  gestureState.handWorldPos.lerp(
+    targetHandWorldPos,
+    Math.min(1, dt * 18)
+  );
 
   world.updateTouristHand(
     gestureState.handWorldPos,
