@@ -6,11 +6,14 @@ const VOWEL_FORMANTS = {
   U: [340, 720, 2350],
   E: [540, 1820, 2580],
   I: [310, 2150, 2750],
+  M: [250, 920, 2150], // Closed-lip nasal hum ("Hımmm")
+  R: [420, 1340, 1950], // Uvular/throat growl ("Hırrr")
 };
 
-// Base fundamental voice pitch (Hz) for each of the 3 Ustas:
-// 0: Çırak Kadir (Young tenor), 1: Pala Usta (Resonant baritone), 2: Cezmi Dede (Deep raspy bass-baritone)
-const USTA_BASE_PITCH = [156, 118, 98];
+// Base fundamental voice pitch (Hz) for each of the 4 Ustas:
+// 0: Çırak Kadir (Young tenor), 1: Pala Usta (Resonant baritone),
+// 2: Cezmi Dede (Deep raspy bass-baritone), 3: Başusta Haydar Baba (Commanding deep bass)
+const USTA_BASE_PITCH = [156, 118, 98, 88];
 
 export class SoundEngine {
   constructor() {
@@ -20,8 +23,9 @@ export class SoundEngine {
     this.musicTimer = null;
     this.beatStep = 0;
     this.tempoMultiplier = 1.0;
+    this._iosUnlocked = false;
 
-    // Live lip-sync envelope state for 3D vendor mouth & mustache animation
+    // Live lip-sync envelope state for 3D vendor mouth, jaw, beard & mustache animation
     this.voiceSyllables = [];
   }
 
@@ -98,7 +102,10 @@ export class SoundEngine {
         this.voiceSyllables.splice(i, 1);
       } else if (now >= s.start) {
         const p = (now - s.start) / Math.max(0.01, s.end - s.start);
-        const env = Math.sin(p * Math.PI) * s.intensity;
+        const trilled = s.trill
+          ? 0.65 + 0.35 * Math.sin((now - s.start) * Math.PI * 2 * 26)
+          : 1.0;
+        const env = Math.sin(p * Math.PI) * s.intensity * trilled;
         if (env > openness) openness = env;
       }
     }
@@ -107,45 +114,74 @@ export class SoundEngine {
 
   /**
    * Synthesizes a single vocal syllable through a 3-formant human vocal tract filter bank
+   * Supports optional throat-trill modulation (`trillHz > 0`) for realistic "Hırrrr!" grunts
    */
-  _playVocalSyllable(startTime, duration, f0Start, f0End, vowelKey = 'A', volume = 0.24, panX = 0, breathy = true) {
+  _playVocalSyllable(
+    startTime,
+    duration,
+    f0Start,
+    f0End,
+    vowelKey = 'A',
+    volume = 0.24,
+    panX = 0,
+    breathy = true,
+    trillHz = 0
+  ) {
     if (!this.ctx) return;
 
     this.voiceSyllables.push({
       start: startTime,
       end: startTime + duration,
       intensity: Math.min(1, volume * 3.8),
+      trill: trillHz > 0,
     });
 
     const formants = VOWEL_FORMANTS[vowelKey] || VOWEL_FORMANTS.A;
 
-    // Glottal cord source (sawtooth + sub-octave triangle for warm human chest resonance)
     const glottal = this.ctx.createOscillator();
     glottal.type = 'sawtooth';
     glottal.frequency.setValueAtTime(f0Start, startTime);
-    glottal.frequency.exponentialRampToValueAtTime(Math.max(55, f0End), startTime + duration);
+    glottal.frequency.exponentialRampToValueAtTime(
+      Math.max(50, f0End),
+      startTime + duration
+    );
 
     const subOsc = this.ctx.createOscillator();
     subOsc.type = 'triangle';
     subOsc.frequency.setValueAtTime(f0Start * 0.5, startTime);
-    subOsc.frequency.exponentialRampToValueAtTime(Math.max(30, f0End * 0.5), startTime + duration);
+    subOsc.frequency.exponentialRampToValueAtTime(
+      Math.max(28, f0End * 0.5),
+      startTime + duration
+    );
 
-    // Subtle vocal vibrato
+    // Vocal vibrato or uvular throat trill ("Hırrr!")
     const vib = this.ctx.createOscillator();
     const vibGain = this.ctx.createGain();
-    vib.frequency.setValueAtTime(5.8, startTime);
-    vibGain.gain.setValueAtTime(4.5, startTime);
+    vib.frequency.setValueAtTime(trillHz > 0 ? trillHz : 5.8, startTime);
+    vibGain.gain.setValueAtTime(trillHz > 0 ? 14.0 : 4.5, startTime);
     vib.connect(vibGain);
     vibGain.connect(glottal.frequency);
 
     const sourceMix = this.ctx.createGain();
-    sourceMix.gain.setValueAtTime(0.7, startTime);
+    sourceMix.gain.setValueAtTime(0.72, startTime);
     glottal.connect(sourceMix);
     subOsc.connect(sourceMix);
 
-    // Optional consonant breath burst ("H" / "P") at syllable onset
+    // Optional amplitude trill for "Hırrr" throat rumble
+    let trillOsc = null;
+    if (trillHz > 0) {
+      trillOsc = this.ctx.createOscillator();
+      const trillAmp = this.ctx.createGain();
+      trillOsc.frequency.setValueAtTime(trillHz, startTime);
+      trillAmp.gain.setValueAtTime(0.32, startTime);
+      trillOsc.connect(trillAmp);
+      trillAmp.connect(sourceMix.gain);
+      trillOsc.start(startTime);
+      trillOsc.stop(startTime + duration + 0.01);
+    }
+
     if (breathy) {
-      const bufLen = Math.floor(this.ctx.sampleRate * 0.045);
+      const bufLen = Math.floor(this.ctx.sampleRate * 0.055);
       const buf = this.ctx.createBuffer(1, bufLen, this.ctx.sampleRate);
       const data = buf.getChannelData(0);
       for (let i = 0; i < bufLen; i++) {
@@ -154,17 +190,19 @@ export class SoundEngine {
       const noise = this.ctx.createBufferSource();
       noise.buffer = buf;
       const nGain = this.ctx.createGain();
-      nGain.gain.setValueAtTime(volume * 0.5, startTime);
-      nGain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.045);
+      nGain.gain.setValueAtTime(volume * 0.55, startTime);
+      nGain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.055);
       noise.connect(nGain);
       nGain.connect(sourceMix);
       noise.start(startTime);
     }
 
-    // 3 Parallel Vocal Tract Formant Filters (F1, F2, F3)
     const masterEnv = this.ctx.createGain();
     masterEnv.gain.setValueAtTime(0.001, startTime);
-    masterEnv.gain.linearRampToValueAtTime(volume, startTime + Math.min(0.025, duration * 0.25));
+    masterEnv.gain.linearRampToValueAtTime(
+      volume,
+      startTime + Math.min(0.025, duration * 0.25)
+    );
     masterEnv.gain.exponentialRampToValueAtTime(0.0008, startTime + duration);
 
     const formantWeights = [1.0, 0.65, 0.28];
@@ -197,11 +235,15 @@ export class SoundEngine {
 
   /**
    * Expressive Turkish Ice Cream Vendor Voice Reactions:
-   * - 'hoppa': Energetic "Hop-paaa!" when twisting or dodging the cone
-   * - 'laugh': Hearty "Ha-ha-ha-haa!" belly laugh when tricking the tourist with a fake cone/napkin
-   * - 'taunt': Playful "Oooo-hop!" when swapping or flipping upside-down
-   * - 'cheer': Warm "He-laaal!" when tourist slices or catches the full cone
-   * - 'shock': Surprised "Haaay-da!" on early snatch
+   * - 'hmm': Questioning / playful thinking hum "Hımmmm...?"
+   * - 'hirr': Playful growling throat trill "Hırrrrr!" when teasing or lifting giant block
+   * - 'eeeh': Teasing "Eeeeh-hehe!" when sliding inner cone out of double cone
+   * - 'cik': Rhythmic tongue click "Cık-cık-cık!" on customer mistake
+   * - 'hoppa': Energetic "Hop-paaa!" when twisting or spinning the cone
+   * - 'laugh': Hearty "Ha-ha-ha-haa!" belly laugh
+   * - 'taunt': Playful "Oooo-hop!"
+   * - 'cheer': Warm "He-laaal!"
+   * - 'shock': Surprised "Haaay-da!"
    */
   speakVendor(type = 'hoppa', ustaIdx = 1, panX = 0) {
     if (!this.enabled) return;
@@ -209,17 +251,142 @@ export class SoundEngine {
     if (!this.ctx) return;
 
     const now = this.ctx.currentTime;
-    const baseF0 = USTA_BASE_PITCH[ustaIdx % 3] || 118;
+    const baseF0 = USTA_BASE_PITCH[ustaIdx % USTA_BASE_PITCH.length] || 118;
 
-    if (type === 'hoppa') {
-      // "HOP - PAAA!"
-      this._playVocalSyllable(now, 0.11, baseF0 * 1.05, baseF0 * 1.25, 'O', 0.25, panX, true);
-      this._playVocalSyllable(now + 0.13, 0.24, baseF0 * 1.38, baseF0 * 0.92, 'A', 0.28, panX, true);
+    if (type === 'hmm') {
+      // "HIMMMMM...?" (warm nasal hum with questioning upward inflection)
+      this._playVocalSyllable(
+        now,
+        0.14,
+        baseF0 * 0.92,
+        baseF0 * 0.88,
+        'I',
+        0.22,
+        panX,
+        true,
+        0
+      );
+      this._playVocalSyllable(
+        now + 0.11,
+        0.34,
+        baseF0 * 0.88,
+        baseF0 * 1.32,
+        'M',
+        0.26,
+        panX,
+        false,
+        0
+      );
+    } else if (type === 'hirr') {
+      // "HIRRRRR-HOP!" (signature throat growl trill + playful snap)
+      this._playVocalSyllable(
+        now,
+        0.32,
+        baseF0 * 0.86,
+        baseF0 * 1.18,
+        'R',
+        0.29,
+        panX,
+        true,
+        28
+      );
+      this._playVocalSyllable(
+        now + 0.34,
+        0.14,
+        baseF0 * 1.32,
+        baseF0 * 0.96,
+        'O',
+        0.25,
+        panX,
+        true,
+        0
+      );
+    } else if (type === 'eeeh') {
+      // "EEEEH - HI-HI!"
+      this._playVocalSyllable(
+        now,
+        0.24,
+        baseF0 * 1.12,
+        baseF0 * 1.42,
+        'E',
+        0.26,
+        panX,
+        true,
+        0
+      );
+      this._playVocalSyllable(
+        now + 0.26,
+        0.11,
+        baseF0 * 1.35,
+        baseF0 * 1.15,
+        'I',
+        0.22,
+        panX,
+        true,
+        0
+      );
+      this._playVocalSyllable(
+        now + 0.39,
+        0.14,
+        baseF0 * 1.28,
+        baseF0 * 1.02,
+        'A',
+        0.24,
+        panX,
+        true,
+        0
+      );
+    } else if (type === 'cik') {
+      // "CIK - CIK - CIK!" (3 dental tongue clicks + low chuckle)
+      [0, 0.12, 0.24].forEach((offset) => {
+        const osc = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1650, now + offset);
+        osc.frequency.exponentialRampToValueAtTime(420, now + offset + 0.035);
+        g.gain.setValueAtTime(0.22, now + offset);
+        g.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.04);
+        osc.connect(g);
+        this._connectWithPan(g, panX);
+        osc.start(now + offset);
+        osc.stop(now + offset + 0.045);
+      });
+      this._playVocalSyllable(
+        now + 0.36,
+        0.22,
+        baseF0 * 1.05,
+        baseF0 * 0.85,
+        'M',
+        0.22,
+        panX,
+        false,
+        0
+      );
+    } else if (type === 'hoppa') {
+      this._playVocalSyllable(
+        now,
+        0.11,
+        baseF0 * 1.05,
+        baseF0 * 1.25,
+        'O',
+        0.25,
+        panX,
+        true
+      );
+      this._playVocalSyllable(
+        now + 0.13,
+        0.24,
+        baseF0 * 1.38,
+        baseF0 * 0.92,
+        'A',
+        0.28,
+        panX,
+        true
+      );
     } else if (type === 'laugh') {
-      // "HA - HA - HA - HAAA!"
-      const syllables = [0, 0.13, 0.26, 0.40];
+      const syllables = [0, 0.13, 0.26, 0.4];
       syllables.forEach((offset, i) => {
-        const dur = i === 3 ? 0.24 : 0.10;
+        const dur = i === 3 ? 0.24 : 0.1;
         const pitchMult = 1.32 - i * 0.09;
         const vowel = i % 2 === 0 ? 'A' : 'O';
         this._playVocalSyllable(
@@ -234,18 +401,131 @@ export class SoundEngine {
         );
       });
     } else if (type === 'taunt') {
-      // "OOOO - HOP!"
-      this._playVocalSyllable(now, 0.18, baseF0 * 0.95, baseF0 * 1.3, 'O', 0.24, panX, false);
-      this._playVocalSyllable(now + 0.2, 0.16, baseF0 * 1.35, baseF0 * 1.0, 'A', 0.26, panX, true);
+      this._playVocalSyllable(
+        now,
+        0.18,
+        baseF0 * 0.95,
+        baseF0 * 1.3,
+        'O',
+        0.24,
+        panX,
+        false
+      );
+      this._playVocalSyllable(
+        now + 0.2,
+        0.16,
+        baseF0 * 1.35,
+        baseF0 * 1.0,
+        'A',
+        0.26,
+        panX,
+        true
+      );
     } else if (type === 'cheer') {
-      // "HE - LAAAL!"
-      this._playVocalSyllable(now, 0.12, baseF0 * 1.15, baseF0 * 1.25, 'E', 0.24, panX, true);
-      this._playVocalSyllable(now + 0.14, 0.30, baseF0 * 1.45, baseF0 * 1.1, 'A', 0.28, panX, false);
+      this._playVocalSyllable(
+        now,
+        0.12,
+        baseF0 * 1.15,
+        baseF0 * 1.25,
+        'E',
+        0.24,
+        panX,
+        true
+      );
+      this._playVocalSyllable(
+        now + 0.14,
+        0.3,
+        baseF0 * 1.45,
+        baseF0 * 1.1,
+        'A',
+        0.28,
+        panX,
+        false
+      );
     } else if (type === 'shock') {
-      // "HAAAY - DA!"
-      this._playVocalSyllable(now, 0.20, baseF0 * 1.45, baseF0 * 0.95, 'A', 0.27, panX, true);
-      this._playVocalSyllable(now + 0.22, 0.18, baseF0 * 0.95, baseF0 * 0.78, 'O', 0.24, panX, true);
+      this._playVocalSyllable(
+        now,
+        0.2,
+        baseF0 * 1.45,
+        baseF0 * 0.95,
+        'A',
+        0.27,
+        panX,
+        true
+      );
+      this._playVocalSyllable(
+        now + 0.22,
+        0.18,
+        baseF0 * 0.95,
+        baseF0 * 0.78,
+        'O',
+        0.24,
+        panX,
+        true
+      );
     }
+  }
+
+  /**
+   * Subtle bazaar spectator reactions (applause claps, gasps, chuckles)
+   */
+  playCrowdReaction(kind = 'cheer') {
+    if (!this.enabled) return;
+    this.init();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+
+    if (kind === 'cheer') {
+      // Rhythmic bazaar hand-claps from left & right spectators
+      for (let i = 0; i < 5; i++) {
+        const offset = i * 0.075 + Math.random() * 0.02;
+        const bufLen = Math.floor(this.ctx.sampleRate * 0.04);
+        const buf = this.ctx.createBuffer(1, bufLen, this.ctx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let k = 0; k < bufLen; k++) {
+          data[k] = (Math.random() * 2 - 1) * Math.pow(1 - k / bufLen, 2);
+        }
+        const src = this.ctx.createBufferSource();
+        src.buffer = buf;
+        const bp = this.ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.setValueAtTime(1100 + (i % 2) * 350, now + offset);
+        bp.Q.value = 3.0;
+        const g = this.ctx.createGain();
+        g.gain.setValueAtTime(0.09, now + offset);
+        g.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.04);
+        src.connect(bp);
+        bp.connect(g);
+        this._connectWithPan(g, i % 2 === 0 ? -0.65 : 0.65);
+        src.start(now + offset);
+      }
+    } else if (kind === 'gasp') {
+      this._playVocalSyllable(now, 0.22, 240, 390, 'O', 0.12, -0.55, true);
+      this._playVocalSyllable(now + 0.04, 0.24, 195, 310, 'A', 0.11, 0.55, true);
+    } else if (kind === 'chuckle') {
+      this._playVocalSyllable(now, 0.1, 260, 220, 'E', 0.11, 0.55, true);
+      this._playVocalSyllable(now + 0.11, 0.12, 245, 200, 'A', 0.11, -0.55, true);
+    }
+  }
+
+  // Crisp wafer slide & nest sound when double cones lock or separate
+  playWaferSlide(panX = 0) {
+    if (!this.enabled) return;
+    this.init();
+    if (!this.ctx) return;
+
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(310, now);
+    osc.frequency.exponentialRampToValueAtTime(680, now + 0.11);
+    g.gain.setValueAtTime(0.18, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    osc.connect(g);
+    this._connectWithPan(g, panX);
+    osc.start(now);
+    osc.stop(now + 0.13);
   }
 
   // Tactile physical sound when tourist's fingers wrap & tug on the cone or prop
@@ -476,6 +756,7 @@ export class SoundEngine {
       osc.stop(now + i * 0.08 + 0.36);
     });
     this.playBell(0.85, 0);
+    this.playCrowdReaction('cheer');
   }
 
   startMusic() {
@@ -535,7 +816,7 @@ export class SoundEngine {
       }
 
       this.beatStep++;
-      const intervalMs = Math.max(135, 220 / this.tempoMultiplier);
+      const intervalMs = Math.max(130, 220 / this.tempoMultiplier);
       this.musicTimer = setTimeout(tick, intervalMs);
     };
 

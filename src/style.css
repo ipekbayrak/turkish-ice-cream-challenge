@@ -1,6 +1,6 @@
 :root {
   --bg-dark: #140805;
-  --glass-bg: rgba(18, 8, 5, 0.8);
+  --glass-bg: rgba(18, 8, 5, 0.84);
   --glass-border: rgba(245, 185, 66, 0.36);
   --gold: #f5b942;
   --gold-bright: #ffe194;
@@ -89,7 +89,7 @@ dialog {
   border-radius: 24px;
   background: rgba(24, 11, 7, 0.96);
   color: var(--cream);
-  max-width: min(92dvw, 400px);
+  max-width: min(94dvw, 430px);
   width: 100%;
   max-height: 86dvh;
   overflow-y: auto;
@@ -121,7 +121,7 @@ dialog[open]:not([data-closing]) {
 }
 
 dialog[open]:not([data-closing])::backdrop {
-  background-color: rgba(6, 2, 1, 0.7);
+  background-color: rgba(6, 2, 1, 0.72);
 }
 
 @starting-style {
@@ -196,13 +196,14 @@ body.ios-immersive .hud-bottom {
   pointer-events: auto;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: 999px;
-  padding: 7px 14px 10px;
+  padding: 6px 12px 10px;
   backdrop-filter: blur(14px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.48);
+  max-width: 98dvw;
 }
 
 .routine-progress-track {
@@ -227,9 +228,9 @@ body.ios-immersive .hud-bottom {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(245, 185, 66, 0.45);
   color: var(--gold-bright);
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 800;
-  padding: 5px 11px;
+  padding: 4px 10px;
   border-radius: 999px;
   cursor: pointer;
   white-space: nowrap;
@@ -240,37 +241,44 @@ body.ios-immersive .hud-bottom {
   transform: scale(0.95);
 }
 
+/* Patience Hearts Strip (❤️❤️❤️) */
+.hearts-strip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.h-icon {
+  font-size: 0.82rem;
+  line-height: 1;
+  transition: transform 0.25s ease, opacity 0.25s ease, filter 0.25s ease;
+}
+
+.h-icon.lost {
+  opacity: 0.25;
+  filter: grayscale(1);
+  transform: scale(0.8);
+}
+
 .scoop-dots {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .s-dot {
-  width: 12px;
-  height: 12px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  transition: transform 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  transition: transform 0.25s ease, background-color 0.25s ease, box-shadow 0.25s ease;
 }
 
-.s-dot.dot-vanilla.active {
-  background: #fff8eb;
-  box-shadow: 0 0 8px #fff8eb;
-  transform: scale(1.15);
-}
-
-.s-dot.dot-pistachio.active {
-  background: #76c84d;
-  box-shadow: 0 0 8px #76c84d;
-  transform: scale(1.15);
-}
-
-.s-dot.dot-choco.active {
-  background: #9c5221;
-  box-shadow: 0 0 8px #9c5221;
-  transform: scale(1.15);
+.s-dot.active {
+  background: var(--dot-color, #fff8eb);
+  box-shadow: 0 0 8px var(--dot-color, #fff8eb);
+  transform: scale(1.18);
 }
 
 .s-dot.dot-crown {
@@ -278,7 +286,7 @@ body.ios-immersive .hud-bottom {
   height: auto;
   background: transparent;
   border: none;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: rgba(255, 255, 255, 0.22);
 }
 
@@ -289,11 +297,11 @@ body.ios-immersive .hud-bottom {
 }
 
 .score-minimal {
-  font-size: 1.02rem;
+  font-size: 0.96rem;
   font-weight: 900;
   color: #fff;
   font-variant-numeric: tabular-nums;
-  min-width: 34px;
+  min-width: 30px;
   text-align: end;
 }
 
@@ -301,9 +309,9 @@ body.ios-immersive .hud-bottom {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.24);
   color: var(--cream);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 800;
-  padding: 4px 9px;
+  padding: 4px 8px;
   border-radius: 99px;
   cursor: pointer;
   white-space: nowrap;
@@ -313,15 +321,15 @@ body.ios-immersive .hud-bottom {
   background: transparent;
   border: none;
   color: var(--cream);
-  font-size: 1.05rem;
+  font-size: 1.02rem;
   cursor: pointer;
-  padding: 2px 4px;
+  padding: 2px 3px;
 }
 
 /* Visual-First Compact Gesture Pill at Bottom */
 .hud-bottom {
   position: absolute;
-  bottom: max(env(safe-area-inset-bottom, 16px), 16px);
+  bottom: max(env(safe-area-inset-bottom, 14px), 14px);
   inset-inline: 0;
   z-index: 15;
   display: flex;
@@ -333,10 +341,10 @@ body.ios-immersive .hud-bottom {
 .gesture-hud-card {
   position: relative;
   overflow: hidden;
-  background: rgba(14, 7, 4, 0.86);
+  background: rgba(14, 7, 4, 0.88);
   border: 2px solid rgba(74, 222, 128, 0.75);
   border-radius: 999px;
-  padding: 8px 22px 11px;
+  padding: 7px 20px 11px;
   backdrop-filter: blur(14px);
   display: inline-flex;
   align-items: center;
@@ -366,6 +374,20 @@ body.ios-immersive .hud-bottom {
   gap: 10px;
 }
 
+.cue-text-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.15;
+}
+
+.trick-sub-label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--gold-bright);
+  opacity: 0.9;
+}
+
 .gesture-pictogram {
   font-size: 1.38rem;
   line-height: 1;
@@ -383,9 +405,9 @@ body.ios-immersive .hud-bottom {
 }
 
 .action-mode-label {
-  font-size: 0.94rem;
+  font-size: 0.9rem;
   font-weight: 900;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   color: #86efac;
   text-transform: uppercase;
 }
@@ -423,50 +445,249 @@ body.ios-immersive .hud-bottom {
   background: var(--gold);
 }
 
-/* Clean Bottom-Sheet Start Overlay */
+/* Clean Bottom-Sheet Start Overlay with Non-Textual Order Picker & 10 Stages */
 .start-sheet-backdrop {
   position: absolute;
   inset: 0;
   z-index: 30;
-  background: linear-gradient(180deg, transparent 0%, rgba(10, 4, 2, 0.35) 50%, rgba(10, 4, 2, 0.92) 100%);
+  background: linear-gradient(180deg, transparent 0%, rgba(10, 4, 2, 0.28) 42%, rgba(10, 4, 2, 0.94) 100%);
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
   align-items: center;
-  padding: 16px;
-  padding-bottom: max(env(safe-area-inset-bottom, 22px), 22px);
+  padding: 10px 12px;
+  padding-bottom: max(env(safe-area-inset-bottom, 16px), 16px);
+  pointer-events: none;
 }
 
 .start-sheet-card {
-  background: rgba(24, 11, 7, 0.94);
+  pointer-events: auto;
+  background: rgba(22, 10, 6, 0.95);
   border: 1.5px solid var(--gold);
-  border-radius: 24px;
-  padding: 18px 20px;
-  width: min(100%, 380px);
+  border-radius: 22px;
+  padding: 13px 15px;
+  width: min(100%, 420px);
   text-align: center;
   backdrop-filter: blur(14px);
-  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.75);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.78);
+}
+
+.sheet-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 9px;
 }
 
 .sheet-title {
-  font-size: clamp(1.35rem, 1rem + 2.2vw, 1.65rem);
+  font-size: clamp(1.1rem, 0.9rem + 1.5vw, 1.32rem);
   font-weight: 900;
   color: var(--gold-bright);
-  margin-bottom: 12px;
+}
+
+.rank-pill {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 4px 9px;
+  border-radius: 99px;
+  background: rgba(245, 185, 66, 0.16);
+  border: 1px solid rgba(245, 185, 66, 0.4);
+  color: var(--gold-bright);
+  white-space: nowrap;
+}
+
+/* Non-Textual Visual Order Picker: Scoop Count (2/3/4) + Live Cone Stack + 6 Flavor Orbs */
+.visual-order-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  padding: 7px 9px;
+  margin-bottom: 9px;
+}
+
+.scoop-count-picker {
+  display: flex;
+  gap: 4px;
+}
+
+.scoop-cnt-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1.5px solid rgba(255, 255, 255, 0.16);
+  color: var(--cream);
+  border-radius: 12px;
+  padding: 5px 7px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 36px;
+  transition: transform 0.12s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.scoop-cnt-btn.active {
+  background: rgba(245, 185, 66, 0.25);
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  transform: translateY(-1px);
+}
+
+.sc-cones {
+  font-size: 0.92rem;
+  line-height: 1;
+}
+
+.sc-dots {
+  display: flex;
+  gap: 2px;
+}
+
+.sc-dots .d {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--gold-bright);
+  display: inline-block;
+}
+
+.sc-num {
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+/* Live Visual Preview of Chosen Scoops on Cone */
+.selected-cone-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 32px;
+  height: 46px;
+  padding: 2px 4px;
+  background: rgba(0, 0, 0, 0.28);
+  border-radius: 12px;
+  border: 1px dashed rgba(245, 185, 66, 0.4);
+}
+
+.preview-scoops {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  margin-bottom: -4px;
+}
+
+.prev-ball {
+  width: 14px;
+  height: 11px;
+  border-radius: 50%;
+  margin-top: -3px;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.45);
+}
+
+.preview-wafer {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.flavor-orb-picker {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.flavor-orb-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--orb-bg, #fff8e7);
+  border: 2px solid var(--orb-border, #f5b942);
+  font-size: 0.78rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+  transition: transform 0.12s ease, box-shadow 0.15s ease;
+}
+
+.flavor-orb-btn:active,
+.flavor-orb-btn.selected {
+  transform: scale(1.14);
+  box-shadow: 0 0 10px var(--orb-border, #f5b942);
+}
+
+.flavor-orb-btn.dice-orb {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+/* 10-Stage Campaign Grid (5x2) */
+.stage-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+  margin-bottom: 9px;
+}
+
+.stage-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--cream);
+  border-radius: 11px;
+  padding: 5px 3px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  transition: transform 0.12s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.stage-chip.active {
+  background: rgba(245, 185, 66, 0.26);
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  transform: translateY(-1px);
+}
+
+.stage-chip.locked {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.st-top {
+  font-size: 0.7rem;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.st-stars {
+  font-size: 0.56rem;
+  min-height: 0.65rem;
+  line-height: 1;
 }
 
 .legend-pills {
   display: flex;
-  gap: 6px;
+  gap: 5px;
   justify-content: center;
   flex-wrap: wrap;
-  margin-bottom: 14px;
+  margin-bottom: 9px;
 }
 
 .leg-pill {
-  font-size: 0.74rem;
+  font-size: 0.68rem;
   font-weight: 800;
-  padding: 5px 10px;
+  padding: 4px 9px;
   border-radius: 99px;
 }
 
@@ -488,49 +709,21 @@ body.ios-immersive .hud-bottom {
   color: #fde68a;
 }
 
-.usta-selector {
+.start-actions-row {
   display: flex;
   gap: 6px;
-  justify-content: center;
-  margin-bottom: 14px;
-}
-
-.usta-chip {
-  flex: 1;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  color: var(--text-muted);
-  font-size: 0.74rem;
-  font-weight: 800;
-  padding: 8px 6px;
-  border-radius: 12px;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  transition: transform 0.12s ease, background-color 0.15s ease, border-color 0.15s ease;
-}
-
-.usta-chip.active {
-  background: rgba(245, 185, 66, 0.22);
-  border-color: var(--gold);
-  color: var(--gold-bright);
-}
-
-.u-stars {
-  font-size: 0.65rem;
-  min-height: 0.8rem;
+  align-items: stretch;
 }
 
 .play-giant-btn {
+  flex: 1;
   width: 100%;
   background: linear-gradient(135deg, var(--gold-bright), #e09112);
   color: #1b0a04;
   font-weight: 900;
-  font-size: 1rem;
-  padding: 13px 20px;
-  border-radius: 16px;
+  font-size: 0.95rem;
+  padding: 11px 16px;
+  border-radius: 14px;
   border: none;
   cursor: pointer;
   transition: transform 0.12s ease;
@@ -544,17 +737,88 @@ body.ios-immersive .hud-bottom {
   background: rgba(255, 255, 255, 0.08);
   color: var(--cream);
   font-weight: 800;
-  font-size: 0.9rem;
-  padding: 13px 16px;
-  border-radius: 16px;
+  font-size: 0.82rem;
+  padding: 11px 12px;
+  border-radius: 14px;
   border: 1px solid var(--glass-border);
   cursor: pointer;
+  white-space: nowrap;
 }
 
-/* Modals (Result & Settings) */
+.secondary-pill-btn.compact-btn {
+  padding: 10px 10px;
+  font-size: 0.76rem;
+}
+
+/* Modals (Result, Tricks Catalog & Settings) */
 .modal-card {
-  padding: 20px;
+  padding: 18px;
   text-align: center;
+}
+
+/* 15 Tricks Catalog List */
+.tricks-catalog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 56dvh;
+  overflow-y: auto;
+  margin-block: 12px;
+  padding-right: 4px;
+  text-align: start;
+}
+
+.trick-item-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(245, 185, 66, 0.28);
+  border-radius: 14px;
+  padding: 9px 11px;
+}
+
+.trick-item-row.undiscovered {
+  opacity: 0.68;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.trick-item-icon {
+  font-size: 1.35rem;
+  line-height: 1;
+  min-width: 32px;
+  text-align: center;
+  padding-top: 2px;
+}
+
+.trick-item-body {
+  flex: 1;
+}
+
+.trick-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.trick-item-title {
+  font-size: 0.84rem;
+  font-weight: 800;
+  color: var(--gold-bright);
+}
+
+.trick-item-diff {
+  font-size: 0.66rem;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.trick-item-desc {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  line-height: 1.32;
 }
 
 .lang-grid {
@@ -658,11 +922,11 @@ body.ios-immersive .hud-bottom {
 }
 
 .result-icon-large {
-  font-size: 2.8rem;
+  font-size: 2.6rem;
 }
 
 .result-title {
-  font-size: 1.35rem;
+  font-size: 1.25rem;
   font-weight: 900;
   margin-bottom: 4px;
 }
@@ -674,7 +938,7 @@ body.ios-immersive .hud-bottom {
 }
 
 .stars-row {
-  font-size: 1.6rem;
+  font-size: 1.55rem;
   letter-spacing: 5px;
   margin-bottom: 12px;
 }
@@ -702,7 +966,7 @@ body.ios-immersive .hud-bottom {
 
 .modal-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
 .hidden {
@@ -711,17 +975,23 @@ body.ios-immersive .hud-bottom {
 
 @container (max-width: 420px) {
   .top-minimal-pill {
-    gap: 6px;
-    padding: 6px 10px 9px;
+    gap: 5px;
+    padding: 5px 9px 8px;
   }
 
   .usta-badge-btn {
-    font-size: 0.72rem;
-    padding: 4px 8px;
+    font-size: 0.68rem;
+    padding: 4px 7px;
   }
 
   .lang-mini-btn {
-    font-size: 0.68rem;
-    padding: 4px 7px;
+    font-size: 0.65rem;
+    padding: 3px 6px;
+  }
+
+  .flavor-orb-btn {
+    width: 25px;
+    height: 25px;
+    font-size: 0.72rem;
   }
 }

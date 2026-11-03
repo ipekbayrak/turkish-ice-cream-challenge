@@ -12,12 +12,12 @@
   <meta name="apple-mobile-web-app-title" content="Maraş Dondurma" />
 
   <title>Maraş Dondurmacısı 3D Şov — Turkish Ice Cream Challenge</title>
-  <meta name="description" content="3B Birinci Şahıs (POV) Kahramanmaraş Dondurmacısı Şovu! Ustaların boş külah ve peçete tuzaklarını aş, 3 top bol fıstıklı dondurmayı kap!" />
+  <meta name="description" content="3B Birinci Şahıs (POV) Kahramanmaraş Dondurmacısı Şovu! 10 seviye, 15 gerçekçi Maraş dondurma hilesi, çift külah, kalıptan 5 kiloluk dev dondurma ve havada takla şovu!" />
 
   <!-- Open Graph / WhatsApp / iMessage Rich Link Preview -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="🍦 Maraş Dondurmacısı 3D Şov — Turkish Ice Cream Challenge" />
-  <meta property="og:description" content="Ustanın boş külah ve peçete şakalarına kanmadan 3 top fıstıklı Maraş dondurmasını kapabilir misin? iPhone ve Android'de hemen oyna!" />
+  <meta property="og:description" content="Ustanın çift külah, ters çevirme, dev kalıp ve peçete şakalarına kanmadan dondurmayı kapabilir misin? iPhone ve Android'de hemen oyna!" />
   <meta property="og:image" content="https://ipekbayrak.com.tr/dondurma/og-preview.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="🍦 Maraş Dondurmacısı 3D Şov" />
@@ -34,22 +34,30 @@
     <canvas id="game-canvas"></canvas>
     <canvas id="trail-canvas" aria-hidden="true"></canvas>
 
-    <!-- Sleek Top Pill with Integrated Routine Progress -->
+    <!-- Sleek Top Pill with Integrated Routine Progress, Patience Hearts & Dynamic Scoops -->
     <header class="hud-top">
       <div class="top-minimal-pill">
-        <button type="button" id="btn-switch-usta" class="usta-badge-btn" title="Switch Master">
-          👨‍🍳 <span id="hud-level">Çırak Kadir</span> ↻
+        <button type="button" id="btn-switch-usta" class="usta-badge-btn" title="Stage &amp; Master">
+          👨‍🍳 <span id="hud-level">1 • Çırak Kadir</span> ↻
         </button>
 
+        <div class="hearts-strip" id="hud-hearts" aria-label="Patience Hearts">
+          <span class="h-icon active">❤️</span>
+          <span class="h-icon active">❤️</span>
+          <span class="h-icon active">❤️</span>
+        </div>
+
         <div class="scoop-dots" aria-label="Scoops">
-          <span class="s-dot dot-vanilla" id="dot-1" title="1"></span>
-          <span class="s-dot dot-pistachio" id="dot-2" title="2"></span>
-          <span class="s-dot dot-choco" id="dot-3" title="3"></span>
-          <span class="s-dot dot-crown" id="dot-4" title="4">★</span>
+          <span class="s-dot" id="dot-1" title="1"></span>
+          <span class="s-dot" id="dot-2" title="2"></span>
+          <span class="s-dot" id="dot-3" title="3"></span>
+          <span class="s-dot" id="dot-4" title="4"></span>
+          <span class="s-dot dot-crown" id="dot-crown" title="Pistachio">★</span>
         </div>
 
         <div class="score-minimal" id="hud-score">0</div>
 
+        <button type="button" id="btn-tricks-top" class="mini-audio-btn" title="15 Tricks">🎪</button>
         <button type="button" id="btn-lang" class="lang-mini-btn" title="Language &amp; Settings">
           🇹🇷 TR ⚙️
         </button>
@@ -67,7 +75,10 @@
       <div class="gesture-hud-card theme-green" id="hud-card">
         <div class="visual-cue-row">
           <span class="gesture-pictogram" id="hud-gesture-icon">🤚⬆️</span>
-          <span class="action-mode-label" id="hud-action-badge">UZAT &amp; TUT</span>
+          <div class="cue-text-stack">
+            <span class="action-mode-label" id="hud-action-badge">UZAT &amp; TUT</span>
+            <small class="trick-sub-label" id="hud-trick-title"></small>
+          </div>
         </div>
         <div class="stage-timer-track" aria-hidden="true">
           <div class="stage-timer-fill" id="hud-stage-fill"></div>
@@ -75,38 +86,88 @@
       </div>
     </footer>
 
-    <!-- Visual Start Card -->
+    <!-- Visual Start Card with Non-Textual Order Picker (Scoop Count + 6 Flavors) & 10-Stage Selector -->
     <div id="start-overlay" class="start-sheet-backdrop">
       <div class="start-sheet-card">
-        <h1 class="sheet-title" id="start-title">🍦 Maraş Dondurma</h1>
+        <div class="sheet-header-row">
+          <h1 class="sheet-title" id="start-title">🍦 Maraş Dondurma</h1>
+          <div class="rank-pill" id="player-rank-badge">🏅 Acemi Turist • ⭐ 0/30</div>
+        </div>
+
+        <!-- Non-Textual Visual Order Picker: How Many Scoops (2/3/4) & Which Flavors? -->
+        <div class="visual-order-bar" aria-label="Visual Ice Cream Order">
+          <!-- Scoop Count Icons (No Text Needed) -->
+          <div class="scoop-count-picker" role="group" aria-label="Scoop Count">
+            <button type="button" class="scoop-cnt-btn" data-scoops="2" title="2 Scoops">
+              <span class="sc-cones">🍦</span>
+              <span class="sc-dots"><i class="d"></i><i class="d"></i></span>
+              <strong class="sc-num">2</strong>
+            </button>
+            <button type="button" class="scoop-cnt-btn active" data-scoops="3" title="3 Scoops">
+              <span class="sc-cones">🍦</span>
+              <span class="sc-dots"><i class="d"></i><i class="d"></i><i class="d"></i></span>
+              <strong class="sc-num">3</strong>
+            </button>
+            <button type="button" class="scoop-cnt-btn" data-scoops="4" title="4 Scoops">
+              <span class="sc-cones">🍦</span>
+              <span class="sc-dots"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i></span>
+              <strong class="sc-num">4</strong>
+            </button>
+          </div>
+
+          <!-- Selected Cone Stack Visual Preview -->
+          <div class="selected-cone-preview" id="selected-cone-preview" title="Selected Flavors">
+            <div class="preview-scoops" id="preview-scoops-stack"></div>
+            <span class="preview-wafer">🔻</span>
+          </div>
+
+          <!-- 6 Copper Tub Flavor Color Orbs + Random Dice -->
+          <div class="flavor-orb-picker" id="flavor-orb-picker" role="group" aria-label="Flavor Colors">
+            <button type="button" class="flavor-orb-btn" data-flavor="0" style="--orb-bg:#fff8e7; --orb-border:#f5b942;" title="Vanilla">🍦</button>
+            <button type="button" class="flavor-orb-btn" data-flavor="1" style="--orb-bg:#76c84d; --orb-border:#4ade80;" title="Pistachio">💚</button>
+            <button type="button" class="flavor-orb-btn" data-flavor="2" style="--orb-bg:#7f4224; --orb-border:#d97706;" title="Chocolate">🍫</button>
+            <button type="button" class="flavor-orb-btn" data-flavor="3" style="--orb-bg:#e63973; --orb-border:#fb7185;" title="Mulberry">🫐</button>
+            <button type="button" class="flavor-orb-btn" data-flavor="4" style="--orb-bg:#f4a236; --orb-border:#fde047;" title="Honey Almond">🍯</button>
+            <button type="button" class="flavor-orb-btn" data-flavor="5" style="--orb-bg:#56cfe1; --orb-border:#67e8f9;" title="Mastic">💎</button>
+            <button type="button" class="flavor-orb-btn dice-orb" id="btn-random-flavors" title="Randomize">🎲</button>
+          </div>
+        </div>
+
+        <!-- 10-Stage Campaign Progression Grid -->
+        <div class="stage-grid" id="stage-selector" role="group" aria-label="10 Stages"></div>
 
         <div class="legend-pills" aria-hidden="true">
           <span class="leg-pill leg-green" id="leg-reach">🟢 🤚⬆️ Uzat</span>
           <span class="leg-pill leg-red" id="leg-pull">🔴 🤚⬇️ Çek</span>
-          <span class="leg-pill leg-amber" id="leg-flick">🧻 🤚💨 Savur</span>
+          <span class="leg-pill leg-amber" id="leg-flick">✂️ 🤚↔️ Kes / Savur</span>
         </div>
 
-        <div class="usta-selector" role="group" aria-label="Master Selection">
-          <button type="button" class="usta-chip active" data-usta="0">
-            <span class="u-name" id="uname-0">Çırak Kadir</span>
-            <small class="u-stars" id="stars-0"></small>
+        <div class="start-actions-row">
+          <button type="button" id="btn-start-tutorial" class="secondary-pill-btn compact-btn">
+            🎓 10sn Eğitim
           </button>
-          <button type="button" class="usta-chip" data-usta="1">
-            <span class="u-name" id="uname-1">Pala Usta</span>
-            <small class="u-stars" id="stars-1"></small>
+          <button type="button" id="btn-open-tricks" class="secondary-pill-btn compact-btn">
+            🎪 15 Hile
           </button>
-          <button type="button" class="usta-chip" data-usta="2">
-            <span class="u-name" id="uname-2">Cezmi Dede</span>
-            <small class="u-stars" id="stars-2"></small>
+          <button type="button" id="btn-start-game" class="play-giant-btn">
+            ▶ ŞOVA BAŞLA
           </button>
         </div>
-
-        <button type="button" id="btn-start-game" class="play-giant-btn">
-          ▶ ŞOVA BAŞLA
-        </button>
       </div>
     </div>
   </div>
+
+  <!-- 15 Tricks Catalog Modal (<dialog>) -->
+  <dialog id="dialog-tricks" closedby="any" aria-labelledby="tricks-modal-title">
+    <div class="modal-card tricks-modal-card">
+      <div class="result-badge" id="tricks-count-badge">🎪 2 / 15</div>
+      <h2 id="tricks-modal-title" class="result-title">🎪 Maraş Dondurmacısı Hile Listesi (15 Hile)</h2>
+      <div class="tricks-catalog-list" id="tricks-catalog-list"></div>
+      <button type="button" id="btn-close-tricks" class="play-giant-btn">
+        Tamam
+      </button>
+    </div>
+  </dialog>
 
   <!-- Language & Settings Modal (<dialog>) -->
   <dialog id="dialog-settings" closedby="any" aria-labelledby="settings-title">
@@ -161,7 +222,7 @@
 
       <div class="settings-footer-links">
         <a href="./privacy-policy.html" target="_blank" rel="noopener" id="link-privacy" class="privacy-link">
-          🔒 Privacy Policy • v1.0.0
+          🔒 Privacy Policy • v2.0.0
         </a>
       </div>
     </div>
@@ -197,22 +258,25 @@
       <div class="result-badge" id="result-badge">SONUÇ</div>
       <div class="result-icon-large" id="result-icon">🏆</div>
       <h2 id="result-title" class="result-title">DONDURMAYI KAPTIN!</h2>
-      <p id="result-desc" class="result-desc">3 top bol fıstıklı Maraş dondurması senin!</p>
+      <p id="result-desc" class="result-desc">Bol fıstıklı Maraş dondurması senin!</p>
 
       <div class="stars-row" id="result-stars">⭐⭐⭐</div>
 
       <div class="stats-row-clean">
         <div><span id="lbl-score">Puan</span><strong id="res-score">1,200</strong></div>
         <div><span id="lbl-best">Rekor</span><strong id="res-best">1,200</strong></div>
-        <div><span id="lbl-cone">Sonuç</span><strong id="res-scoops">3 Top + Fıstık</strong></div>
+        <div><span id="lbl-cone">Sonuç</span><strong id="res-scoops">3 🍦 + 🥜</strong></div>
       </div>
 
       <div class="modal-actions">
-        <button type="button" id="btn-next-round" class="play-giant-btn" autofocus>
-          ▶ SONRAKİ USTA
+        <button type="button" id="btn-menu-round" class="secondary-pill-btn">
+          🏠 Menü
         </button>
         <button type="button" id="btn-retry-round" class="secondary-pill-btn">
-          🔄 TEKRAR
+          🔄 Tekrar
+        </button>
+        <button type="button" id="btn-next-round" class="play-giant-btn" autofocus>
+          ▶ SONRAKİ SEVİYE
         </button>
       </div>
     </div>

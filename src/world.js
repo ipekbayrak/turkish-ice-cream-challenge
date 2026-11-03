@@ -4,6 +4,7 @@ import {
   StretchyDondurmaStrand,
   RigidBodyManager,
 } from './physics.js';
+import { ICE_CREAM_FLAVORS } from './protocol.js';
 
 // Polyfill CanvasRenderingContext2D.prototype.roundRect for older iOS Safari (< 16.0)
 if (
@@ -12,7 +13,11 @@ if (
 ) {
   CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, radii) {
     const r = Math.min(
-      typeof radii === 'number' ? radii : Array.isArray(radii) ? radii[0] || 0 : 0,
+      typeof radii === 'number'
+        ? radii
+        : Array.isArray(radii)
+          ? radii[0] || 0
+          : 0,
       w * 0.5,
       h * 0.5
     );
@@ -31,9 +36,8 @@ export class GameWorld {
     this.canvas = canvas;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x140805);
-    this.scene.fog = new THREE.FogExp2(0x140805, 0.082);
+    this.scene.fog = new THREE.FogExp2(0x140805, 0.072);
 
-    // POV First-Person Tourist Camera
     this.camera = new THREE.PerspectiveCamera(
       55,
       window.innerWidth / window.innerHeight,
@@ -50,27 +54,31 @@ export class GameWorld {
       powerPreference: 'high-performance',
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.18;
+    this.renderer.toneMappingExposure = 1.2;
 
     this.bells = [];
     this.lanterns = [];
     this.particles = [];
     this.frostMotes = [];
+    this.spectators = [];
+    this.tubMeshes = [];
 
     // Smooth, natural-weight 3D Physics Solvers
     this.handSpring = new SpringVec3(0.22, 1.08, 0.62, 135, 18);
-    this.coneSpring = new SpringVec3(0, 1.24, 0.22, 68, 15);
+    this.coneSpring = new SpringVec3(0, 1.24, 0.22, 72, 15);
     this.scoopJiggleSpring = new SpringVec3(0, 0, 0, 220, 14);
-    this.leftPropSpring = new SpringVec3(0.24, 1.22, -0.25, 85, 16);
+    this.leftPropSpring = new SpringVec3(0.24, 1.22, -0.25, 88, 16);
     this.prevConePos = new THREE.Vector3(0, 1.24, 0.22);
 
     this.blinkTimer = 2.5;
     this.isBlinking = false;
     this.vendorMood = 'smile';
+    this.spectatorReactionTimer = 0;
+    this.spectatorReactionType = 'idle';
 
     this._createTextures();
     this._setupLights();
@@ -78,10 +86,11 @@ export class GameWorld {
     this._buildIceCreamCart();
     this._buildPaddleAndCones();
     this._buildVendor();
+    this._buildBazaarSpectators();
     this._buildTouristPOVHand();
     this._buildDiegetic3DCues();
 
-    this.stretchyStrand = new StretchyDondurmaStrand(this.scene, 10);
+    this.stretchyStrand = new StretchyDondurmaStrand(this.scene, 14);
     this.rigidBodies = new RigidBodyManager(this.scene, onPhysicsBounce);
 
     window.addEventListener('resize', () => this.onResize());
@@ -166,6 +175,33 @@ export class GameWorld {
     this.waffleTexture.wrapT = THREE.RepeatWrapping;
     this.waffleTexture.colorSpace = THREE.SRGBColorSpace;
 
+    // Darker crispy waffle texture for the OUTER cone so double-cones are unmistakably distinct!
+    const outerConeCanvas = document.createElement('canvas');
+    outerConeCanvas.width = 256;
+    outerConeCanvas.height = 256;
+    const octx = outerConeCanvas.getContext('2d');
+    octx.fillStyle = '#e5a45b';
+    octx.fillRect(0, 0, 256, 256);
+    octx.strokeStyle = '#7c4212';
+    octx.lineWidth = 6;
+    for (let i = -256; i < 512; i += 22) {
+      octx.beginPath();
+      octx.moveTo(i, 0);
+      octx.lineTo(i + 256, 256);
+      octx.stroke();
+      octx.beginPath();
+      octx.moveTo(i + 256, 0);
+      octx.lineTo(i, 256);
+      octx.stroke();
+    }
+    // Bright gold band at top rim of outer cone
+    octx.fillStyle = '#ffd166';
+    octx.fillRect(0, 0, 256, 22);
+    this.outerWaffleTexture = new THREE.CanvasTexture(outerConeCanvas);
+    this.outerWaffleTexture.wrapS = THREE.RepeatWrapping;
+    this.outerWaffleTexture.wrapT = THREE.RepeatWrapping;
+    this.outerWaffleTexture.colorSpace = THREE.SRGBColorSpace;
+
     const floorCanvas = document.createElement('canvas');
     floorCanvas.width = 512;
     floorCanvas.height = 512;
@@ -192,24 +228,24 @@ export class GameWorld {
   }
 
   _setupLights() {
-    const ambient = new THREE.AmbientLight(0xffe2bd, 0.86);
+    const ambient = new THREE.AmbientLight(0xffe4c4, 0.92);
     this.scene.add(ambient);
 
-    const keyLight = new THREE.SpotLight(0xffdfa8, 4.1);
-    keyLight.position.set(0.8, 3.6, 1.8);
-    keyLight.angle = Math.PI / 2.8;
+    const keyLight = new THREE.SpotLight(0xffe1ad, 4.3);
+    keyLight.position.set(0.8, 3.6, 1.9);
+    keyLight.angle = Math.PI / 2.6;
     keyLight.penumbra = 0.55;
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.width = 1024;
     keyLight.shadow.mapSize.height = 1024;
     this.scene.add(keyLight);
 
-    const rimLight = new THREE.PointLight(0xff7b29, 2.3, 7);
-    rimLight.position.set(-1.4, 2.3, -1.9);
+    const rimLight = new THREE.PointLight(0xff7b29, 2.4, 8);
+    rimLight.position.set(-1.6, 2.3, -1.8);
     this.scene.add(rimLight);
 
-    const cyanLight = new THREE.PointLight(0x2ec4b6, 1.4, 6);
-    cyanLight.position.set(1.6, 2.2, -1.5);
+    const cyanLight = new THREE.PointLight(0x2ec4b6, 1.5, 7);
+    cyanLight.position.set(1.7, 2.2, -1.5);
     this.scene.add(cyanLight);
   }
 
@@ -225,6 +261,31 @@ export class GameWorld {
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     this.scene.add(floor);
+
+    // Traditional Anatolian Carpet Runner in front of the Ice Cream Cart
+    const rugGroup = new THREE.Group();
+    rugGroup.position.set(0, 0.004, 0.35);
+    const rugOuter = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.2, 1.15),
+      new THREE.MeshStandardMaterial({ color: 0x7f1d1d, roughness: 0.9 })
+    );
+    rugOuter.rotation.x = -Math.PI / 2;
+    rugGroup.add(rugOuter);
+    const rugBorder = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.98, 0.95),
+      new THREE.MeshStandardMaterial({ color: 0xf5b942, roughness: 0.85 })
+    );
+    rugBorder.rotation.x = -Math.PI / 2;
+    rugBorder.position.y = 0.002;
+    rugGroup.add(rugBorder);
+    const rugInner = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.82, 0.8),
+      new THREE.MeshStandardMaterial({ color: 0x4a0e17, roughness: 0.9 })
+    );
+    rugInner.rotation.x = -Math.PI / 2;
+    rugInner.position.y = 0.004;
+    rugGroup.add(rugInner);
+    this.scene.add(rugGroup);
 
     const stoneMat = new THREE.MeshStandardMaterial({
       color: 0x3b2318,
@@ -245,11 +306,12 @@ export class GameWorld {
     headerBeam.position.set(0, 3.6, -3.2);
     this.scene.add(headerBeam);
 
-    const lanternColors = [0xff595e, 0xffca3a, 0x2ec4b6, 0xff924c, 0x8ac926];
+    // Warm Bazaar Hanging Mosaic Lanterns
+    const lanternColors = [0xff595e, 0xffca3a, 0x2ec4b6, 0xff924c, 0x8ac926, 0xc77dff];
     lanternColors.forEach((col, idx) => {
-      const lx = (idx - 2) * 1.15;
-      const ly = 2.68 + (idx % 2) * 0.18;
-      const lz = -1.75 - (idx % 2) * 0.4;
+      const lx = (idx - 2.5) * 1.02;
+      const ly = 2.68 + (idx % 2) * 0.16;
+      const lz = -1.72 - (idx % 2) * 0.38;
 
       const lGroup = new THREE.Group();
       lGroup.position.set(lx, ly, lz);
@@ -261,19 +323,26 @@ export class GameWorld {
       cord.position.y = 0.35;
       lGroup.add(cord);
 
+      const cap = new THREE.Mesh(
+        new THREE.ConeGeometry(0.09, 0.06, 12),
+        new THREE.MeshStandardMaterial({ color: 0xf5b942, metalness: 0.8, roughness: 0.25 })
+      );
+      cap.position.y = 0.13;
+      lGroup.add(cap);
+
       const globe = new THREE.Mesh(
-        new THREE.SphereGeometry(0.14, 16, 12),
+        new THREE.SphereGeometry(0.135, 16, 12),
         new THREE.MeshStandardMaterial({
           color: col,
           emissive: col,
-          emissiveIntensity: 0.85,
+          emissiveIntensity: 0.88,
           roughness: 0.2,
         })
       );
       lGroup.add(globe);
 
       this.scene.add(lGroup);
-      this.lanterns.push({ group: lGroup, phase: idx * 1.3 });
+      this.lanterns.push({ group: lGroup, phase: idx * 1.15 });
     });
   }
 
@@ -298,7 +367,7 @@ export class GameWorld {
     });
 
     const baseMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(1.72, 0.92, 0.68),
+      new THREE.BoxGeometry(1.76, 0.92, 0.68),
       copperMat
     );
     baseMesh.position.y = 0.46;
@@ -307,7 +376,7 @@ export class GameWorld {
     this.cartGroup.add(baseMesh);
 
     const signPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.56, 0.76),
+      new THREE.PlaneGeometry(1.58, 0.76),
       new THREE.MeshStandardMaterial({
         map: this.cartSignTexture,
         roughness: 0.35,
@@ -318,23 +387,26 @@ export class GameWorld {
     this.cartGroup.add(signPlane);
 
     const counterTop = new THREE.Mesh(
-      new THREE.BoxGeometry(1.82, 0.06, 0.76),
+      new THREE.BoxGeometry(1.86, 0.06, 0.76),
       brassMat
     );
     counterTop.position.y = 0.94;
     counterTop.receiveShadow = true;
     this.cartGroup.add(counterTop);
 
-    this.tubPositions = [
-      { x: -0.48, color: 0xfff6e0, worldPos: new THREE.Vector3(-0.48, 0.96, -0.36) },
-      { x: -0.16, color: 0x7bc950, worldPos: new THREE.Vector3(-0.16, 0.96, -0.36) },
-      { x: 0.16, color: 0x4f2814, worldPos: new THREE.Vector3(0.16, 0.96, -0.36) },
-      { x: 0.48, color: 0xff758f, worldPos: new THREE.Vector3(0.48, 0.96, -0.36) },
-    ];
+    // 6 Authentic Kahramanmaraş Copper Ice Cream Tubs
+    this.tubPositions = ICE_CREAM_FLAVORS.map((flav) => ({
+      index: flav.index,
+      id: flav.id,
+      x: flav.xOffset,
+      color: flav.colorHex,
+      worldPos: new THREE.Vector3(flav.xOffset, 0.96, -0.36),
+    }));
 
+    this.tubMeshes = [];
     this.tubPositions.forEach((tub) => {
       const rim = new THREE.Mesh(
-        new THREE.TorusGeometry(0.13, 0.018, 12, 24),
+        new THREE.TorusGeometry(0.105, 0.015, 12, 24),
         brassMat
       );
       rim.rotation.x = Math.PI / 2;
@@ -342,22 +414,39 @@ export class GameWorld {
       this.cartGroup.add(rim);
 
       const iceMass = new THREE.Mesh(
-        new THREE.SphereGeometry(0.12, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.55),
-        new THREE.MeshStandardMaterial({ color: tub.color, roughness: 0.42 })
+        new THREE.SphereGeometry(
+          0.098,
+          18,
+          12,
+          0,
+          Math.PI * 2,
+          0,
+          Math.PI * 0.58
+        ),
+        new THREE.MeshStandardMaterial({ color: tub.color, roughness: 0.36 })
       );
       iceMass.position.set(tub.x, 0.94, 0.02);
+      iceMass.userData.flavorIndex = tub.index;
       this.cartGroup.add(iceMass);
+      this.tubMeshes.push(iceMass);
     });
 
-    // Subtle Cold Frost Mist Particles rising from the ice cream tubs
+    // Cold Frost Mist Particles rising from the 6 copper tubs
     const mistMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
       opacity: 0.18,
     });
-    for (let m = 0; m < 10; m++) {
-      const mote = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8), mistMat);
-      mote.position.set((Math.random() - 0.5) * 1.1, 0.98 + Math.random() * 0.2, -0.36);
+    for (let m = 0; m < 12; m++) {
+      const mote = new THREE.Mesh(
+        new THREE.SphereGeometry(0.032, 8, 8),
+        mistMat
+      );
+      mote.position.set(
+        (Math.random() - 0.5) * 1.25,
+        0.98 + Math.random() * 0.2,
+        -0.36
+      );
       this.scene.add(mote);
       this.frostMotes.push({
         mesh: mote,
@@ -366,15 +455,20 @@ export class GameWorld {
       });
     }
 
+    // Waffle Cone Dispenser Stack on Left Corner of Cart
+    this.coneStackWorldPos = new THREE.Vector3(-0.77, 1.12, -0.22);
     const coneStackGroup = new THREE.Group();
-    coneStackGroup.position.set(-0.74, 0.97, 0.16);
-    for (let c = 0; c < 5; c++) {
+    coneStackGroup.position.set(-0.77, 0.97, 0.16);
+    for (let c = 0; c < 6; c++) {
       const stackCone = new THREE.Mesh(
         new THREE.ConeGeometry(0.052, 0.16, 16),
-        new THREE.MeshStandardMaterial({ map: this.waffleTexture, roughness: 0.65 })
+        new THREE.MeshStandardMaterial({
+          map: this.waffleTexture,
+          roughness: 0.65,
+        })
       );
       stackCone.rotation.x = Math.PI;
-      stackCone.position.y = 0.08 + c * 0.045;
+      stackCone.position.y = 0.08 + c * 0.042;
       coneStackGroup.add(stackCone);
     }
     this.cartGroup.add(coneStackGroup);
@@ -383,25 +477,25 @@ export class GameWorld {
       new THREE.CylinderGeometry(0.028, 0.032, 1.28, 12),
       brassMat
     );
-    leftPost.position.set(-0.82, 1.58, 0);
+    leftPost.position.set(-0.84, 1.58, 0);
     this.cartGroup.add(leftPost);
 
     const rightPost = new THREE.Mesh(
       new THREE.CylinderGeometry(0.028, 0.032, 1.28, 12),
       brassMat
     );
-    rightPost.position.set(0.82, 1.58, 0);
+    rightPost.position.set(0.84, 1.58, 0);
     this.cartGroup.add(rightPost);
 
     const canopy = new THREE.Mesh(
-      new THREE.BoxGeometry(1.88, 0.12, 0.72),
+      new THREE.BoxGeometry(1.92, 0.12, 0.72),
       new THREE.MeshStandardMaterial({ color: 0x8c141b, roughness: 0.5 })
     );
     canopy.position.set(0, 2.22, 0);
     this.cartGroup.add(canopy);
 
     const canopyTrim = new THREE.Mesh(
-      new THREE.BoxGeometry(1.92, 0.04, 0.76),
+      new THREE.BoxGeometry(1.96, 0.04, 0.76),
       brassMat
     );
     canopyTrim.position.set(0, 2.15, 0);
@@ -439,9 +533,6 @@ export class GameWorld {
   }
 
   _buildPaddleAndCones() {
-    // Paddle Group: Origin (0,0,0) is at the Cone Tip; -Z points toward the Vendor's Chest!
-    // Calling `paddleGroup.lookAt(awayFromChest)` aligns local -Z directly into the Vendor's hands
-    // while keeping local +Z forward and local +Y upright!
     this.paddleGroup = new THREE.Group();
     this.scene.add(this.paddleGroup);
 
@@ -458,7 +549,6 @@ export class GameWorld {
       roughness: 0.6,
     });
 
-    // Long Metal Rod extending along -Z from tip (0,0,0) toward vendor
     this.paddleRod = new THREE.Mesh(
       new THREE.CylinderGeometry(0.013, 0.015, 0.92, 12),
       steelMat
@@ -468,7 +558,6 @@ export class GameWorld {
     this.paddleRod.castShadow = true;
     this.paddleRollGroup.add(this.paddleRod);
 
-    // Wooden handle at the rear of the rod (-Z = -0.74 to -1.02)
     this.woodGrip = new THREE.Mesh(
       new THREE.CylinderGeometry(0.025, 0.028, 0.28, 12),
       handleMat
@@ -479,12 +568,15 @@ export class GameWorld {
 
     const brassPommel = new THREE.Mesh(
       new THREE.SphereGeometry(0.03, 12, 12),
-      new THREE.MeshStandardMaterial({ color: 0xf5b942, metalness: 0.85, roughness: 0.2 })
+      new THREE.MeshStandardMaterial({
+        color: 0xf5b942,
+        metalness: 0.85,
+        roughness: 0.2,
+      })
     );
     brassPommel.position.set(0, 0, -1.03);
     this.paddleRollGroup.add(brassPommel);
 
-    // Exact 3D Grip Anchors on the Paddle Shaft for the Vendor's Right & Left Hands!
     this.paddleRearGripAnchor = new THREE.Object3D();
     this.paddleRearGripAnchor.position.set(0, 0, -0.82);
     this.paddleRollGroup.add(this.paddleRearGripAnchor);
@@ -494,7 +586,7 @@ export class GameWorld {
     this.paddleRollGroup.add(this.paddleFrontGripAnchor);
 
     const spatulaTip = new THREE.Mesh(
-      new THREE.BoxGeometry(0.062, 0.012, 0.14),
+      new THREE.BoxGeometry(0.066, 0.014, 0.15),
       steelMat
     );
     spatulaTip.position.set(0, 0, -0.04);
@@ -504,28 +596,69 @@ export class GameWorld {
     this.conePivot.position.set(0, 0.02, 0);
     this.paddleGroup.add(this.conePivot);
 
+    // INNER (Real) Waffle Cone
     this.mainConeMesh = new THREE.Mesh(
-      new THREE.ConeGeometry(0.058, 0.19, 20),
-      new THREE.MeshStandardMaterial({ map: this.waffleTexture, roughness: 0.62 })
+      new THREE.ConeGeometry(0.056, 0.19, 20),
+      new THREE.MeshStandardMaterial({
+        map: this.waffleTexture,
+        roughness: 0.62,
+      })
     );
     this.mainConeMesh.rotation.x = Math.PI;
     this.mainConeMesh.position.y = -0.06;
     this.mainConeMesh.castShadow = true;
     this.conePivot.add(this.mainConeMesh);
 
+    // OUTER (Nested Double-Cone / Çift Külah) Group — visibly nested with a golden separation rim!
+    this.outerConeGroup = new THREE.Group();
+    this.outerConeGroup.position.set(0, -0.052, 0.008);
+    this.outerConeGroup.rotation.z = 0.09; // Slight realistic tilt so player clearly sees 2 nested cones!
+    this.outerConeGroup.visible = false;
+    this.conePivot.add(this.outerConeGroup);
+
+    this.outerConeMesh = new THREE.Mesh(
+      new THREE.ConeGeometry(0.064, 0.195, 20, 1, true),
+      new THREE.MeshStandardMaterial({
+        map: this.outerWaffleTexture,
+        roughness: 0.55,
+        side: THREE.DoubleSide,
+      })
+    );
+    this.outerConeMesh.rotation.x = Math.PI;
+    this.outerConeMesh.position.y = -0.06;
+    this.outerConeGroup.add(this.outerConeMesh);
+
+    // Visible bright golden wafer rim around the top of the outer cone so double-cone is unmistakable
+    this.outerConeRim = new THREE.Mesh(
+      new THREE.TorusGeometry(0.063, 0.006, 10, 24),
+      new THREE.MeshStandardMaterial({
+        color: 0xffd166,
+        emissive: 0xf59e0b,
+        emissiveIntensity: 0.45,
+        roughness: 0.3,
+      })
+    );
+    this.outerConeRim.rotation.x = Math.PI / 2;
+    this.outerConeRim.position.y = 0.036;
+    this.outerConeGroup.add(this.outerConeRim);
+
+    // Legacy compatibility alias
+    this.decoyConeOnPaddle = this.outerConeGroup;
+
+    // 4 Dynamic Scoops Stack (Colored per Player's Flavor Selection!)
     this.scoopStackGroup = new THREE.Group();
     this.conePivot.add(this.scoopStackGroup);
 
     this.scoop1 = new THREE.Mesh(
       new THREE.SphereGeometry(0.066, 20, 16),
-      new THREE.MeshStandardMaterial({ color: 0xfff8e7, roughness: 0.36 })
+      new THREE.MeshStandardMaterial({ color: 0xfff8e7, roughness: 0.35 })
     );
     this.scoop1.position.y = 0.045;
     this.scoopStackGroup.add(this.scoop1);
 
     this.scoop2 = new THREE.Mesh(
       new THREE.SphereGeometry(0.062, 20, 16),
-      new THREE.MeshStandardMaterial({ color: 0x76c84d, roughness: 0.4 })
+      new THREE.MeshStandardMaterial({ color: 0x76c84d, roughness: 0.38 })
     );
     this.scoop2.position.set(0.012, 0.115, 0.008);
     this.scoop2.visible = false;
@@ -533,11 +666,21 @@ export class GameWorld {
 
     this.scoop3 = new THREE.Mesh(
       new THREE.SphereGeometry(0.058, 20, 16),
-      new THREE.MeshStandardMaterial({ color: 0x5c2c16, roughness: 0.38 })
+      new THREE.MeshStandardMaterial({ color: 0x5c2c16, roughness: 0.36 })
     );
     this.scoop3.position.set(-0.01, 0.175, -0.006);
     this.scoop3.visible = false;
     this.scoopStackGroup.add(this.scoop3);
+
+    this.scoop4 = new THREE.Mesh(
+      new THREE.SphereGeometry(0.053, 20, 16),
+      new THREE.MeshStandardMaterial({ color: 0xd92662, roughness: 0.35 })
+    );
+    this.scoop4.position.set(0.006, 0.228, 0.004);
+    this.scoop4.visible = false;
+    this.scoopStackGroup.add(this.scoop4);
+
+    this.scoopMeshes = [this.scoop1, this.scoop2, this.scoop3, this.scoop4];
 
     this.toppingGroup = new THREE.Group();
     this.toppingGroup.position.set(0, 0.21, 0);
@@ -548,12 +691,12 @@ export class GameWorld {
       color: 0x80ed99,
       roughness: 0.3,
     });
-    for (let p = 0; p < 12; p++) {
+    for (let p = 0; p < 14; p++) {
       const bit = new THREE.Mesh(
         new THREE.DodecahedronGeometry(0.012),
         pistachioBitMat
       );
-      const angle = (p / 12) * Math.PI * 2;
+      const angle = (p / 14) * Math.PI * 2;
       const rad = 0.02 + (p % 3) * 0.012;
       bit.position.set(
         Math.cos(angle) * rad,
@@ -570,18 +713,54 @@ export class GameWorld {
     waferStick.rotation.z = -0.35;
     this.toppingGroup.add(waferStick);
 
-    this.decoyConeOnPaddle = new THREE.Mesh(
-      new THREE.ConeGeometry(0.063, 0.19, 18),
-      new THREE.MeshStandardMaterial({ map: this.waffleTexture, roughness: 0.6 })
+    // GIANT 5-KILO MARAŞ ICE CREAM BLOCK ("Kalıptan Kocaman Dondurma Kütlesi" + Mid-Air Somersault)
+    this.giantBlockGroup = new THREE.Group();
+    this.giantBlockGroup.visible = false;
+    this.scene.add(this.giantBlockGroup);
+
+    this.giantBlockMat = new THREE.MeshStandardMaterial({
+      color: 0xfff8e7,
+      roughness: 0.3,
+      metalness: 0.05,
+    });
+
+    const mainLog = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.115, 0.19, 14, 24),
+      this.giantBlockMat
     );
-    this.decoyConeOnPaddle.rotation.x = Math.PI;
-    this.decoyConeOnPaddle.position.y = -0.095;
-    this.decoyConeOnPaddle.visible = false;
-    this.conePivot.add(this.decoyConeOnPaddle);
+    mainLog.rotation.z = Math.PI * 0.5;
+    mainLog.castShadow = true;
+    this.giantBlockGroup.add(mainLog);
+
+    // Organic sculpted ridges & stretchy lobes on the 5-kilo ice cream mass
+    [-0.09, 0, 0.09].forEach((bx, idx) => {
+      const lobe = new THREE.Mesh(
+        new THREE.SphereGeometry(0.125 - idx * 0.008, 18, 14),
+        this.giantBlockMat
+      );
+      lobe.position.set(bx, (idx % 2 === 0 ? 1 : -1) * 0.018, 0);
+      lobe.scale.set(1.0, 0.92, 1.08);
+      this.giantBlockGroup.add(lobe);
+    });
+  }
+
+  setGiantBlockColor(hexColor) {
+    if (this.giantBlockMat && hexColor !== undefined) {
+      this.giantBlockMat.color.setHex(hexColor);
+    }
+  }
+
+  applySelectedFlavorColors(flavorIndices = [0, 1, 2, 3]) {
+    this.scoopMeshes.forEach((mesh, idx) => {
+      const fIdx = flavorIndices[idx % flavorIndices.length] ?? idx;
+      const flav =
+        ICE_CREAM_FLAVORS[fIdx % ICE_CREAM_FLAVORS.length] ||
+        ICE_CREAM_FLAVORS[0];
+      mesh.material.color.setHex(flav.colorHex);
+    });
   }
 
   _buildDiegetic3DCues() {
-    // 3D Golden Slice Line across the stretched ice cream during Stage 2
     this.sliceCueGroup = new THREE.Group();
     this.sliceCueGroup.visible = false;
     this.scene.add(this.sliceCueGroup);
@@ -589,15 +768,22 @@ export class GameWorld {
     const dashMat = new THREE.MeshBasicMaterial({
       color: 0xffd166,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.9,
     });
-    for (let i = -3; i <= 3; i++) {
-      const dash = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.008, 0.008), dashMat);
+    for (let i = -4; i <= 4; i++) {
+      const dash = new THREE.Mesh(
+        new THREE.BoxGeometry(0.034, 0.009, 0.009),
+        dashMat
+      );
       dash.position.x = i * 0.052;
       this.sliceCueGroup.add(dash);
     }
   }
 
+  /**
+   * Completely Redesigned Anatomical 3D Vendor Puppet
+   * Fixes Cezmi Dede's beard & glasses occlusion and adds 4 distinct Master Vendors!
+   */
   _buildVendor() {
     this.vendorGroup = new THREE.Group();
     this.vendorGroup.position.set(0, 0, -0.86);
@@ -605,7 +791,11 @@ export class GameWorld {
 
     this.vendorSkinMat = new THREE.MeshStandardMaterial({
       color: 0xe8ac84,
-      roughness: 0.52,
+      roughness: 0.48,
+    });
+    this.vendorCheekMat = new THREE.MeshStandardMaterial({
+      color: 0xd97f6c,
+      roughness: 0.55,
     });
     this.vendorVestMat = new THREE.MeshStandardMaterial({
       color: 0x99151e,
@@ -617,12 +807,12 @@ export class GameWorld {
     });
     this.vendorGoldMat = new THREE.MeshStandardMaterial({
       color: 0xf5b942,
-      metalness: 0.8,
-      roughness: 0.25,
+      metalness: 0.85,
+      roughness: 0.2,
     });
     this.vendorHairMat = new THREE.MeshStandardMaterial({
       color: 0x1c110b,
-      roughness: 0.8,
+      roughness: 0.75,
     });
 
     this.vendorTorso = new THREE.Group();
@@ -630,13 +820,14 @@ export class GameWorld {
     this.vendorGroup.add(this.vendorTorso);
 
     const chest = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.23, 0.2, 0.56, 18),
+      new THREE.CylinderGeometry(0.23, 0.2, 0.56, 20),
       this.vendorShirtMat
     );
     chest.position.y = 0.28;
     chest.castShadow = true;
     this.vendorTorso.add(chest);
 
+    // Traditional Maraş Cepken Embroidered Vest
     const vestLeft = new THREE.Mesh(
       new THREE.BoxGeometry(0.18, 0.52, 0.34),
       this.vendorVestMat
@@ -652,146 +843,291 @@ export class GameWorld {
     this.vendorTorso.add(vestRight);
 
     const trimLeft = new THREE.Mesh(
-      new THREE.BoxGeometry(0.03, 0.52, 0.36),
+      new THREE.BoxGeometry(0.032, 0.52, 0.36),
       this.vendorGoldMat
     );
     trimLeft.position.set(-0.04, 0.29, 0.05);
     this.vendorTorso.add(trimLeft);
 
     const trimRight = new THREE.Mesh(
-      new THREE.BoxGeometry(0.03, 0.52, 0.36),
+      new THREE.BoxGeometry(0.032, 0.52, 0.36),
       this.vendorGoldMat
     );
     trimRight.position.set(0.04, 0.29, 0.05);
     this.vendorTorso.add(trimRight);
 
+    // Neck
+    const neck = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.068, 0.078, 0.12, 14),
+      this.vendorSkinMat
+    );
+    neck.position.set(0, 0.56, 0.01);
+    this.vendorTorso.add(neck);
+
     // Head Group
     this.vendorHead = new THREE.Group();
-    this.vendorHead.position.set(0, 0.64, 0.02);
+    this.vendorHead.position.set(0, 0.67, 0.02);
     this.vendorTorso.add(this.vendorHead);
 
     const headSphere = new THREE.Mesh(
-      new THREE.SphereGeometry(0.175, 24, 20),
+      new THREE.SphereGeometry(0.168, 28, 22),
       this.vendorSkinMat
     );
-    headSphere.scale.set(0.95, 1.08, 0.95);
+    headSphere.scale.set(0.96, 1.06, 0.94);
     headSphere.castShadow = true;
     this.vendorHead.add(headSphere);
 
-    const nose = new THREE.Mesh(
-      new THREE.ConeGeometry(0.032, 0.085, 12),
+    // Sculpted Ears & Warm Cheeks
+    [-1, 1].forEach((side) => {
+      const ear = new THREE.Mesh(
+        new THREE.SphereGeometry(0.036, 12, 10),
+        this.vendorSkinMat
+      );
+      ear.scale.set(0.45, 0.85, 0.65);
+      ear.position.set(side * 0.162, 0.015, -0.005);
+      this.vendorHead.add(ear);
+
+      const cheek = new THREE.Mesh(
+        new THREE.SphereGeometry(0.042, 12, 10),
+        this.vendorCheekMat
+      );
+      cheek.scale.set(1.1, 0.75, 0.5);
+      cheek.position.set(side * 0.088, -0.005, 0.138);
+      this.vendorHead.add(cheek);
+    });
+
+    // Sculpted Nose (Bridge + Rounded Tip)
+    const noseBridge = new THREE.Mesh(
+      new THREE.ConeGeometry(0.028, 0.082, 14),
       this.vendorSkinMat
     );
-    nose.rotation.x = Math.PI * 0.42;
-    nose.position.set(0, 0.01, 0.175);
-    this.vendorHead.add(nose);
+    noseBridge.rotation.x = Math.PI * 0.38;
+    noseBridge.position.set(0, 0.018, 0.168);
+    this.vendorHead.add(noseBridge);
 
+    const noseTip = new THREE.Mesh(
+      new THREE.SphereGeometry(0.024, 12, 12),
+      this.vendorSkinMat
+    );
+    noseTip.position.set(0, 0.002, 0.194);
+    this.vendorHead.add(noseTip);
+
+    // Bright, Expressive Eyes with Sclera, Iris, Pupil & Specular Catchlight
+    // Placed at z = 0.158 (front of sclera at z = 0.186) so they are ALWAYS 100% visible!
     const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const pupilMat = new THREE.MeshBasicMaterial({ color: 0x160c06 });
+    const irisMat = new THREE.MeshBasicMaterial({ color: 0x4a2511 });
+    const pupilMat = new THREE.MeshBasicMaterial({ color: 0x0f0703 });
     this.eyes = [];
     this.pupils = [];
-    [-0.062, 0.062].forEach((ex) => {
+    [-0.064, 0.064].forEach((ex) => {
       const eyeGroup = new THREE.Group();
-      eyeGroup.position.set(ex, 0.045, 0.15);
+      eyeGroup.position.set(ex, 0.048, 0.158);
       this.vendorHead.add(eyeGroup);
 
       const eyeW = new THREE.Mesh(
-        new THREE.SphereGeometry(0.026, 12, 12),
+        new THREE.SphereGeometry(0.028, 16, 14),
         eyeWhiteMat
       );
+      eyeW.scale.set(1.05, 0.95, 0.85);
       eyeGroup.add(eyeW);
 
+      const pupilGroup = new THREE.Group();
+      pupilGroup.position.set(0, 0, 0.021);
+      eyeGroup.add(pupilGroup);
+
+      const iris = new THREE.Mesh(
+        new THREE.SphereGeometry(0.015, 12, 12),
+        irisMat
+      );
+      iris.scale.set(1, 1, 0.35);
+      pupilGroup.add(iris);
+
       const pupil = new THREE.Mesh(
-        new THREE.SphereGeometry(0.013, 10, 10),
+        new THREE.SphereGeometry(0.0095, 10, 10),
         pupilMat
       );
-      pupil.position.set(0, 0, 0.022);
-      eyeGroup.add(pupil);
+      pupil.position.z = 0.003;
+      pupil.scale.set(1, 1, 0.35);
+      pupilGroup.add(pupil);
+
+      const glint = new THREE.Mesh(
+        new THREE.SphereGeometry(0.0042, 8, 8),
+        eyeWhiteMat
+      );
+      glint.position.set(0.005, 0.005, 0.006);
+      pupilGroup.add(glint);
 
       this.eyes.push(eyeGroup);
-      this.pupils.push({ mesh: pupil, baseX: 0 });
+      this.pupils.push({ mesh: pupilGroup, baseX: 0 });
     });
 
+    // Expressive Sculpted Eyebrows (Above eyes at y = 0.092, z = 0.168)
     this.leftBrow = new THREE.Mesh(
-      new THREE.BoxGeometry(0.062, 0.018, 0.02),
+      new THREE.CapsuleGeometry(0.011, 0.048, 6, 8),
       this.vendorHairMat
     );
-    this.leftBrow.position.set(-0.062, 0.085, 0.158);
+    this.leftBrow.rotation.z = Math.PI * 0.5;
+    this.leftBrow.position.set(-0.064, 0.092, 0.166);
     this.vendorHead.add(this.leftBrow);
 
     this.rightBrow = new THREE.Mesh(
-      new THREE.BoxGeometry(0.062, 0.018, 0.02),
+      new THREE.CapsuleGeometry(0.011, 0.048, 6, 8),
       this.vendorHairMat
     );
-    this.rightBrow.position.set(0.062, 0.085, 0.158);
+    this.rightBrow.rotation.z = Math.PI * 0.5;
+    this.rightBrow.position.set(0.064, 0.092, 0.166);
     this.vendorHead.add(this.rightBrow);
 
-    // Handlebar Mustache
+    // Handlebar Mustache ("Pala Bıyık") — cleanly between nose (y=0.002) and mouth (y=-0.068)
     this.mustacheGroup = new THREE.Group();
-    this.mustacheGroup.position.set(0, -0.038, 0.165);
+    this.mustacheGroup.position.set(0, -0.032, 0.172);
     this.vendorHead.add(this.mustacheGroup);
 
     [-1, 1].forEach((dir) => {
       const stacheHalf = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.024, 0.08, 8, 12),
+        new THREE.CapsuleGeometry(0.021, 0.076, 8, 12),
         this.vendorHairMat
       );
-      stacheHalf.rotation.z = dir * (Math.PI * 0.42);
-      stacheHalf.position.set(dir * 0.048, 0, 0);
+      stacheHalf.rotation.z = dir * (Math.PI * 0.43);
+      stacheHalf.position.set(dir * 0.046, 0, 0);
       this.mustacheGroup.add(stacheHalf);
 
       const curlTip = new THREE.Mesh(
-        new THREE.SphereGeometry(0.022, 10, 10),
+        new THREE.SphereGeometry(0.02, 10, 10),
         this.vendorHairMat
       );
-      curlTip.position.set(dir * 0.1, 0.024, 0);
+      curlTip.position.set(dir * 0.096, 0.022, 0.004);
       this.mustacheGroup.add(curlTip);
     });
 
-    // Full Beard (for Cezmi Dede)
-    this.beardGroup = new THREE.Group();
-    this.beardGroup.position.set(0, -0.1, 0.11);
-    this.beardGroup.visible = false;
-    this.vendorHead.add(this.beardGroup);
+    // ARTICULATED JAW GROUP (Hinges downward on speech! Holds Mouth + Lower Beard so beard NEVER covers eyes!)
+    this.jawGroup = new THREE.Group();
+    this.jawGroup.position.set(0, -0.068, 0.02);
+    this.vendorHead.add(this.jawGroup);
 
-    const beardMain = new THREE.Mesh(
-      new THREE.SphereGeometry(0.135, 16, 12),
+    this.vendorMouth = new THREE.Mesh(
+      new THREE.SphereGeometry(0.03, 12, 8),
+      new THREE.MeshBasicMaterial({ color: 0x590d14 })
+    );
+    this.vendorMouth.position.set(0, 0, 0.132);
+    this.vendorMouth.scale.set(1.2, 0.45, 0.5);
+    this.jawGroup.add(this.vendorMouth);
+
+    // Sculpted Multi-Lock Beard (for Cezmi Dede & Başusta Haydar)
+    // Positioned strictly on the lower jaw & chin (y = -0.02 to -0.14 relative to jawGroup, i.e. y = -0.09 to -0.21 on head!)
+    this.beardGroup = new THREE.Group();
+    this.beardGroup.position.set(0, 0, 0);
+    this.beardGroup.visible = false;
+    this.jawGroup.add(this.beardGroup);
+
+    // Chin & Jawline base
+    const chinBeard = new THREE.Mesh(
+      new THREE.SphereGeometry(0.115, 18, 14),
       this.vendorHairMat
     );
-    beardMain.scale.set(1.0, 1.15, 0.85);
-    this.beardGroup.add(beardMain);
+    chinBeard.scale.set(1.08, 0.88, 0.82);
+    chinBeard.position.set(0, -0.055, 0.088);
+    this.beardGroup.add(chinBeard);
 
-    // Gold Spectacles (for Cezmi Dede)
+    // Left & right sideburns along the lower jaw (stopping at y = +0.02 relative to jaw, well below eyes!)
+    [-1, 1].forEach((side) => {
+      const jawSideburn = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.032, 0.075, 8, 10),
+        this.vendorHairMat
+      );
+      jawSideburn.rotation.z = side * 0.24;
+      jawSideburn.position.set(side * 0.112, 0.005, 0.068);
+      this.beardGroup.add(jawSideburn);
+    });
+
+    // 5 Sculpted Tapered Beard Locks hanging below the chin
+    [-0.068, -0.034, 0, 0.034, 0.068].forEach((lx, idx) => {
+      const lockLen = idx === 2 ? 0.095 : idx === 1 || idx === 3 ? 0.082 : 0.065;
+      const lock = new THREE.Mesh(
+        new THREE.ConeGeometry(0.036, lockLen, 12),
+        this.vendorHairMat
+      );
+      lock.rotation.x = Math.PI * 0.96;
+      lock.position.set(lx, -0.105 - (idx === 2 ? 0.015 : 0), 0.108 - Math.abs(lx) * 0.25);
+      this.beardGroup.add(lock);
+    });
+
+    // Gleaming Gold-Rimmed Spectacles ("Gözlük") for Cezmi Dede & Başusta Haydar
+    // Placed at y = 0.048, z = 0.196 (well in front of the eyes at z=0.186 and nose bridge at z=0.178)
+    // with temple arms reaching back to the ears so they NEVER flicker or get occluded!
     this.glassesGroup = new THREE.Group();
-    this.glassesGroup.position.set(0, 0.045, 0.176);
+    this.glassesGroup.position.set(0, 0.048, 0.196);
     this.glassesGroup.visible = false;
     this.vendorHead.add(this.glassesGroup);
 
-    [-0.062, 0.062].forEach((gx) => {
+    const glassFrameMat = new THREE.MeshStandardMaterial({
+      color: 0xffd166,
+      metalness: 0.92,
+      roughness: 0.15,
+    });
+    const glassLensMat = new THREE.MeshStandardMaterial({
+      color: 0xdbeafe,
+      transparent: true,
+      opacity: 0.22,
+      roughness: 0.08,
+      metalness: 0.2,
+    });
+
+    [-0.064, 0.064].forEach((gx, idx) => {
+      const side = idx === 0 ? -1 : 1;
       const rim = new THREE.Mesh(
-        new THREE.TorusGeometry(0.034, 0.004, 8, 20),
-        this.vendorGoldMat
+        new THREE.TorusGeometry(0.038, 0.0055, 12, 28),
+        glassFrameMat
       );
       rim.position.x = gx;
       this.glassesGroup.add(rim);
-    });
-    const bridge = new THREE.Mesh(
-      new THREE.BoxGeometry(0.055, 0.005, 0.005),
-      this.vendorGoldMat
-    );
-    this.glassesGroup.add(bridge);
 
-    // Fez
+      const lens = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.035, 0.035, 0.002, 24),
+        glassLensMat
+      );
+      lens.rotation.x = Math.PI / 2;
+      lens.position.x = gx;
+      this.glassesGroup.add(lens);
+
+      // Temple arm ("Gözlük Sapı") extending from outer rim back to the ear
+      const templeArm = new THREE.Mesh(
+        new THREE.BoxGeometry(0.005, 0.006, 0.195),
+        glassFrameMat
+      );
+      templeArm.position.set(side * 0.104, 0.004, -0.095);
+      templeArm.rotation.y = side * -0.28;
+      this.glassesGroup.add(templeArm);
+    });
+
+    const noseBridgeBar = new THREE.Mesh(
+      new THREE.TorusGeometry(0.026, 0.0048, 8, 16, Math.PI),
+      glassFrameMat
+    );
+    noseBridgeBar.position.set(0, 0.006, 0.002);
+    this.glassesGroup.add(noseBridgeBar);
+
+    // Classic Ottoman Fez (Pala Usta & Cezmi Dede)
     this.fezGroup = new THREE.Group();
     this.vendorHead.add(this.fezGroup);
 
     this.fezMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.125, 0.152, 0.16, 20),
-      new THREE.MeshStandardMaterial({ color: 0xa81018, roughness: 0.5 })
+      new THREE.CylinderGeometry(0.125, 0.152, 0.165, 22),
+      new THREE.MeshStandardMaterial({ color: 0xa81018, roughness: 0.48 })
     );
-    this.fezMesh.position.set(0, 0.21, -0.01);
+    this.fezMesh.position.set(0, 0.205, -0.01);
     this.fezMesh.rotation.x = -0.08;
     this.fezGroup.add(this.fezMesh);
+
+    // Golden turban sash around the base of the Fez for Grandmaster Haydar (Stage 9-10)
+    this.grandmasterSash = new THREE.Mesh(
+      new THREE.TorusGeometry(0.148, 0.026, 12, 28),
+      this.vendorGoldMat
+    );
+    this.grandmasterSash.rotation.x = Math.PI / 2 - 0.08;
+    this.grandmasterSash.position.set(0, 0.155, -0.005);
+    this.grandmasterSash.visible = false;
+    this.fezGroup.add(this.grandmasterSash);
 
     this.fezTassel = new THREE.Mesh(
       new THREE.CylinderGeometry(0.008, 0.024, 0.15, 10),
@@ -811,24 +1147,16 @@ export class GameWorld {
       new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 })
     );
     capCrown.position.set(0, 0.19, 0);
-    capCrown.rotation.z = 0.1;
+    capCrown.rotation.z = 0.08;
     this.apprenticeCapGroup.add(capCrown);
 
     const capBand = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.148, 0.148, 0.03, 20),
+      new THREE.CylinderGeometry(0.148, 0.148, 0.032, 20),
       new THREE.MeshStandardMaterial({ color: 0x1d6fa5 })
     );
     capBand.position.set(0, 0.145, 0);
-    capBand.rotation.z = 0.1;
+    capBand.rotation.z = 0.08;
     this.apprenticeCapGroup.add(capBand);
-
-    this.vendorMouth = new THREE.Mesh(
-      new THREE.SphereGeometry(0.032, 12, 8),
-      new THREE.MeshBasicMaterial({ color: 0x590d14 })
-    );
-    this.vendorMouth.position.set(0, -0.072, 0.152);
-    this.vendorMouth.scale.set(1.2, 0.45, 0.5);
-    this.vendorHead.add(this.vendorMouth);
 
     // Shoulder Anchors on Torso
     this.rightShoulderAnchor = new THREE.Object3D();
@@ -844,20 +1172,26 @@ export class GameWorld {
 
     this.leftHandConeProp = new THREE.Mesh(
       new THREE.ConeGeometry(0.056, 0.18, 18),
-      new THREE.MeshStandardMaterial({ map: this.waffleTexture, roughness: 0.6 })
+      new THREE.MeshStandardMaterial({
+        map: this.waffleTexture,
+        roughness: 0.6,
+      })
     );
     this.leftHandConeProp.rotation.x = Math.PI;
     this.leftHandConeProp.position.set(0, 0.08, 0.03);
     this.leftHandConeProp.visible = false;
     this.lArmRig.handGroup.add(this.leftHandConeProp);
 
-    // Fake "Peçeteli Külah" (Cone stuffed with a white folded paper napkin that looks like fake vanilla!)
+    // Fake "Peçeteli Külah" (Cone stuffed with a white folded paper napkin)
     this.napkinConeProp = new THREE.Group();
     this.napkinConeProp.visible = false;
     this.napkinConeProp.position.set(0, 0.08, 0.03);
     const fakeWaffle = new THREE.Mesh(
       new THREE.ConeGeometry(0.056, 0.18, 18),
-      new THREE.MeshStandardMaterial({ map: this.waffleTexture, roughness: 0.6 })
+      new THREE.MeshStandardMaterial({
+        map: this.waffleTexture,
+        roughness: 0.6,
+      })
     );
     fakeWaffle.rotation.x = Math.PI;
     this.napkinConeProp.add(fakeWaffle);
@@ -897,6 +1231,198 @@ export class GameWorld {
     this.lArmRig.handGroup.add(this.napkinProp);
   }
 
+  /**
+   * 3D Bazaar Spectator Puppets ("Etrafta Bizi İzleyen Kuklalar")
+   * Watch the cone move in real time and clap/laugh/gasp on tricks!
+   */
+  _buildBazaarSpectators() {
+    const specs = [
+      {
+        // Left Spectator: Curious Bazaar Kid in Striped Cap
+        x: -1.26,
+        z: -0.58,
+        scale: 0.78,
+        shirtColor: 0xf77f00,
+        hatColor: 0x00b4d8,
+        skinColor: 0xf2c6a0,
+        hasHat: 'cap',
+        hasMustache: false,
+        phase: 0.4,
+      },
+      {
+        // Right Spectator: Excited Tourist with Sun Hat & Camera
+        x: 1.28,
+        z: -0.56,
+        scale: 0.94,
+        shirtColor: 0x2ec4b6,
+        hatColor: 0xffe66d,
+        skinColor: 0xf4ccb0,
+        hasHat: 'sunhat',
+        hasMustache: false,
+        phase: 1.9,
+      },
+      {
+        // Back-Left Spectator: Bazaar Shopkeeper Neighbor with Fez/Mustache
+        x: -1.52,
+        z: -1.22,
+        scale: 0.96,
+        shirtColor: 0x6a4c93,
+        hatColor: 0x9b2226,
+        skinColor: 0xe0a980,
+        hasHat: 'fez',
+        hasMustache: true,
+        phase: 3.1,
+      },
+    ];
+
+    const eyeWMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const eyePMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+
+    specs.forEach((cfg) => {
+      const root = new THREE.Group();
+      root.position.set(cfg.x, 0, cfg.z);
+      root.scale.setScalar(cfg.scale);
+      // Angle slightly toward the center of the stall
+      root.rotation.y = cfg.x < 0 ? 0.45 : -0.45;
+      this.scene.add(root);
+
+      const torso = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.17, 0.15, 0.52, 14),
+        new THREE.MeshStandardMaterial({
+          color: cfg.shirtColor,
+          roughness: 0.65,
+        })
+      );
+      torso.position.y = 0.96;
+      torso.castShadow = true;
+      root.add(torso);
+
+      const skinMat = new THREE.MeshStandardMaterial({
+        color: cfg.skinColor,
+        roughness: 0.5,
+      });
+
+      const head = new THREE.Group();
+      head.position.set(0, 1.38, 0);
+      root.add(head);
+
+      const skull = new THREE.Mesh(
+        new THREE.SphereGeometry(0.135, 18, 16),
+        skinMat
+      );
+      head.add(skull);
+
+      const nose = new THREE.Mesh(
+        new THREE.SphereGeometry(0.02, 10, 10),
+        skinMat
+      );
+      nose.position.set(0, 0, 0.135);
+      head.add(nose);
+
+      [-0.045, 0.045].forEach((ex) => {
+        const ew = new THREE.Mesh(
+          new THREE.SphereGeometry(0.02, 10, 10),
+          eyeWMat
+        );
+        ew.position.set(ex, 0.032, 0.12);
+        head.add(ew);
+
+        const ep = new THREE.Mesh(
+          new THREE.SphereGeometry(0.01, 8, 8),
+          eyePMat
+        );
+        ep.position.set(ex, 0.032, 0.136);
+        head.add(ep);
+      });
+
+      const mouth = new THREE.Mesh(
+        new THREE.SphereGeometry(0.022, 10, 8),
+        new THREE.MeshBasicMaterial({ color: 0x6e1423 })
+      );
+      mouth.position.set(0, -0.048, 0.122);
+      mouth.scale.set(1.2, 0.5, 0.5);
+      head.add(mouth);
+
+      if (cfg.hasMustache) {
+        const stache = new THREE.Mesh(
+          new THREE.CapsuleGeometry(0.015, 0.08, 6, 8),
+          new THREE.MeshStandardMaterial({ color: 0x2b1d14 })
+        );
+        stache.rotation.z = Math.PI / 2;
+        stache.position.set(0, -0.024, 0.132);
+        head.add(stache);
+      }
+
+      if (cfg.hasHat === 'cap') {
+        const cap = new THREE.Mesh(
+          new THREE.SphereGeometry(
+            0.14,
+            14,
+            10,
+            0,
+            Math.PI * 2,
+            0,
+            Math.PI * 0.55
+          ),
+          new THREE.MeshStandardMaterial({ color: cfg.hatColor })
+        );
+        cap.position.y = 0.02;
+        head.add(cap);
+      } else if (cfg.hasHat === 'sunhat') {
+        const brim = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.22, 0.22, 0.015, 18),
+          new THREE.MeshStandardMaterial({ color: cfg.hatColor })
+        );
+        brim.position.y = 0.1;
+        head.add(brim);
+        const crown = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.11, 0.13, 0.09, 16),
+          new THREE.MeshStandardMaterial({ color: cfg.hatColor })
+        );
+        crown.position.y = 0.145;
+        head.add(crown);
+      } else if (cfg.hasHat === 'fez') {
+        const fz = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.095, 0.115, 0.12, 16),
+          new THREE.MeshStandardMaterial({ color: cfg.hatColor })
+        );
+        fz.position.y = 0.155;
+        head.add(fz);
+      }
+
+      // Expressive Clapping Hands for each Spectator
+      const leftHand = new THREE.Mesh(
+        new THREE.SphereGeometry(0.038, 10, 10),
+        skinMat
+      );
+      leftHand.position.set(-0.18, 1.05, 0.14);
+      root.add(leftHand);
+
+      const rightHand = new THREE.Mesh(
+        new THREE.SphereGeometry(0.038, 10, 10),
+        skinMat
+      );
+      rightHand.position.set(0.18, 1.05, 0.14);
+      root.add(rightHand);
+
+      this.spectators.push({
+        root,
+        head,
+        mouth,
+        leftHand,
+        rightHand,
+        baseX: cfg.x,
+        baseY: 0,
+        phase: cfg.phase,
+      });
+    });
+  }
+
+  triggerSpectatorReaction(type = 'cheer') {
+    this.spectatorReactionType = type;
+    this.spectatorReactionTimer = 1.4;
+  }
+
   _createIKLimbRig() {
     const upperGroup = new THREE.Group();
     this.scene.add(upperGroup);
@@ -927,7 +1453,6 @@ export class GameWorld {
     lowerMesh.castShadow = true;
     lowerGroup.add(lowerMesh);
 
-    // Rolled-up shirt cuff at mid-forearm
     const cuffMesh = new THREE.Mesh(
       new THREE.CylinderGeometry(0.05, 0.05, 0.18, 12),
       this.vendorShirtMat
@@ -945,7 +1470,6 @@ export class GameWorld {
     palm.scale.set(1.05, 0.9, 1.15);
     handGroup.add(palm);
 
-    // Curled fingers wrapped tightly around the paddle handle
     for (let i = 0; i < 4; i++) {
       const finger = new THREE.Mesh(
         new THREE.CapsuleGeometry(0.011, 0.036, 6, 8),
@@ -998,7 +1522,9 @@ export class GameWorld {
       .normalize();
     const pole = elbowHintOffset.clone().normalize();
     const right = new THREE.Vector3().crossVectors(forward, pole).normalize();
-    const bendDir = new THREE.Vector3().crossVectors(right, forward).normalize();
+    const bendDir = new THREE.Vector3()
+      .crossVectors(right, forward)
+      .normalize();
 
     const elbowWorld = shoulderWorld
       .clone()
@@ -1021,35 +1547,35 @@ export class GameWorld {
     this.vendorMood = mood;
     if (mood === 'laugh') {
       this.vendorMouth.scale.set(1.45, 0.85, 0.6);
-      this.leftBrow.position.y = 0.096;
-      this.rightBrow.position.y = 0.096;
-      this.leftBrow.rotation.z = 0.14;
-      this.rightBrow.rotation.z = -0.14;
+      this.leftBrow.position.y = 0.1;
+      this.rightBrow.position.y = 0.1;
+      this.leftBrow.rotation.z = Math.PI * 0.5 + 0.14;
+      this.rightBrow.rotation.z = Math.PI * 0.5 - 0.14;
     } else if (mood === 'mischief') {
       this.vendorMouth.scale.set(1.3, 0.5, 0.5);
-      this.leftBrow.position.y = 0.098;
-      this.rightBrow.position.y = 0.082;
-      this.leftBrow.rotation.z = -0.18;
-      this.rightBrow.rotation.z = 0.18;
+      this.leftBrow.position.y = 0.102;
+      this.rightBrow.position.y = 0.086;
+      this.leftBrow.rotation.z = Math.PI * 0.5 - 0.18;
+      this.rightBrow.rotation.z = Math.PI * 0.5 + 0.18;
     } else if (mood === 'shock') {
       this.vendorMouth.scale.set(0.85, 1.1, 0.6);
-      this.leftBrow.position.y = 0.105;
-      this.rightBrow.position.y = 0.105;
-      this.leftBrow.rotation.z = 0;
-      this.rightBrow.rotation.z = 0;
+      this.leftBrow.position.y = 0.108;
+      this.rightBrow.position.y = 0.108;
+      this.leftBrow.rotation.z = Math.PI * 0.5;
+      this.rightBrow.rotation.z = Math.PI * 0.5;
     } else {
       this.vendorMouth.scale.set(1.2, 0.45, 0.5);
-      this.leftBrow.position.y = 0.085;
-      this.rightBrow.position.y = 0.085;
-      this.leftBrow.rotation.z = 0.06;
-      this.rightBrow.rotation.z = -0.06;
+      this.leftBrow.position.y = 0.092;
+      this.rightBrow.position.y = 0.092;
+      this.leftBrow.rotation.z = Math.PI * 0.5 + 0.06;
+      this.rightBrow.rotation.z = Math.PI * 0.5 - 0.06;
     }
   }
 
-  setVendorCharacter(levelIndex) {
-    const idx = levelIndex % 3;
+  setVendorCharacter(vendorIndex) {
+    const idx = vendorIndex % 4;
     if (idx === 0) {
-      // USTA 1: Çırak Kadir
+      // USTA 0: Çırak Kadir (Apprentice)
       this.vendorVestMat.color.setHex(0x16697a);
       this.vendorGoldMat.color.setHex(0xe2e8f0);
       this.vendorHairMat.color.setHex(0x3d2314);
@@ -1057,34 +1583,51 @@ export class GameWorld {
       this.beardGroup.visible = false;
       this.glassesGroup.visible = false;
       this.fezGroup.visible = false;
+      this.grandmasterSash.visible = false;
       this.apprenticeCapGroup.visible = true;
-      this.vendorTorso.scale.set(0.92, 0.98, 0.92);
+      this.vendorTorso.scale.set(0.94, 0.98, 0.94);
     } else if (idx === 1) {
-      // USTA 2: Pala Usta
+      // USTA 1: Pala Usta (Classic Fez + Handlebar Mustache)
       this.vendorVestMat.color.setHex(0x99151e);
       this.vendorGoldMat.color.setHex(0xf5b942);
-      this.vendorHairMat.color.setHex(0x160c06);
+      this.vendorHairMat.color.setHex(0x180d06);
       this.mustacheGroup.visible = true;
-      this.mustacheGroup.scale.set(1.15, 1.15, 1.15);
+      this.mustacheGroup.scale.set(1.18, 1.18, 1.18);
       this.beardGroup.visible = false;
       this.glassesGroup.visible = false;
       this.fezGroup.visible = true;
       this.fezMesh.material.color.setHex(0xa81018);
+      this.grandmasterSash.visible = false;
       this.apprenticeCapGroup.visible = false;
       this.vendorTorso.scale.set(1.06, 1.02, 1.05);
-    } else {
-      // USTA 3: Cezmi Dede
+    } else if (idx === 2) {
+      // USTA 2: Cezmi Dede (Snow-White Sculpted Beard + Gold-Rimmed Glasses + Deep Burgundy Fez)
       this.vendorVestMat.color.setHex(0x4a154b);
       this.vendorGoldMat.color.setHex(0xffd166);
-      this.vendorHairMat.color.setHex(0xe5e5e5);
+      this.vendorHairMat.color.setHex(0xf4f4f6);
       this.mustacheGroup.visible = true;
-      this.mustacheGroup.scale.set(1.25, 1.2, 1.2);
+      this.mustacheGroup.scale.set(1.22, 1.18, 1.18);
       this.beardGroup.visible = true;
       this.glassesGroup.visible = true;
       this.fezGroup.visible = true;
-      this.fezMesh.material.color.setHex(0x5e0b15);
+      this.fezMesh.material.color.setHex(0x6e0d1c);
+      this.grandmasterSash.visible = false;
       this.apprenticeCapGroup.visible = false;
-      this.vendorTorso.scale.set(1.02, 1.0, 1.04);
+      this.vendorTorso.scale.set(1.03, 1.0, 1.04);
+    } else {
+      // USTA 3: Başusta Haydar Baba (Grandmaster with Emerald-Gold Turban Fez + Silver Beard + Glasses)
+      this.vendorVestMat.color.setHex(0x0f4c3a);
+      this.vendorGoldMat.color.setHex(0xffd700);
+      this.vendorHairMat.color.setHex(0xd4d4d8);
+      this.mustacheGroup.visible = true;
+      this.mustacheGroup.scale.set(1.32, 1.25, 1.25);
+      this.beardGroup.visible = true;
+      this.glassesGroup.visible = true;
+      this.fezGroup.visible = true;
+      this.fezMesh.material.color.setHex(0x8c141b);
+      this.grandmasterSash.visible = true;
+      this.apprenticeCapGroup.visible = false;
+      this.vendorTorso.scale.set(1.08, 1.04, 1.08);
     }
     this.setVendorMood('smile');
   }
@@ -1183,8 +1726,11 @@ export class GameWorld {
     this.palmGroup.add(this.heldSocket);
 
     this.heldEmptyCone = new THREE.Mesh(
-      new THREE.ConeGeometry(0.058, 0.19, 18),
-      new THREE.MeshStandardMaterial({ map: this.waffleTexture, roughness: 0.6 })
+      new THREE.ConeGeometry(0.06, 0.19, 18),
+      new THREE.MeshStandardMaterial({
+        map: this.outerWaffleTexture,
+        roughness: 0.55,
+      })
     );
     this.heldEmptyCone.rotation.x = Math.PI;
     this.heldEmptyCone.visible = false;
@@ -1197,12 +1743,14 @@ export class GameWorld {
     this.heldNapkin.visible = false;
     this.heldSocket.add(this.heldNapkin);
 
-    // 3D Peçeteli Külah (Fake cone stuffed with folded white napkins) in Tourist's Hand
     this.heldNapkinCone = new THREE.Group();
     this.heldNapkinCone.visible = false;
     const hWaffle = new THREE.Mesh(
       new THREE.ConeGeometry(0.056, 0.18, 18),
-      new THREE.MeshStandardMaterial({ map: this.waffleTexture, roughness: 0.6 })
+      new THREE.MeshStandardMaterial({
+        map: this.waffleTexture,
+        roughness: 0.6,
+      })
     );
     hWaffle.rotation.x = Math.PI;
     this.heldNapkinCone.add(hWaffle);
@@ -1211,11 +1759,17 @@ export class GameWorld {
       roughness: 0.85,
       side: THREE.DoubleSide,
     });
-    const hNap1 = new THREE.Mesh(new THREE.ConeGeometry(0.072, 0.15, 4), hNapMat);
+    const hNap1 = new THREE.Mesh(
+      new THREE.ConeGeometry(0.072, 0.15, 4),
+      hNapMat
+    );
     hNap1.position.y = 0.11;
     hNap1.rotation.z = 0.2;
     this.heldNapkinCone.add(hNap1);
-    const hNap2 = new THREE.Mesh(new THREE.ConeGeometry(0.066, 0.14, 4), hNapMat);
+    const hNap2 = new THREE.Mesh(
+      new THREE.ConeGeometry(0.066, 0.14, 4),
+      hNapMat
+    );
     hNap2.position.y = 0.12;
     hNap2.rotation.y = 0.8;
     hNap2.rotation.x = -0.22;
@@ -1257,7 +1811,9 @@ export class GameWorld {
   }
 
   launchScoopFromTub(tubIndex, onImpact) {
-    const tub = this.tubPositions[tubIndex] || this.tubPositions[0];
+    const tub =
+      this.tubPositions[tubIndex % this.tubPositions.length] ||
+      this.tubPositions[0];
     this.rigidBodies.spawnFlyingScoop(
       tub.color,
       tub.worldPos,
@@ -1274,46 +1830,31 @@ export class GameWorld {
     );
   }
 
-  updateIceCreamScoops(scoopCount) {
-    if (scoopCount <= 0) {
-      this.scoop1.visible = false;
-      this.scoop2.visible = false;
-      this.scoop3.visible = false;
-      this.toppingGroup.visible = false;
-    } else if (scoopCount < 1) {
+  updateIceCreamScoops(scoopCount, showCrownTopping = false) {
+    this.scoop1.visible = scoopCount >= 1;
+    this.scoop2.visible = scoopCount >= 2;
+    this.scoop3.visible = scoopCount >= 3;
+    this.scoop4.visible = scoopCount >= 4;
+
+    if (scoopCount > 0 && scoopCount < 1) {
       this.scoop1.visible = true;
       this.scoop1.scale.set(0.75, 0.5, 0.75);
       this.scoop1.position.y = 0.025;
-      this.scoop2.visible = false;
-      this.scoop3.visible = false;
-      this.toppingGroup.visible = false;
-    } else if (scoopCount === 1) {
-      this.scoop1.visible = true;
+    } else if (scoopCount >= 1) {
       this.scoop1.scale.set(1, 1, 1);
       this.scoop1.position.y = 0.045;
-      this.scoop2.visible = false;
-      this.scoop3.visible = false;
-      this.toppingGroup.visible = false;
-    } else if (scoopCount === 2) {
-      this.scoop1.visible = true;
-      this.scoop1.scale.set(1, 1, 1);
-      this.scoop1.position.y = 0.045;
-      this.scoop2.visible = true;
-      this.scoop3.visible = false;
-      this.toppingGroup.visible = false;
-    } else if (scoopCount === 3) {
-      this.scoop1.visible = true;
-      this.scoop1.scale.set(1, 1, 1);
-      this.scoop2.visible = true;
-      this.scoop3.visible = true;
-      this.toppingGroup.visible = false;
-    } else {
-      this.scoop1.visible = true;
-      this.scoop1.scale.set(1, 1, 1);
-      this.scoop2.visible = true;
-      this.scoop3.visible = true;
-      this.toppingGroup.visible = true;
     }
+
+    const topY =
+      scoopCount >= 4
+        ? 0.265
+        : scoopCount >= 3
+          ? 0.21
+          : scoopCount >= 2
+            ? 0.15
+            : 0.085;
+    this.toppingGroup.position.y = topY;
+    this.toppingGroup.visible = Boolean(showCrownTopping && scoopCount >= 1);
   }
 
   triggerScoopJiggle(power = 1.0) {
@@ -1365,7 +1906,6 @@ export class GameWorld {
     );
     this.palmGroup.rotation.y = THREE.MathUtils.clamp(-v.x * 0.06, -0.4, 0.4);
 
-    // Physical inertial sway on whatever prop is currently grasped in the tourist's hand
     const isHoldingObject =
       this.heldEmptyCone.visible ||
       this.heldNapkin.visible ||
@@ -1407,13 +1947,19 @@ export class GameWorld {
     );
   }
 
-  // Orient the Paddle Shaft from the Cone Tip directly back into the Vendor's Chest/Hands,
-  // apply axial wrist twist (`shaftRoll`), and solve 2-Bone IK for both arms!
+  /**
+   * True 3D Paddle & Cone Orientation!
+   * Supports:
+   * - `shaftRoll`: Spinning the metal rod & cone 360° around its own axis ("kendi etrafında çevirme")
+   * - `coneFlipZ`: Flipping the cone upside down (180°) or full somersaults (360°)
+   * - `conePitchX`: Tilting/pitching the cone up & down ("yukarı aşağı çevirme")
+   */
   orientPaddleAndHands(
     shaftRoll = 0,
     leftHandCustomTarget = null,
     dt = 0.016,
-    coneFlipZ = 0
+    coneFlipZ = 0,
+    conePitchX = 0
   ) {
     const tipPos = this.paddleGroup.position;
     const vendorChestCenter = new THREE.Vector3(
@@ -1422,31 +1968,45 @@ export class GameWorld {
       -0.64
     );
 
-    // Point local +Z away from vendorChestCenter so local -Z (the paddle shaft) points directly into the vendor's hands!
-    const awayFromChest = tipPos.clone().multiplyScalar(2).sub(vendorChestCenter);
+    const awayFromChest = tipPos
+      .clone()
+      .multiplyScalar(2)
+      .sub(vendorChestCenter);
     this.paddleGroup.lookAt(awayFromChest);
 
     this.paddleRollGroup.rotation.z = THREE.MathUtils.lerp(
       this.paddleRollGroup.rotation.z,
       shaftRoll,
-      Math.min(1, dt * 10)
+      Math.min(1, dt * 14)
     );
 
-    // Dynamically choke up on the shaft when the tip is close to the vendor so his hands stay in front of his torso
     const distToChest = tipPos.distanceTo(vendorChestCenter);
     const rearZ = -Math.min(0.84, Math.max(0.54, distToChest * 0.92));
     const frontZ = rearZ + 0.3;
     this.paddleRearGripAnchor.position.set(0, 0, rearZ);
     this.paddleFrontGripAnchor.position.set(0, 0, frontZ);
 
-    // Keep the ice cream cone pointing vertically upright (or flipped upside down during UPSIDE_DOWN_FAKE)
-    this.conePivot.rotation.set(
-      -this.paddleGroup.rotation.x,
-      -this.paddleGroup.rotation.y,
-      Math.sin(shaftRoll) * 0.32 + coneFlipZ
+    // Let the cone physically tilt up/down (conePitchX), revolve with shaftRoll, and flip (coneFlipZ)!
+    if (this.conePivot.parent === this.paddleGroup) {
+      this.conePivot.rotation.set(
+        -this.paddleGroup.rotation.x * 0.55 + conePitchX,
+        -this.paddleGroup.rotation.y * 0.65 + Math.sin(shaftRoll) * 0.45,
+        shaftRoll * 0.88 + coneFlipZ
+      );
+    }
+
+    // Subtle vendor torso lean following the paddle
+    this.vendorTorso.rotation.y = THREE.MathUtils.lerp(
+      this.vendorTorso.rotation.y,
+      THREE.MathUtils.clamp(tipPos.x * 0.35, -0.28, 0.28),
+      Math.min(1, dt * 8)
+    );
+    this.vendorTorso.rotation.x = THREE.MathUtils.lerp(
+      this.vendorTorso.rotation.x,
+      THREE.MathUtils.clamp((1.28 - tipPos.y) * 0.18, -0.14, 0.18),
+      Math.min(1, dt * 8)
     );
 
-    // Solve Two-Bone Analytical IK for Vendor's Right & Left Arms
     this.vendorGroup.updateMatrixWorld(true);
     this.paddleGroup.updateMatrixWorld(true);
 
@@ -1492,26 +2052,30 @@ export class GameWorld {
   ) {
     this.rigidBodies.update(dt);
 
-    // Real-time Vendor Lip-Sync & Mustache/Beard/Chest Animation when speaking or laughing
+    // Real-time Vendor Lip-Sync & Jaw/Beard/Mustache Animation
+    // Note: jawGroup hinges DOWNWARD (-0.068 - voiceMouthOpen * 0.024) so the beard NEVER rises over the face!
     if (voiceMouthOpen > 0.01) {
       this.vendorMouth.scale.set(
         1.25 + voiceMouthOpen * 0.4,
         0.45 + voiceMouthOpen * 1.35,
         0.65
       );
-      this.mustacheGroup.position.y = -0.042 + voiceMouthOpen * 0.014;
-      this.mustacheGroup.rotation.z = Math.sin(time * 28) * voiceMouthOpen * 0.09;
-      this.beardGroup.position.y = -0.02 - voiceMouthOpen * 0.022;
-      this.vendorHead.position.y = 0.67 + voiceMouthOpen * 0.02;
+      this.jawGroup.position.y = -0.068 - voiceMouthOpen * 0.024;
+      this.jawGroup.rotation.x = voiceMouthOpen * 0.18;
+      this.mustacheGroup.position.y = -0.032 + voiceMouthOpen * 0.008;
+      this.mustacheGroup.rotation.z =
+        Math.sin(time * 28) * voiceMouthOpen * 0.08;
+      this.vendorHead.position.y = 0.67 + voiceMouthOpen * 0.015;
     } else {
-      this.mustacheGroup.position.y = -0.042;
+      this.jawGroup.position.y = -0.068;
+      this.jawGroup.rotation.x = 0;
+      this.mustacheGroup.position.y = -0.032;
       this.mustacheGroup.rotation.z = 0;
-      this.beardGroup.position.y = -0.02;
       this.vendorHead.position.y = 0.67 + Math.sin(time * 2.2) * 0.005;
       this.setVendorMood(this.vendorMood || 'smile');
     }
 
-    // Natural Vendor Eye Blinking every ~3.4 seconds
+    // Natural Vendor Eye Blinking
     this.blinkTimer -= dt;
     if (this.blinkTimer <= 0) {
       if (!this.isBlinking) {
@@ -1525,16 +2089,63 @@ export class GameWorld {
       }
     }
 
-    // Animate cold frost mist rising from copper tubs
+    // Animate Spectator Puppets watching the cone and reacting!
+    if (this.spectatorReactionTimer > 0) {
+      this.spectatorReactionTimer = Math.max(
+        0,
+        this.spectatorReactionTimer - dt
+      );
+    }
+    const paddlePos = this.paddleGroup.position;
+    this.spectators.forEach((sp) => {
+      const lookYaw = THREE.MathUtils.clamp(
+        (paddlePos.x - sp.baseX * 0.25) * 0.45,
+        -0.5,
+        0.5
+      );
+      const lookPitch = THREE.MathUtils.clamp(
+        (1.3 - paddlePos.y) * 0.35,
+        -0.3,
+        0.3
+      );
+      sp.head.rotation.y = THREE.MathUtils.lerp(
+        sp.head.rotation.y,
+        lookYaw,
+        Math.min(1, dt * 8)
+      );
+      sp.head.rotation.x = THREE.MathUtils.lerp(
+        sp.head.rotation.x,
+        lookPitch,
+        Math.min(1, dt * 8)
+      );
+
+      if (this.spectatorReactionTimer > 0) {
+        const bounce = Math.abs(Math.sin(time * 14 + sp.phase)) * 0.07;
+        sp.root.position.y = bounce;
+        const clap = Math.sin(time * 22 + sp.phase) * 0.09;
+        sp.leftHand.position.set(-0.11 + clap, 1.14, 0.2);
+        sp.rightHand.position.set(0.11 - clap, 1.14, 0.2);
+        sp.mouth.scale.set(1.4, 0.95, 0.6);
+      } else {
+        sp.root.position.y = Math.sin(time * 2.1 + sp.phase) * 0.01;
+        sp.leftHand.position.set(-0.18, 1.05, 0.14);
+        sp.rightHand.position.set(0.18, 1.05, 0.14);
+        sp.mouth.scale.set(1.2, 0.5, 0.5);
+      }
+    });
+
     this.frostMotes.forEach((m) => {
       m.phase += dt * 0.9;
       m.mesh.position.y = 0.98 + ((m.phase * 0.12) % 0.26);
       m.mesh.position.x = m.baseX + Math.sin(m.phase * 2) * 0.03;
     });
 
-    // Pulse 3D slice guide line if visible
     if (this.sliceCueGroup.visible) {
-      this.sliceCueGroup.position.set(0, 1.22 + Math.sin(time * 6) * 0.02, 0.18);
+      this.sliceCueGroup.position.set(
+        this.paddleGroup.position.x * 0.5,
+        1.22 + Math.sin(time * 6) * 0.02,
+        0.18
+      );
     }
 
     const coneVelX =
@@ -1543,7 +2154,11 @@ export class GameWorld {
       (this.paddleGroup.position.y - this.prevConePos.y) / Math.max(0.005, dt);
     this.prevConePos.copy(this.paddleGroup.position);
 
-    this.scoopJiggleSpring.impulse(-coneVelX * 0.35 * dt, -coneVelY * 0.28 * dt, 0);
+    this.scoopJiggleSpring.impulse(
+      -coneVelX * 0.35 * dt,
+      -coneVelY * 0.28 * dt,
+      0
+    );
     const jiggle = this.scoopJiggleSpring.step(dt);
 
     const squashY = THREE.MathUtils.clamp(1 + jiggle.y * 1.2, 0.78, 1.25);
@@ -1560,7 +2175,6 @@ export class GameWorld {
     });
 
     const handPos = this.touristHand.position;
-    const paddlePos = this.paddleGroup.position;
 
     this.bells.forEach((b) => {
       const distHand = handPos.distanceTo(b.worldPos);
@@ -1587,11 +2201,11 @@ export class GameWorld {
 
     this.pupils.forEach((p) => {
       p.mesh.position.x =
-        p.baseX + THREE.MathUtils.clamp(paddlePos.x * 0.02, -0.01, 0.01);
+        p.baseX + THREE.MathUtils.clamp(paddlePos.x * 0.015, -0.008, 0.008);
       p.mesh.position.y = THREE.MathUtils.clamp(
-        (paddlePos.y - 1.3) * 0.018,
-        -0.008,
-        0.008
+        (paddlePos.y - 1.3) * 0.014,
+        -0.006,
+        0.006
       );
     });
 
@@ -1633,9 +2247,11 @@ export class GameWorld {
     const aspect = w / h;
     this.camera.aspect = aspect;
     if (aspect < 0.75) {
-      // Narrow portrait screens (iPhone 13/14/15/16 Pro ~0.46–0.56):
-      // Dynamically widen vertical FOV and step back slightly so the full Maraş cart & vendor arms fit comfortably
-      this.camera.fov = THREE.MathUtils.clamp(62 + (0.65 - aspect) * 28, 64, 72);
+      this.camera.fov = THREE.MathUtils.clamp(
+        62 + (0.65 - aspect) * 28,
+        64,
+        72
+      );
       this.baseCamPos.set(0, 1.5, 1.12);
     } else {
       this.camera.fov = 54;

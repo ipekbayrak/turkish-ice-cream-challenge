@@ -1,7 +1,12 @@
 import * as THREE from 'three';
 import { GameWorld } from './world.js';
 import { SoundEngine } from './audio.js';
-import { TrickDirector } from './tricks.js';
+import {
+  CAMPAIGN_LEVELS,
+  ICE_CREAM_FLAVORS,
+  TRICK_CATALOG,
+  TrickDirector,
+} from './tricks.js';
 import { SaveManager } from './storage.js';
 
 const gameContainer = document.getElementById('game-container');
@@ -11,21 +16,32 @@ const trailCtx = trailCanvas.getContext('2d');
 
 const startOverlay = document.getElementById('start-overlay');
 const startTitle = document.getElementById('start-title');
+const playerRankBadge = document.getElementById('player-rank-badge');
+const stageSelector = document.getElementById('stage-selector');
+const scoopCntBtns = document.querySelectorAll('.scoop-cnt-btn');
+const flavorOrbBtns = document.querySelectorAll('.flavor-orb-btn[data-flavor]');
+const btnRandomFlavors = document.getElementById('btn-random-flavors');
+const previewScoopsStack = document.getElementById('preview-scoops-stack');
+
 const legReach = document.getElementById('leg-reach');
 const legPull = document.getElementById('leg-pull');
 const legFlick = document.getElementById('leg-flick');
 const btnStartGame = document.getElementById('btn-start-game');
+const btnStartTutorial = document.getElementById('btn-start-tutorial');
+const btnOpenTricks = document.getElementById('btn-open-tricks');
+const btnTricksTop = document.getElementById('btn-tricks-top');
 const btnAudio = document.getElementById('btn-audio');
 const btnFullscreenTop = document.getElementById('btn-fullscreen-top');
 const btnLang = document.getElementById('btn-lang');
 const btnSwitchUsta = document.getElementById('btn-switch-usta');
-const ustaChips = document.querySelectorAll('.usta-chip');
 
 const hudLevel = document.getElementById('hud-level');
+const hudHearts = document.getElementById('hud-hearts');
 const hudScore = document.getElementById('hud-score');
 const hudCard = document.getElementById('hud-card');
 const hudGestureIcon = document.getElementById('hud-gesture-icon');
 const hudActionBadge = document.getElementById('hud-action-badge');
+const hudTrickTitle = document.getElementById('hud-trick-title');
 const hudRoutineFill = document.getElementById('hud-routine-fill');
 const hudStageFill = document.getElementById('hud-stage-fill');
 
@@ -33,6 +49,14 @@ const dot1 = document.getElementById('dot-1');
 const dot2 = document.getElementById('dot-2');
 const dot3 = document.getElementById('dot-3');
 const dot4 = document.getElementById('dot-4');
+const dotCrown = document.getElementById('dot-crown');
+const scoopDotEls = [dot1, dot2, dot3, dot4];
+
+const dialogTricks = document.getElementById('dialog-tricks');
+const tricksCountBadge = document.getElementById('tricks-count-badge');
+const tricksModalTitle = document.getElementById('tricks-modal-title');
+const tricksCatalogList = document.getElementById('tricks-catalog-list');
+const btnCloseTricks = document.getElementById('btn-close-tricks');
 
 const dialogSettings = document.getElementById('dialog-settings');
 const settingsTitle = document.getElementById('settings-title');
@@ -67,6 +91,7 @@ const lblCone = document.getElementById('lbl-cone');
 const resScore = document.getElementById('res-score');
 const resBest = document.getElementById('res-best');
 const resScoops = document.getElementById('res-scoops');
+const btnMenuRound = document.getElementById('btn-menu-round');
 const btnNextRound = document.getElementById('btn-next-round');
 const btnRetryRound = document.getElementById('btn-retry-round');
 
@@ -74,11 +99,15 @@ const btnRetryRound = document.getElementById('btn-retry-round');
 let supportsDisplayTransition;
 function canTransitionDisplay() {
   if (supportsDisplayTransition !== undefined) return supportsDisplayTransition;
-  if (!window.CSS?.supports?.('transition-behavior', 'allow-discrete') || !document.body) {
+  if (
+    !window.CSS?.supports?.('transition-behavior', 'allow-discrete') ||
+    !document.body
+  ) {
     return false;
   }
   const probe = document.createElement('div');
-  probe.style.cssText = 'transition: display 1s allow-discrete !important; display: block;';
+  probe.style.cssText =
+    'transition: display 1s allow-discrete !important; display: block;';
   document.body.appendChild(probe);
   getComputedStyle(probe).display;
   probe.style.display = 'none';
@@ -146,7 +175,9 @@ document.addEventListener('visibilitychange', () => {
 
 // Prevent iOS Safari pinch-to-zoom & rubber-band bounce outside dialogs
 ['gesturestart', 'gesturechange', 'gestureend'].forEach((evtName) => {
-  window.addEventListener(evtName, (e) => e.preventDefault(), { passive: false });
+  window.addEventListener(evtName, (e) => e.preventDefault(), {
+    passive: false,
+  });
 });
 document.addEventListener(
   'touchmove',
@@ -158,7 +189,7 @@ document.addEventListener(
   { passive: false }
 );
 
-// Register PWA Service Worker in production (relative path for subpath & root hosting)
+// Register PWA Service Worker in production
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
@@ -176,15 +207,164 @@ const world = new GameWorld(gameCanvas, (surface) => {
 });
 
 let lastAdvanceUnlocked = false;
-let selectedStartUsta = 0;
+let selectedStage = saveManager.data.unlockedStage || 1;
+let selectedScoopCount = saveManager.data.preferredScoopCount || 3;
+let selectedFlavors = (saveManager.data.preferredFlavors || [0, 1, 2, 3]).slice();
+let nextFlavorSlot = 0;
 
-function renderSavedStarsOnChips() {
-  [0, 1, 2].forEach((idx) => {
-    const el = document.getElementById(`stars-${idx}`);
-    if (el) {
-      const s = saveManager.getStars(idx);
-      el.textContent = s > 0 ? '⭐'.repeat(s) : '';
+const VENDOR_ICONS = ['🧢', '🏮', '🧔‍♂️👓', '👑'];
+
+function renderVisualOrderPreview() {
+  scoopCntBtns.forEach((btn) => {
+    btn.classList.toggle(
+      'active',
+      Number(btn.dataset.scoops) === selectedScoopCount
+    );
+  });
+
+  if (previewScoopsStack) {
+    previewScoopsStack.innerHTML = '';
+    for (let i = 0; i < selectedScoopCount; i++) {
+      const fIdx = selectedFlavors[i % selectedFlavors.length] ?? i;
+      const flav =
+        ICE_CREAM_FLAVORS[fIdx % ICE_CREAM_FLAVORS.length] ||
+        ICE_CREAM_FLAVORS[0];
+      const ball = document.createElement('span');
+      ball.className = 'prev-ball';
+      ball.style.background = flav.cssColor;
+      previewScoopsStack.appendChild(ball);
     }
+  }
+
+  flavorOrbBtns.forEach((btn) => {
+    const fIdx = Number(btn.dataset.flavor);
+    const activeInCone = selectedFlavors
+      .slice(0, selectedScoopCount)
+      .includes(fIdx);
+    btn.classList.toggle('selected', activeInCone);
+    btn.title = saveManager.getFlavorName(fIdx);
+  });
+
+  // Update Top HUD scoop dot visibility and colors
+  scoopDotEls.forEach((dotEl, idx) => {
+    if (!dotEl) return;
+    const fIdx = selectedFlavors[idx % selectedFlavors.length] ?? idx;
+    const flav =
+      ICE_CREAM_FLAVORS[fIdx % ICE_CREAM_FLAVORS.length] ||
+      ICE_CREAM_FLAVORS[0];
+    dotEl.style.setProperty('--dot-color', flav.cssColor);
+    dotEl.classList.toggle('hidden', idx >= selectedScoopCount);
+  });
+
+  if (director) {
+    director.setOrderConfig(selectedScoopCount, selectedFlavors);
+    if (!director.active) {
+      world.updateIceCreamScoops(selectedScoopCount, true);
+    }
+  }
+}
+
+function renderStageSelector() {
+  if (!stageSelector) return;
+  stageSelector.innerHTML = '';
+  const unlocked = saveManager.data.unlockedStage || 1;
+
+  CAMPAIGN_LEVELS.forEach((lvl) => {
+    const isLocked = lvl.stage > unlocked;
+    const stars = saveManager.getStageStars(lvl.stage);
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = `stage-chip${lvl.stage === selectedStage ? ' active' : ''}${isLocked ? ' locked' : ''}`;
+    chip.title = `${saveManager.t('stageLabel')} ${lvl.stage} — ${saveManager.getUstaName(lvl.vendorIdx)}`;
+
+    const topSpan = document.createElement('span');
+    topSpan.className = 'st-top';
+    topSpan.textContent = isLocked
+      ? `🔒 ${lvl.stage}`
+      : `${VENDOR_ICONS[lvl.vendorIdx % VENDOR_ICONS.length]} ${lvl.stage}`;
+
+    const starSpan = document.createElement('small');
+    starSpan.className = 'st-stars';
+    starSpan.textContent =
+      stars > 0 ? '⭐'.repeat(stars) : isLocked ? '' : '☆☆☆';
+
+    chip.appendChild(topSpan);
+    chip.appendChild(starSpan);
+
+    chip.addEventListener('click', () => {
+      if (isLocked) {
+        sound.init();
+        sound.playPenalty();
+        return;
+      }
+      sound.init();
+      sound.playConePop(0);
+      selectedStage = lvl.stage;
+      director.resetRound(selectedStage, false);
+      renderStageSelector();
+      renderVisualOrderPreview();
+    });
+
+    stageSelector.appendChild(chip);
+  });
+
+  if (playerRankBadge) {
+    const totalStars = saveManager.getTotalStars();
+    const maxStars = CAMPAIGN_LEVELS.length * 3;
+    const foundTricks = saveManager.data.discoveredTricks.length;
+    playerRankBadge.textContent = `🏅 ${saveManager.getPlayerRankTitle()} • ⭐ ${totalStars}/${maxStars} • 🎪 ${foundTricks}/${TRICK_CATALOG.length}`;
+  }
+}
+
+function renderTricksCatalogModal() {
+  if (!tricksCatalogList) return;
+  tricksCatalogList.innerHTML = '';
+  const foundCount = saveManager.data.discoveredTricks.length;
+  if (tricksCountBadge) {
+    tricksCountBadge.textContent = `🎪 ${foundCount} / ${TRICK_CATALOG.length} ${saveManager.t('tricksFoundLabel')}`;
+  }
+  if (tricksModalTitle) {
+    tricksModalTitle.textContent = saveManager.t('tricksModalTitle');
+  }
+
+  TRICK_CATALOG.forEach((trick, idx) => {
+    const info = saveManager.getTrickInfo(trick.id);
+    const isFound = saveManager.isTrickDiscovered(trick.id);
+
+    const row = document.createElement('div');
+    row.className = `trick-item-row${isFound ? '' : ' undiscovered'}`;
+
+    const iconEl = document.createElement('div');
+    iconEl.className = 'trick-item-icon';
+    iconEl.textContent = info.icon;
+
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'trick-item-body';
+
+    const headEl = document.createElement('div');
+    headEl.className = 'trick-item-head';
+
+    const titleEl = document.createElement('span');
+    titleEl.className = 'trick-item-title';
+    titleEl.textContent = `${idx + 1}. ${info.name} ${isFound ? '✓' : ''}`;
+
+    const diffEl = document.createElement('span');
+    diffEl.className = 'trick-item-diff';
+    diffEl.textContent = '🔥'.repeat(info.difficulty || 1);
+
+    headEl.appendChild(titleEl);
+    headEl.appendChild(diffEl);
+
+    const descEl = document.createElement('p');
+    descEl.className = 'trick-item-desc';
+    descEl.textContent = info.desc;
+
+    bodyEl.appendChild(headEl);
+    bodyEl.appendChild(descEl);
+
+    row.appendChild(iconEl);
+    row.appendChild(bodyEl);
+    tricksCatalogList.appendChild(row);
   });
 }
 
@@ -196,12 +376,20 @@ function applyLanguageUI() {
   legPull.textContent = saveManager.t('legPull');
   legFlick.textContent = saveManager.t('legFlick');
 
-  [0, 1, 2].forEach((i) => {
-    const uEl = document.getElementById(`uname-${i}`);
-    if (uEl) uEl.textContent = saveManager.getUstaName(i);
-  });
-
   btnStartGame.textContent = saveManager.t('playBtn');
+  if (btnStartTutorial) {
+    btnStartTutorial.textContent = saveManager.t('tutorialBtn');
+  }
+  if (btnOpenTricks) {
+    btnOpenTricks.textContent = saveManager.t('tricksBtn');
+  }
+  if (btnMenuRound) {
+    btnMenuRound.textContent = saveManager.t('menuBtn');
+  }
+  if (btnCloseTricks) {
+    btnCloseTricks.textContent = saveManager.t('closeBtn');
+  }
+
   lblScore.textContent = saveManager.t('scoreLabel');
   lblBest.textContent = saveManager.t('bestLabel');
   lblCone.textContent = saveManager.t('coneLabel');
@@ -237,20 +425,25 @@ function applyLanguageUI() {
     valFullscreen.textContent = isFsActive ? 'ON' : '⛶';
     valFullscreen.classList.toggle('on', isFsActive);
   }
+
+  renderStageSelector();
+  renderVisualOrderPreview();
 }
 
 const uiCallbacks = {
   onPrompt() {},
 
   onRoundEnd(data) {
-    renderSavedStarsOnChips();
+    renderStageSelector();
     resultBadge.textContent = data.badge;
     resultIcon.textContent = data.icon;
     resultTitle.textContent = data.title;
     resultDesc.textContent = data.desc;
     resultStars.textContent = data.stars;
     resScore.textContent = saveManager.formatNumber(data.score);
-    resBest.textContent = saveManager.formatNumber(data.bestScore || data.score);
+    resBest.textContent = saveManager.formatNumber(
+      data.bestScore || data.score
+    );
     resScoops.textContent = data.scoopsText;
 
     lastAdvanceUnlocked = data.canAdvance;
@@ -265,32 +458,76 @@ const uiCallbacks = {
 };
 
 const director = new TrickDirector(world, sound, saveManager, uiCallbacks);
-renderSavedStarsOnChips();
 applyLanguageUI();
 
-function syncUstaChips(idx) {
-  ustaChips.forEach((chip) => {
-    chip.classList.toggle('active', Number(chip.dataset.usta) === idx % 3);
+// Non-Textual Visual Order Picker Events
+scoopCntBtns.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    sound.init();
+    sound.playConePop(0);
+    selectedScoopCount = Number(btn.dataset.scoops) || 3;
+    renderVisualOrderPreview();
+  });
+});
+
+function pickFlavorIndex(fIdx) {
+  sound.init();
+  sound.playScoopAdded();
+  selectedFlavors[nextFlavorSlot % selectedScoopCount] = fIdx;
+  nextFlavorSlot = (nextFlavorSlot + 1) % selectedScoopCount;
+  renderVisualOrderPreview();
+  world.triggerScoopJiggle(1.1);
+}
+
+flavorOrbBtns.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    pickFlavorIndex(Number(btn.dataset.flavor) || 0);
+  });
+});
+
+if (btnRandomFlavors) {
+  btnRandomFlavors.addEventListener('click', () => {
+    sound.init();
+    sound.playBell(0.75, 0);
+    const counts = [2, 3, 4];
+    selectedScoopCount = counts[Math.floor(Math.random() * counts.length)];
+    selectedFlavors = [
+      Math.floor(Math.random() * ICE_CREAM_FLAVORS.length),
+      Math.floor(Math.random() * ICE_CREAM_FLAVORS.length),
+      Math.floor(Math.random() * ICE_CREAM_FLAVORS.length),
+      Math.floor(Math.random() * ICE_CREAM_FLAVORS.length),
+    ];
+    renderVisualOrderPreview();
+    world.triggerScoopJiggle(1.3);
   });
 }
 
-ustaChips.forEach((chip) => {
-  chip.addEventListener('click', () => {
-    selectedStartUsta = Number(chip.dataset.usta);
-    syncUstaChips(selectedStartUsta);
-    director.resetRound(selectedStartUsta);
-  });
-});
-
 btnSwitchUsta.addEventListener('click', () => {
-  const nextIdx = (director.levelIndex + 1) % 3;
-  selectedStartUsta = nextIdx;
-  syncUstaChips(nextIdx);
-  director.resetRound(nextIdx);
+  const maxUnlocked = saveManager.data.unlockedStage || 1;
+  selectedStage = (director.currentStage % maxUnlocked) + 1;
+  director.resetRound(selectedStage, false);
+  renderStageSelector();
   if (startOverlay.classList.contains('hidden')) {
     director.startRound();
+  } else {
+    renderVisualOrderPreview();
   }
 });
+
+// 15 Tricks Catalog Modal
+function openTricksModal() {
+  renderTricksCatalogModal();
+  if (dialogTricks && !dialogTricks.open) {
+    dialogTricks.showModal();
+  }
+}
+if (btnOpenTricks) btnOpenTricks.addEventListener('click', openTricksModal);
+if (btnTricksTop) btnTricksTop.addEventListener('click', openTricksModal);
+if (btnCloseTricks) {
+  btnCloseTricks.addEventListener('click', () => {
+    closeTopLayer(dialogTricks);
+  });
+}
 
 // Settings & Language Modal Controls
 btnLang.addEventListener('click', () => {
@@ -328,7 +565,8 @@ function toggleFullscreenExperience() {
   const docEl = document.documentElement;
   const reqFs = docEl.requestFullscreen || docEl.webkitRequestFullscreen;
   const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
-  const activeFs = document.fullscreenElement || document.webkitFullscreenElement;
+  const activeFs =
+    document.fullscreenElement || document.webkitFullscreenElement;
 
   if (reqFs) {
     if (!activeFs) {
@@ -339,14 +577,15 @@ function toggleFullscreenExperience() {
       document.body.classList.remove('ios-immersive');
     }
   } else {
-    // iPhone iOS Safari: enable edge-to-edge immersive viewport mode & show Home Screen PWA tip if in browser tab
     document.body.classList.add('ios-immersive');
     window.scrollTo(0, 1);
     world.onResize();
     resizeTrailCanvas();
     const isStandalone =
       window.navigator.standalone === true ||
-      window.matchMedia?.('(display-mode: standalone), (display-mode: fullscreen)').matches;
+      window.matchMedia?.(
+        '(display-mode: standalone), (display-mode: fullscreen)'
+      ).matches;
     if (!isStandalone && dialogIosFullscreen && !dialogIosFullscreen.open) {
       applyLanguageUI();
       if (dialogSettings?.open) {
@@ -376,15 +615,23 @@ let viewportWidth = window.innerWidth;
 let viewportHeight = window.innerHeight;
 
 function resizeTrailCanvas() {
-  viewportWidth = Math.max(1, window.visualViewport?.width || window.innerWidth);
-  viewportHeight = Math.max(1, window.visualViewport?.height || window.innerHeight);
+  viewportWidth = Math.max(
+    1,
+    window.visualViewport?.width || window.innerWidth
+  );
+  viewportHeight = Math.max(
+    1,
+    window.visualViewport?.height || window.innerHeight
+  );
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   trailCanvas.width = Math.round(viewportWidth * dpr);
   trailCanvas.height = Math.round(viewportHeight * dpr);
   trailCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 window.addEventListener('resize', resizeTrailCanvas);
-window.addEventListener('orientationchange', () => setTimeout(resizeTrailCanvas, 80));
+window.addEventListener('orientationchange', () =>
+  setTimeout(resizeTrailCanvas, 80)
+);
 window.visualViewport?.addEventListener('resize', resizeTrailCanvas);
 resizeTrailCanvas();
 
@@ -441,10 +688,18 @@ function updateNormalizedPointer(clientX, clientY, dt = 0.016) {
 
   const isTrapActive =
     director.heldItem === 'NAPKIN_CONE' ||
-    (director.currentMechanic === 'SCRAPE_SECOND_AND_EMPTY_TRAP' &&
-      director.subStep === 1) ||
-    (director.currentMechanic === 'NAPKIN_CONE_FAKEOUT' && director.subStep === 0) ||
-    (director.currentMechanic === 'UPSIDE_DOWN_FAKE' && director.subStep === 0);
+    (director.currentMechanic === 'GIANT_BLOCK_TEASE' &&
+      director.subStep === 0) ||
+    (director.currentMechanic === 'NAPKIN_CONE_FAKEOUT' &&
+      director.subStep === 0) ||
+    (director.currentMechanic === 'UPSIDE_DOWN_GRAVITY' &&
+      director.subStep === 0) ||
+    (director.currentMechanic === 'FAKE_DROP_PANIC' &&
+      director.subStep === 0) ||
+    (director.currentMechanic === 'OVERHEAD_CROWN_DANGLE' &&
+      director.subStep === 0) ||
+    (director.currentMechanic === 'COMBO_DOUBLE_PUMP' &&
+      director.subStep === 0);
 
   gestureState.trailPoints.push({
     x: clientX,
@@ -462,27 +717,41 @@ let lastMoveTime = performance.now();
 gameContainer.addEventListener('pointerdown', (event) => {
   if (
     event.button !== 0 ||
-    event.target.closest('button, dialog, a, input')
+    event.target.closest('button, dialog, a, input, .start-sheet-card')
   ) {
     return;
   }
 
   sound.init();
+
+  const now = performance.now();
+  updateNormalizedPointer(event.clientX, event.clientY, 0.016);
+
+  // If the start overlay is open, allow tapping directly on the 6 3D copper tubs in the cart to pick flavors!
+  if (!startOverlay.classList.contains('hidden')) {
+    const clickedTubIdx = world.getTubIndexAtRay(
+      gestureState.normX,
+      gestureState.normY
+    );
+    if (clickedTubIdx >= 0) {
+      pickFlavorIndex(clickedTubIdx);
+      return;
+    }
+  }
+
   try {
     gameContainer.setPointerCapture(event.pointerId);
   } catch {
-    // Ignore on browsers that reject pointer capture on synthetic touch
+    // Ignore
   }
   gameContainer.classList.add('dragging');
 
-  const now = performance.now();
   const isDoubleTap = now - gestureState.lastTapTime < 280;
   gestureState.lastTapTime = now;
 
   gestureState.isPointerDown = true;
   gestureState.isReaching = true;
   lastMoveTime = now;
-  updateNormalizedPointer(event.clientX, event.clientY, 0.016);
 
   const tapWorld = new THREE.Vector3(
     THREE.MathUtils.clamp(gestureState.normX * 0.56, -0.52, 0.52),
@@ -525,32 +794,54 @@ gameContainer.addEventListener('pointerup', endPointerInteraction);
 gameContainer.addEventListener('pointercancel', endPointerInteraction);
 gameContainer.addEventListener('lostpointercapture', endPointerInteraction);
 
-btnStartGame.addEventListener('click', () => {
+function launchStageRound(runTutorial = false) {
   sound.init();
   requestScreenWakeLock();
   document.body.classList.add('ios-immersive');
   window.scrollTo(0, 1);
   startOverlay.classList.add('hidden');
-  director.resetRound(selectedStartUsta);
+  director.setOrderConfig(selectedScoopCount, selectedFlavors);
+  director.resetRound(selectedStage, runTutorial);
   director.startRound();
+}
+
+btnStartGame.addEventListener('click', () => {
+  launchStageRound(false);
 });
+
+if (btnStartTutorial) {
+  btnStartTutorial.addEventListener('click', () => {
+    launchStageRound(true);
+  });
+}
+
+if (btnMenuRound) {
+  btnMenuRound.addEventListener('click', () => {
+    closeTopLayer(dialogResult);
+    startOverlay.classList.remove('hidden');
+    director.resetRound(selectedStage, false);
+    renderStageSelector();
+    renderVisualOrderPreview();
+  });
+}
 
 btnNextRound.addEventListener('click', () => {
   closeTopLayer(dialogResult);
   requestScreenWakeLock();
-  const nextLvl = lastAdvanceUnlocked
-    ? (director.levelIndex + 1) % 3
-    : director.levelIndex;
-  selectedStartUsta = nextLvl;
-  syncUstaChips(nextLvl);
-  director.resetRound(nextLvl);
+  if (lastAdvanceUnlocked && director.currentStage < CAMPAIGN_LEVELS.length) {
+    selectedStage = director.currentStage + 1;
+  } else {
+    selectedStage = director.currentStage;
+  }
+  renderStageSelector();
+  director.resetRound(selectedStage, false);
   director.startRound();
 });
 
 btnRetryRound.addEventListener('click', () => {
   closeTopLayer(dialogResult);
   requestScreenWakeLock();
-  director.resetRound(director.levelIndex);
+  director.resetRound(director.currentStage, false);
   director.startRound();
 });
 
@@ -561,18 +852,36 @@ btnAudio.addEventListener('click', () => {
 });
 
 function updateHUD(guide) {
-  hudLevel.textContent = saveManager.getUstaName(director.levelIndex);
+  const ustaName = saveManager.getUstaName(director.levelIndex);
+  hudLevel.textContent = `${director.currentStage} • ${ustaName}`;
   hudScore.textContent = saveManager.formatNumber(director.score);
 
-  dot1.classList.toggle('active', director.scoopCount >= 1);
-  dot2.classList.toggle('active', director.scoopCount >= 2);
-  dot3.classList.toggle('active', director.scoopCount >= 3);
-  dot4.classList.toggle('active', director.scoopCount >= 4);
+  if (hudHearts) {
+    const heartSpans = hudHearts.querySelectorAll('.h-icon');
+    heartSpans.forEach((hEl, idx) => {
+      hEl.classList.toggle('lost', idx >= director.hearts);
+    });
+  }
+
+  scoopDotEls.forEach((dotEl, idx) => {
+    if (!dotEl) return;
+    dotEl.classList.toggle('active', director.scoopCount >= idx + 1);
+  });
+  if (dotCrown) {
+    dotCrown.classList.toggle(
+      'active',
+      director.scoopCount >= director.targetScoopCount &&
+        director.currentMechanic === 'FINAL_PISTACHIO_CATCH'
+    );
+  }
 
   if (guide) {
     hudCard.className = `gesture-hud-card theme-${guide.theme}`;
     if (hudGestureIcon) hudGestureIcon.textContent = guide.icon || '🤚⬆️';
     hudActionBadge.textContent = guide.badgeText;
+    if (hudTrickTitle) {
+      hudTrickTitle.textContent = guide.trickTitle || '';
+    }
     hudRoutineFill.style.width = `${Math.round(
       Math.max(12, guide.routineProgress * 100)
     )}%`;
@@ -582,7 +891,13 @@ function updateHUD(guide) {
   }
 }
 
-function drawFadingToBrightComet(ctx, points, colorKey, elapsed, isGuide = true) {
+function drawFadingToBrightComet(
+  ctx,
+  points,
+  colorKey,
+  elapsed,
+  isGuide = true
+) {
   if (!points || points.length < 2) return;
   const pal = PALETTE[colorKey] || PALETTE.green;
   const n = points.length;
@@ -597,7 +912,8 @@ function drawFadingToBrightComet(ctx, points, colorKey, elapsed, isGuide = true)
     const t = i / (n - 1);
 
     const alpha = 0.06 + Math.pow(t, 1.45) * (isGuide ? 0.82 : 0.88);
-    const width = (isGuide ? 2.5 : 2.0) + Math.pow(t, 1.35) * (isGuide ? 14.0 : 12.0);
+    const width =
+      (isGuide ? 2.5 : 2.0) + Math.pow(t, 1.35) * (isGuide ? 14.0 : 12.0);
 
     ctx.beginPath();
     ctx.moveTo(p0.x, p0.y);
@@ -711,7 +1027,11 @@ function drawVendorSpeechBubble(ctx, bubble) {
   const padX = 11;
   const bw = tw + padX * 2;
   const bh = 28;
-  const bx = THREE.MathUtils.clamp(bubble.x - bw * 0.5, 12, viewportWidth - bw - 12);
+  const bx = THREE.MathUtils.clamp(
+    bubble.x - bw * 0.5,
+    12,
+    viewportWidth - bw - 12
+  );
   const by = Math.max(58, bubble.y - bh * 0.5);
 
   ctx.fillStyle = 'rgba(255, 248, 235, 0.95)';
@@ -732,7 +1052,6 @@ function drawVendorSpeechBubble(ctx, bubble) {
 function drawFloatingPopupsAndVignette(ctx, guide) {
   if (!guide) return;
 
-  // 1. Subtle Edge Vignette Flash on Combo / Penalty
   if (guide.vignetteFlash && guide.vignetteFlash.alpha > 0.01) {
     const w = viewportWidth;
     const h = viewportHeight;
@@ -755,7 +1074,6 @@ function drawFloatingPopupsAndVignette(ctx, guide) {
     ctx.restore();
   }
 
-  // 2. Floating Score Delta Popups (+220, +360, -180 🍦)
   if (guide.floatingPopups && guide.floatingPopups.length > 0) {
     ctx.save();
     ctx.font = '900 18px system-ui, -apple-system, sans-serif';

@@ -19,14 +19,19 @@ export class SpringVec3 {
     this.vel.z += iz;
   }
 
-   step(dt) {
-    // Sub-step for numerical stability at high stiffness
+  step(dt) {
     const steps = 2;
     const h = Math.min(dt, 0.033) / steps;
     for (let i = 0; i < steps; i++) {
-      const fx = -this.stiffness * (this.pos.x - this.target.x) - this.damping * this.vel.x;
-      const fy = -this.stiffness * (this.pos.y - this.target.y) - this.damping * this.vel.y;
-      const fz = -this.stiffness * (this.pos.z - this.target.z) - this.damping * this.vel.z;
+      const fx =
+        -this.stiffness * (this.pos.x - this.target.x) -
+        this.damping * this.vel.x;
+      const fy =
+        -this.stiffness * (this.pos.y - this.target.y) -
+        this.damping * this.vel.y;
+      const fz =
+        -this.stiffness * (this.pos.z - this.target.z) -
+        this.damping * this.vel.z;
 
       this.vel.x += fx * h;
       this.vel.y += fy * h;
@@ -41,40 +46,58 @@ export class SpringVec3 {
 }
 
 /**
- * Viscoelastic Verlet Rope / Ribbon Solver
- * Simulates the famous stretchy Kahramanmaraş Dövme Dondurma strand between two 3D anchors!
+ * Multi-Strand Viscoelastic Verlet Rope / Taffy Solver
+ * Simulates the famous super-stretchy Kahramanmaraş Dövme Dondurma (salep + mastic)
+ * with a thick primary ribbon + two satellite elastic strands when pulling giant blocks!
  */
 export class StretchyDondurmaStrand {
-  constructor(scene, nodeCount = 10) {
+  constructor(scene, nodeCount = 14) {
     this.scene = scene;
     this.nodeCount = nodeCount;
     this.nodes = [];
     this.prevNodes = [];
     this.active = false;
+    this.multiStrandMode = false;
+    this.twistPhase = 0;
 
     for (let i = 0; i < nodeCount; i++) {
       this.nodes.push(new THREE.Vector3(0, 1.1, 0));
       this.prevNodes.push(new THREE.Vector3(0, 1.1, 0));
     }
 
+    this.material = new THREE.MeshStandardMaterial({
+      color: 0xfff8eb,
+      roughness: 0.28,
+      metalness: 0.04,
+    });
+
     this.curve = new THREE.CatmullRomCurve3(this.nodes);
     this.mesh = new THREE.Mesh(
-      new THREE.TubeGeometry(this.curve, 20, 0.032, 8, false),
-      new THREE.MeshStandardMaterial({
-        color: 0xfff8eb,
-        roughness: 0.32,
-        metalness: 0.05,
-      })
+      new THREE.TubeGeometry(this.curve, 24, 0.038, 10, false),
+      this.material
     );
     this.mesh.castShadow = true;
     this.mesh.visible = false;
     this.scene.add(this.mesh);
+
+    // Secondary satellite strands for Giant 5-Kilo Block extraction
+    this.subMeshes = [];
+    for (let s = 0; s < 2; s++) {
+      const sm = new THREE.Mesh(
+        new THREE.TubeGeometry(this.curve, 16, 0.018, 6, false),
+        this.material
+      );
+      sm.visible = false;
+      this.scene.add(sm);
+      this.subMeshes.push(sm);
+    }
   }
 
-  attach(startPos, endPos, hexColor = null) {
+  attach(startPos, endPos, hexColor = null, multiStrand = false) {
     if (hexColor !== null) {
-      this.mesh.material.color.setHex(hexColor);
+      this.material.color.setHex(hexColor);
     }
+    this.multiStrandMode = Boolean(multiStrand);
     if (!this.active) {
       this.active = true;
       this.mesh.visible = true;
@@ -84,45 +107,53 @@ export class StretchyDondurmaStrand {
         this.prevNodes[i].copy(this.nodes[i]);
       }
     }
+    this.subMeshes.forEach((sm) => {
+      sm.visible = this.active && this.multiStrandMode;
+    });
   }
 
   setColor(hexColor) {
-    this.mesh.material.color.setHex(hexColor);
+    this.material.color.setHex(hexColor);
   }
 
   detach() {
     this.active = false;
+    this.multiStrandMode = false;
     this.mesh.visible = false;
+    this.subMeshes.forEach((sm) => {
+      sm.visible = false;
+    });
   }
 
-  update(dt, startAnchor, endAnchor, thicknessScale = 1.0) {
+  update(dt, startAnchor, endAnchor, thicknessScale = 1.0, swirlAmount = 0) {
     if (!this.active) return;
 
+    this.twistPhase += dt * (4.5 + swirlAmount * 6);
     const h = Math.min(dt, 0.025);
-    const gravity = -6.5;
+    const gravity = -5.8;
     const totalDist = startAnchor.distanceTo(endAnchor);
-    const segLen = Math.max(0.02, (totalDist * 0.92) / (this.nodeCount - 1));
+    const segLen = Math.max(0.018, (totalDist * 0.88) / (this.nodeCount - 1));
 
-    // Verlet integration for interior nodes
+    // Verlet integration for interior nodes with elastic whip & swirl
     for (let i = 1; i < this.nodeCount - 1; i++) {
       const cur = this.nodes[i];
       const prev = this.prevNodes[i];
-      const vx = (cur.x - prev.x) * 0.92;
-      const vy = (cur.y - prev.y) * 0.92;
-      const vz = (cur.z - prev.z) * 0.92;
+      const vx = (cur.x - prev.x) * 0.93;
+      const vy = (cur.y - prev.y) * 0.93;
+      const vz = (cur.z - prev.z) * 0.93;
 
       prev.copy(cur);
-      cur.x += vx;
+      const midWeight = Math.sin((i / (this.nodeCount - 1)) * Math.PI);
+      cur.x += vx + Math.cos(this.twistPhase + i * 0.5) * swirlAmount * 0.008 * midWeight;
       cur.y += vy + gravity * h * h;
-      cur.z += vz;
+      cur.z += vz + Math.sin(this.twistPhase + i * 0.5) * swirlAmount * 0.008 * midWeight;
     }
 
-    // Pin endpoints
     this.nodes[0].copy(startAnchor);
     this.nodes[this.nodeCount - 1].copy(endAnchor);
 
-    // Distance constraints relaxation (6 iterations for tight viscoelastic feel)
-    for (let iter = 0; iter < 6; iter++) {
+    // 7 constraint iterations for authentic dense Maraş salep tension
+    for (let iter = 0; iter < 7; iter++) {
       this.nodes[0].copy(startAnchor);
       this.nodes[this.nodeCount - 1].copy(endAnchor);
 
@@ -154,11 +185,42 @@ export class StretchyDondurmaStrand {
       }
     }
 
-    // Rebuild smooth viscoelastic tube geometry
-    const radius = Math.max(0.012, (0.036 * thicknessScale) / Math.max(1, totalDist * 1.35));
+    const radius = Math.max(
+      0.015,
+      (0.044 * thicknessScale) / Math.max(1, totalDist * 1.15)
+    );
     this.mesh.geometry.dispose();
     this.curve = new THREE.CatmullRomCurve3(this.nodes);
-    this.mesh.geometry = new THREE.TubeGeometry(this.curve, 18, radius, 8, false);
+    this.mesh.geometry = new THREE.TubeGeometry(this.curve, 24, radius, 10, false);
+
+    if (this.multiStrandMode) {
+      this.subMeshes.forEach((sm, idx) => {
+        sm.visible = true;
+        const sign = idx === 0 ? -1 : 1;
+        const subPoints = this.nodes.map((pt, ni) => {
+          const env = Math.sin((ni / (this.nodeCount - 1)) * Math.PI);
+          const angle = this.twistPhase * 1.3 + ni * 0.45 + idx * Math.PI;
+          return new THREE.Vector3(
+            pt.x + (sign * 0.055 + Math.cos(angle) * 0.025) * env,
+            pt.y - 0.025 * env,
+            pt.z + Math.sin(angle) * 0.025 * env
+          );
+        });
+        sm.geometry.dispose();
+        const subCurve = new THREE.CatmullRomCurve3(subPoints);
+        sm.geometry = new THREE.TubeGeometry(
+          subCurve,
+          16,
+          radius * 0.52,
+          6,
+          false
+        );
+      });
+    } else {
+      this.subMeshes.forEach((sm) => {
+        sm.visible = false;
+      });
+    }
   }
 }
 
@@ -189,11 +251,10 @@ export class RigidBodyManager {
     });
   }
 
-  // Ballistic scoop flight from copper tub onto the cone tip!
   spawnFlyingScoop(color, startPos, getTargetPosFn, onLandCallback) {
     const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.062, 18, 14),
-      new THREE.MeshStandardMaterial({ color, roughness: 0.38 })
+      new THREE.SphereGeometry(0.064, 18, 14),
+      new THREE.MeshStandardMaterial({ color, roughness: 0.35 })
     );
     mesh.position.copy(startPos);
     mesh.castShadow = true;
@@ -205,7 +266,7 @@ export class RigidBodyManager {
       getTargetPosFn,
       onLandCallback,
       t: 0,
-      duration: 0.42,
+      duration: 0.44,
       type: 'scoop_arc',
     });
   }
@@ -226,15 +287,17 @@ export class RigidBodyManager {
         }
         const target = b.getTargetPosFn();
         b.mesh.position.lerpVectors(b.startPos, target, b.t);
-        // Parabolic arc height
-        b.mesh.position.y += Math.sin(b.t * Math.PI) * 0.36;
-        // Squash & stretch in flight
+        b.mesh.position.y += Math.sin(b.t * Math.PI) * 0.38;
+        b.mesh.rotation.x += dt * 12;
         const stretch = 1 + Math.cos(b.t * Math.PI) * 0.22;
-        b.mesh.scale.set(1 / Math.sqrt(stretch), stretch, 1 / Math.sqrt(stretch));
+        b.mesh.scale.set(
+          1 / Math.sqrt(stretch),
+          stretch,
+          1 / Math.sqrt(stretch)
+        );
         continue;
       }
 
-      // Standard Rigid Body with Gravity, Air Drag & Cart/Floor Collision
       b.life -= dt;
       if (b.life <= 0) {
         this.scene.remove(b.mesh);
@@ -243,14 +306,13 @@ export class RigidBodyManager {
       }
 
       b.vel.y += gravity * dt;
-      b.vel.multiplyScalar(0.992); // Air drag
+      b.vel.multiplyScalar(0.992);
       b.mesh.position.addScaledVector(b.vel, dt);
 
       b.mesh.rotation.x += b.angVel.x * dt;
       b.mesh.rotation.y += b.angVel.y * dt;
       b.mesh.rotation.z += b.angVel.z * dt;
 
-      // Check collision with Copper Cart Countertop (y = 0.97, x in [-0.9, 0.9], z in [-0.75, 0])
       const pos = b.mesh.position;
       if (
         pos.y - b.radius < 0.97 &&
@@ -268,7 +330,6 @@ export class RigidBodyManager {
         if (b.bounces <= 2 && this.onBounce) this.onBounce('cart');
       }
 
-      // Check collision with Cobblestone Floor (y = 0)
       if (pos.y - b.radius < 0 && b.vel.y < 0) {
         pos.y = b.radius;
         b.vel.y = -b.vel.y * 0.45;
