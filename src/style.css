@@ -23,6 +23,8 @@
 }
 
 html, body {
+  position: fixed;
+  inset: 0;
   width: 100%;
   height: 100%;
   background-color: var(--bg-dark);
@@ -30,17 +32,33 @@ html, body {
   font-family: var(--font-sans);
   overflow: hidden;
   overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+button {
+  font-family: inherit;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 /* Interactive gesture surface per modern-web-guidance `drag` & `responsive-design` */
 .gesture-surface {
-  position: relative;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   width: 100dvw;
   height: 100dvh;
   cursor: grab;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
+  -webkit-touch-callout: none;
   overflow: hidden;
   container-type: inline-size;
 }
@@ -97,21 +115,23 @@ dialog::backdrop {
   transition-behavior: allow-discrete;
 }
 
-:is(dialog[open]):where(:not([data-closing])) {
+dialog[open]:not([data-closing]) {
   opacity: 1;
   transform: scale(1);
+}
 
-  @starting-style {
+dialog[open]:not([data-closing])::backdrop {
+  background-color: rgba(6, 2, 1, 0.7);
+}
+
+@starting-style {
+  dialog[open]:not([data-closing]) {
     opacity: 0;
     transform: scale(0.92);
   }
 
-  &::backdrop {
-    background-color: rgba(6, 2, 1, 0.7);
-
-    @starting-style {
-      background-color: rgba(6, 2, 1, 0);
-    }
+  dialog[open]:not([data-closing])::backdrop {
+    background-color: rgba(6, 2, 1, 0);
   }
 }
 
@@ -136,8 +156,38 @@ dialog::backdrop {
   z-index: 15;
   display: flex;
   justify-content: center;
-  padding-inline: 12px;
+  padding-left: max(env(safe-area-inset-left, 10px), 10px);
+  padding-right: max(env(safe-area-inset-right, 10px), 10px);
   pointer-events: none;
+}
+
+body.ios-immersive .hud-top {
+  top: max(env(safe-area-inset-top, 6px), 6px);
+}
+
+body.ios-immersive .hud-bottom {
+  bottom: max(env(safe-area-inset-bottom, 10px), 10px);
+}
+
+.ios-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  text-align: start;
+}
+
+.ios-step-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(245, 185, 66, 0.3);
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: var(--cream);
 }
 
 .top-minimal-pill {
@@ -661,7 +711,17 @@ dialog::backdrop {
 
 @container (max-width: 420px) {
   .top-minimal-pill {
-    gap: 7px;
+    gap: 6px;
     padding: 6px 10px 9px;
+  }
+
+  .usta-badge-btn {
+    font-size: 0.72rem;
+    padding: 4px 8px;
+  }
+
+  .lang-mini-btn {
+    font-size: 0.68rem;
+    padding: 4px 7px;
   }
 }

@@ -16,6 +16,7 @@ const legPull = document.getElementById('leg-pull');
 const legFlick = document.getElementById('leg-flick');
 const btnStartGame = document.getElementById('btn-start-game');
 const btnAudio = document.getElementById('btn-audio');
+const btnFullscreenTop = document.getElementById('btn-fullscreen-top');
 const btnLang = document.getElementById('btn-lang');
 const btnSwitchUsta = document.getElementById('btn-switch-usta');
 const ustaChips = document.querySelectorAll('.usta-chip');
@@ -44,7 +45,15 @@ const lblHaptics = document.getElementById('lbl-haptics');
 const valHaptics = document.getElementById('val-haptics');
 const btnToggleFullscreen = document.getElementById('btn-toggle-fullscreen');
 const lblFullscreen = document.getElementById('lbl-fullscreen');
+const valFullscreen = document.getElementById('val-fullscreen');
 const btnCloseSettings = document.getElementById('btn-close-settings');
+
+const dialogIosFullscreen = document.getElementById('dialog-ios-fullscreen');
+const iosFsTitle = document.getElementById('ios-fs-title');
+const iosFsDesc = document.getElementById('ios-fs-desc');
+const iosFsStep1 = document.getElementById('ios-fs-step1');
+const iosFsStep2 = document.getElementById('ios-fs-step2');
+const btnCloseIosFs = document.getElementById('btn-close-ios-fs');
 
 const dialogResult = document.getElementById('dialog-result');
 const resultBadge = document.getElementById('result-badge');
@@ -125,15 +134,34 @@ async function requestScreenWakeLock() {
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && director?.active) {
-    requestScreenWakeLock();
+  if (document.visibilityState === 'visible') {
+    if (sound?.enabled) {
+      sound.init();
+    }
+    if (director?.active) {
+      requestScreenWakeLock();
+    }
   }
 });
 
-// Register PWA Service Worker in production
+// Prevent iOS Safari pinch-to-zoom & rubber-band bounce outside dialogs
+['gesturestart', 'gesturechange', 'gestureend'].forEach((evtName) => {
+  window.addEventListener(evtName, (e) => e.preventDefault(), { passive: false });
+});
+document.addEventListener(
+  'touchmove',
+  (e) => {
+    if (!e.target.closest('dialog')) {
+      e.preventDefault();
+    }
+  },
+  { passive: false }
+);
+
+// Register PWA Service Worker in production (relative path for subpath & root hosting)
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
   });
 }
 
@@ -185,6 +213,12 @@ function applyLanguageUI() {
   lblFullscreen.textContent = `⛶ ${saveManager.t('fullscreenLabel')}`;
   btnCloseSettings.textContent = saveManager.t('closeBtn');
 
+  if (iosFsTitle) iosFsTitle.textContent = saveManager.t('iosFsTitle');
+  if (iosFsDesc) iosFsDesc.textContent = saveManager.t('iosFsDesc');
+  if (iosFsStep1) iosFsStep1.textContent = `1️⃣ ${saveManager.t('iosFsStep1')}`;
+  if (iosFsStep2) iosFsStep2.textContent = `2️⃣ ${saveManager.t('iosFsStep2')}`;
+  if (btnCloseIosFs) btnCloseIosFs.textContent = saveManager.t('iosFsPlay');
+
   langCardBtns.forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.lang === saveManager.lang);
   });
@@ -193,6 +227,16 @@ function applyLanguageUI() {
   valSound.classList.toggle('on', sound.enabled);
   valHaptics.textContent = saveManager.hapticsEnabled ? 'ON' : 'OFF';
   valHaptics.classList.toggle('on', saveManager.hapticsEnabled);
+  const isFsActive = Boolean(
+    document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      window.navigator.standalone ||
+      document.body.classList.contains('ios-immersive')
+  );
+  if (valFullscreen) {
+    valFullscreen.textContent = isFsActive ? 'ON' : '⛶';
+    valFullscreen.classList.toggle('on', isFsActive);
+  }
 }
 
 const uiCallbacks = {
@@ -280,23 +324,68 @@ btnToggleHaptics.addEventListener('click', () => {
   applyLanguageUI();
 });
 
-btnToggleFullscreen.addEventListener('click', () => {
-  if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen?.().catch(() => {});
+function toggleFullscreenExperience() {
+  const docEl = document.documentElement;
+  const reqFs = docEl.requestFullscreen || docEl.webkitRequestFullscreen;
+  const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
+  const activeFs = document.fullscreenElement || document.webkitFullscreenElement;
+
+  if (reqFs) {
+    if (!activeFs) {
+      reqFs.call(docEl).catch(() => {});
+      document.body.classList.add('ios-immersive');
+    } else if (exitFs) {
+      exitFs.call(document).catch(() => {});
+      document.body.classList.remove('ios-immersive');
+    }
   } else {
-    document.exitFullscreen?.().catch(() => {});
+    // iPhone iOS Safari: enable edge-to-edge immersive viewport mode & show Home Screen PWA tip if in browser tab
+    document.body.classList.add('ios-immersive');
+    window.scrollTo(0, 1);
+    world.onResize();
+    resizeTrailCanvas();
+    const isStandalone =
+      window.navigator.standalone === true ||
+      window.matchMedia?.('(display-mode: standalone), (display-mode: fullscreen)').matches;
+    if (!isStandalone && dialogIosFullscreen && !dialogIosFullscreen.open) {
+      applyLanguageUI();
+      if (dialogSettings?.open) {
+        closeTopLayer(dialogSettings);
+      }
+      dialogIosFullscreen.showModal();
+    }
   }
-});
+  applyLanguageUI();
+}
+
+btnToggleFullscreen.addEventListener('click', toggleFullscreenExperience);
+if (btnFullscreenTop) {
+  btnFullscreenTop.addEventListener('click', toggleFullscreenExperience);
+}
+if (btnCloseIosFs) {
+  btnCloseIosFs.addEventListener('click', () => {
+    closeTopLayer(dialogIosFullscreen);
+  });
+}
 
 btnCloseSettings.addEventListener('click', () => {
   closeTopLayer(dialogSettings);
 });
 
+let viewportWidth = window.innerWidth;
+let viewportHeight = window.innerHeight;
+
 function resizeTrailCanvas() {
-  trailCanvas.width = window.innerWidth;
-  trailCanvas.height = window.innerHeight;
+  viewportWidth = Math.max(1, window.visualViewport?.width || window.innerWidth);
+  viewportHeight = Math.max(1, window.visualViewport?.height || window.innerHeight);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  trailCanvas.width = Math.round(viewportWidth * dpr);
+  trailCanvas.height = Math.round(viewportHeight * dpr);
+  trailCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 window.addEventListener('resize', resizeTrailCanvas);
+window.addEventListener('orientationchange', () => setTimeout(resizeTrailCanvas, 80));
+window.visualViewport?.addEventListener('resize', resizeTrailCanvas);
 resizeTrailCanvas();
 
 const gestureState = {
@@ -337,8 +426,8 @@ const PALETTE = {
 };
 
 function updateNormalizedPointer(clientX, clientY, dt = 0.016) {
-  const newX = (clientX / window.innerWidth) * 2 - 1;
-  const newY = -((clientY / window.innerHeight) * 2 - 1);
+  const newX = (clientX / viewportWidth) * 2 - 1;
+  const newY = -((clientY / viewportHeight) * 2 - 1);
 
   const dx = newX - gestureState.normX;
   const dy = newY - gestureState.normY;
@@ -379,7 +468,11 @@ gameContainer.addEventListener('pointerdown', (event) => {
   }
 
   sound.init();
-  gameContainer.setPointerCapture(event.pointerId);
+  try {
+    gameContainer.setPointerCapture(event.pointerId);
+  } catch {
+    // Ignore on browsers that reject pointer capture on synthetic touch
+  }
   gameContainer.classList.add('dragging');
 
   const now = performance.now();
@@ -409,23 +502,34 @@ gameContainer.addEventListener('pointermove', (event) => {
   const dt = Math.max(0.004, (now - lastMoveTime) / 1000);
   lastMoveTime = now;
 
-  if (gameContainer.hasPointerCapture(event.pointerId) || director.active) {
+  if (
+    gestureState.isPointerDown ||
+    gameContainer.hasPointerCapture?.(event.pointerId) ||
+    director.active
+  ) {
     gestureState.isReaching =
-      gameContainer.hasPointerCapture(event.pointerId) ||
+      gestureState.isPointerDown ||
+      gameContainer.hasPointerCapture?.(event.pointerId) ||
       gestureState.normY > -0.45;
     updateNormalizedPointer(event.clientX, event.clientY, dt);
   }
 });
 
-gameContainer.addEventListener('lostpointercapture', () => {
+function endPointerInteraction() {
   gameContainer.classList.remove('dragging');
   gestureState.isPointerDown = false;
   gestureState.isReaching = false;
-});
+}
+
+gameContainer.addEventListener('pointerup', endPointerInteraction);
+gameContainer.addEventListener('pointercancel', endPointerInteraction);
+gameContainer.addEventListener('lostpointercapture', endPointerInteraction);
 
 btnStartGame.addEventListener('click', () => {
   sound.init();
   requestScreenWakeLock();
+  document.body.classList.add('ios-immersive');
+  window.scrollTo(0, 1);
   startOverlay.classList.add('hidden');
   director.resetRound(selectedStartUsta);
   director.startRound();
@@ -607,7 +711,7 @@ function drawVendorSpeechBubble(ctx, bubble) {
   const padX = 11;
   const bw = tw + padX * 2;
   const bh = 28;
-  const bx = THREE.MathUtils.clamp(bubble.x - bw * 0.5, 12, window.innerWidth - bw - 12);
+  const bx = THREE.MathUtils.clamp(bubble.x - bw * 0.5, 12, viewportWidth - bw - 12);
   const by = Math.max(58, bubble.y - bh * 0.5);
 
   ctx.fillStyle = 'rgba(255, 248, 235, 0.95)';
@@ -630,8 +734,8 @@ function drawFloatingPopupsAndVignette(ctx, guide) {
 
   // 1. Subtle Edge Vignette Flash on Combo / Penalty
   if (guide.vignetteFlash && guide.vignetteFlash.alpha > 0.01) {
-    const w = trailCanvas.width;
-    const h = trailCanvas.height;
+    const w = viewportWidth;
+    const h = viewportHeight;
     const pal = PALETTE[guide.vignetteFlash.color] || PALETTE.green;
     const grad = ctx.createRadialGradient(
       w * 0.5,
@@ -672,7 +776,7 @@ function drawFloatingPopupsAndVignette(ctx, guide) {
 }
 
 function renderVisualCometsAndTrails(dt, elapsed, guide) {
-  trailCtx.clearRect(0, 0, trailCanvas.width, trailCanvas.height);
+  trailCtx.clearRect(0, 0, viewportWidth, viewportHeight);
 
   if (guide && guide.active) {
     drawFloatingPopupsAndVignette(trailCtx, guide);

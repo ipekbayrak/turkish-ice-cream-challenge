@@ -26,14 +26,36 @@ export class SoundEngine {
   }
 
   init() {
+    if (typeof navigator !== 'undefined' && 'audioSession' in navigator) {
+      try {
+        navigator.audioSession.type = 'playback';
+      } catch {
+        // Ignore on unsupported browsers
+      }
+    }
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (AudioCtx) {
         this.ctx = new AudioCtx();
       }
     }
-    if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
+    if (
+      this.ctx &&
+      (this.ctx.state === 'suspended' || this.ctx.state === 'interrupted')
+    ) {
+      this.ctx.resume().catch(() => {});
+    }
+    if (this.ctx && !this._iosUnlocked) {
+      try {
+        const silentBuf = this.ctx.createBuffer(1, 1, 22050);
+        const src = this.ctx.createBufferSource();
+        src.buffer = silentBuf;
+        src.connect(this.ctx.destination);
+        src.start(0);
+        this._iosUnlocked = true;
+      } catch {
+        // Ignore
+      }
     }
   }
 

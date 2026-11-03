@@ -5,6 +5,27 @@ import {
   RigidBodyManager,
 } from './physics.js';
 
+// Polyfill CanvasRenderingContext2D.prototype.roundRect for older iOS Safari (< 16.0)
+if (
+  typeof CanvasRenderingContext2D !== 'undefined' &&
+  !CanvasRenderingContext2D.prototype.roundRect
+) {
+  CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, radii) {
+    const r = Math.min(
+      typeof radii === 'number' ? radii : Array.isArray(radii) ? radii[0] || 0 : 0,
+      w * 0.5,
+      h * 0.5
+    );
+    this.moveTo(x + r, y);
+    this.arcTo(x + w, y, x + w, y + h, r);
+    this.arcTo(x + w, y + h, x, y + h, r);
+    this.arcTo(x, y + h, x, y, r);
+    this.arcTo(x, y, x + w, y, r);
+    this.closePath();
+    return this;
+  };
+}
+
 export class GameWorld {
   constructor(canvas, onPhysicsBounce = null) {
     this.canvas = canvas;
@@ -64,6 +85,10 @@ export class GameWorld {
     this.rigidBodies = new RigidBodyManager(this.scene, onPhysicsBounce);
 
     window.addEventListener('resize', () => this.onResize());
+    window.addEventListener('orientationchange', () => {
+      setTimeout(() => this.onResize(), 80);
+    });
+    window.visualViewport?.addEventListener('resize', () => this.onResize());
     this.onResize();
   }
 
@@ -1222,10 +1247,12 @@ export class GameWorld {
   }
 
   projectToScreen(worldVec) {
+    const w = Math.max(1, window.visualViewport?.width || window.innerWidth);
+    const h = Math.max(1, window.visualViewport?.height || window.innerHeight);
     const v = worldVec.clone().project(this.camera);
     return {
-      x: (v.x * 0.5 + 0.5) * window.innerWidth,
-      y: (-(v.y * 0.5) + 0.5) * window.innerHeight,
+      x: (v.x * 0.5 + 0.5) * w,
+      y: (-(v.y * 0.5) + 0.5) * h,
     };
   }
 
@@ -1601,12 +1628,22 @@ export class GameWorld {
   }
 
   onResize() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    this.camera.aspect = w / h;
-    this.camera.fov = w < h ? 65 : 54;
+    const w = Math.max(1, window.visualViewport?.width || window.innerWidth);
+    const h = Math.max(1, window.visualViewport?.height || window.innerHeight);
+    const aspect = w / h;
+    this.camera.aspect = aspect;
+    if (aspect < 0.75) {
+      // Narrow portrait screens (iPhone 13/14/15/16 Pro ~0.46–0.56):
+      // Dynamically widen vertical FOV and step back slightly so the full Maraş cart & vendor arms fit comfortably
+      this.camera.fov = THREE.MathUtils.clamp(62 + (0.65 - aspect) * 28, 64, 72);
+      this.baseCamPos.set(0, 1.5, 1.12);
+    } else {
+      this.camera.fov = 54;
+      this.baseCamPos.set(0, 1.52, 1.05);
+    }
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   }
 
   render() {

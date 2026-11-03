@@ -2,14 +2,31 @@
 <html lang="tr" dir="ltr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=overlays-content" />
   <meta name="theme-color" content="#140805" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="format-detection" content="telephone=no" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
-  <title>Turkish Ice Cream Challenge</title>
+  <meta name="apple-mobile-web-app-title" content="Maraş Dondurma" />
+
+  <title>Maraş Dondurmacısı 3D Şov — Turkish Ice Cream Challenge</title>
+  <meta name="description" content="3B Birinci Şahıs (POV) Kahramanmaraş Dondurmacısı Şovu! Ustaların boş külah ve peçete tuzaklarını aş, 3 top bol fıstıklı dondurmayı kap!" />
+
+  <!-- Open Graph / WhatsApp / iMessage Rich Link Preview -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="🍦 Maraş Dondurmacısı 3D Şov — Turkish Ice Cream Challenge" />
+  <meta property="og:description" content="Ustanın boş külah ve peçete şakalarına kanmadan 3 top fıstıklı Maraş dondurmasını kapabilir misin? iPhone ve Android'de hemen oyna!" />
+  <meta property="og:image" content="https://ipekbayrak.com.tr/dondurma/og-preview.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="🍦 Maraş Dondurmacısı 3D Şov" />
+  <meta name="twitter:description" content="3B Maraş Dondurmacısı Şovu — Hemen tarayıcıda tam ekran oyna!" />
+  <meta name="twitter:image" content="https://ipekbayrak.com.tr/dondurma/og-preview.png" />
+
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
@@ -37,6 +54,7 @@
           🇹🇷 TR ⚙️
         </button>
         <button type="button" id="btn-audio" class="mini-audio-btn" aria-label="Sound">🔊</button>
+        <button type="button" id="btn-fullscreen-top" class="mini-audio-btn" aria-label="Fullscreen" title="Fullscreen">⛶</button>
 
         <div class="routine-progress-track" aria-hidden="true">
           <div class="routine-progress-fill" id="hud-routine-fill"></div>
@@ -142,10 +160,34 @@
       </button>
 
       <div class="settings-footer-links">
-        <a href="/privacy-policy.html" target="_blank" rel="noopener" id="link-privacy" class="privacy-link">
+        <a href="./privacy-policy.html" target="_blank" rel="noopener" id="link-privacy" class="privacy-link">
           🔒 Privacy Policy • v1.0.0
         </a>
       </div>
+    </div>
+  </dialog>
+
+  <!-- iPhone Fullscreen / Add to Home Screen Helper Modal (<dialog>) -->
+  <dialog id="dialog-ios-fullscreen" closedby="any" aria-labelledby="ios-fs-title">
+    <div class="modal-card settings-modal-card">
+      <div class="result-badge">📲 iPHONE TAM EKRAN</div>
+      <h2 id="ios-fs-title" class="result-title">Tam Ekran Modu</h2>
+      <p id="ios-fs-desc" class="result-desc">
+        Geniş ekran görünümü etkinleştirildi! Safari adres çubuğunu tamamen gizleyip %100 uygulama gibi oynamak isterseniz:
+      </p>
+      <div class="ios-steps-list">
+        <div class="ios-step-item" id="ios-fs-step1">
+          <span>1️⃣</span>
+          <span>Safari alt çubuğundaki <strong>Paylaş (⬆️)</strong> düğmesine dokunun.</span>
+        </div>
+        <div class="ios-step-item" id="ios-fs-step2">
+          <span>2️⃣</span>
+          <span><strong>"Ana Ekrana Ekle" (➕)</strong> seçeneğine dokunun.</span>
+        </div>
+      </div>
+      <button type="button" id="btn-close-ios-fs" class="play-giant-btn">
+        ▶ Hemen Oyna
+      </button>
     </div>
   </dialog>
 

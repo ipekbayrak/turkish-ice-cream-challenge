@@ -7,6 +7,7 @@
     "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview --host",
+    "deploy:web": "bash scripts/deploy-web.sh",
     "android:sync": "vite build && cap sync android",
     "android:open": "cap open android",
     "android:apk": "vite build && cap sync android && cd android && ./gradlew assembleDebug",
