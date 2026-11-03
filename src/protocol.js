@@ -441,6 +441,28 @@ export const TRICK_CATALOG = [
     },
   },
   {
+    id: 'EYE_LOCK_RHYTHM_CHASE',
+    icon: '👀🎯',
+    difficulty: 2,
+    category: 'rhythm_trap',
+    names: {
+      tr: 'Göz Göze Ritim & Hop-Hop Yön Değiştirme',
+      en: 'Eye-Lock Rhythm & Hop-Hop Switch',
+      ar: 'نظرة العين وإيقاع هوب-هوب',
+      ru: 'Взгляд глаза в глаза и ритм Хоп-Хоп',
+      de: 'Blickduell & Hop-Hop-Rhythmus',
+      ja: 'アイコンタクト＆ホップ・リズム追跡',
+    },
+    descs: {
+      tr: 'Elini yeşil çizginin ortasında bekletip ustayla göz göze gelirsin; usta dondurmayı sağa-sola kaçırdıkça çizgiyle birlikte ritme uy! Geç kalırsan "Hop-hop!" diye çubuğun yönünü rastgele değiştirir!',
+      en: 'Hold your hand at the midpoint of the green line to lock eyes with the vendor; follow the shifting green path left and right in rhythm! If you are late, he shouts "Hop-hop!" and randomly flips the rod direction!',
+      ar: 'ثبّت يدك في منتصف الخط الأخضر وتبادل النظرات مع البائع، ثم اتبع الخط يميناً ويساراً على الإيقاع! إن تأخرت يغير اتجاه العصا عشوائياً!',
+      ru: 'Задержи руку на середине зеленой линии, глядя мастеру в глаза, и двигай пальцем в ритм влево-вправо! Опоздаешь — он крикнет «Хоп-хоп!» и случайно сменит направление шеста!',
+      de: 'Halte deine Hand in der Mitte der grünen Linie, schau dem Meister in die Augen und folge dem Rhythmus nach links und rechts! Bist du zu langsam, wechselt er mit „Hop-Hop!“ zufällig die Stabrichtung!',
+      ja: '緑のラインの中央で手を止めて職人と目を合わせ、左右に動くラインのリズムに合わせて指を追従させろ！遅れると「ホップ・ホップ！」と棒の向きをランダムに変えられるぞ！',
+    },
+  },
+  {
     id: 'FINAL_PISTACHIO_CATCH',
     icon: '🏆🥜',
     difficulty: 2,
@@ -477,8 +499,13 @@ export const CAMPAIGN_LEVELS = [
     defaultScoops: 2,
     hearts: 3,
     tutorialEnabled: true,
-    trickCount: 3,
-    trickPool: ['DOUBLE_CONE_SLIDE', 'SHAFT_SPIN_360', 'MEGA_TAFFY_SLICE'],
+    trickCount: 4,
+    trickPool: [
+      'EYE_LOCK_RHYTHM_CHASE',
+      'DOUBLE_CONE_SLIDE',
+      'SHAFT_SPIN_360',
+      'MEGA_TAFFY_SLICE',
+    ],
     finalWindowSec: 3.6,
   },
   {
@@ -491,7 +518,13 @@ export const CAMPAIGN_LEVELS = [
     hearts: 3,
     tutorialEnabled: false,
     trickCount: 4,
-    trickPool: ['DOUBLE_CONE_SLIDE', 'GIANT_BLOCK_TEASE', 'SHAFT_SPIN_360', 'VERTICAL_WINDMILL'],
+    trickPool: [
+      'EYE_LOCK_RHYTHM_CHASE',
+      'DOUBLE_CONE_SLIDE',
+      'GIANT_BLOCK_TEASE',
+      'SHAFT_SPIN_360',
+      'VERTICAL_WINDMILL',
+    ],
     finalWindowSec: 3.3,
   },
   {
@@ -505,6 +538,7 @@ export const CAMPAIGN_LEVELS = [
     tutorialEnabled: false,
     trickCount: 5,
     trickPool: [
+      'EYE_LOCK_RHYTHM_CHASE',
       'DOUBLE_CONE_SLIDE',
       'GIANT_BLOCK_TEASE',
       'UPSIDE_DOWN_GRAVITY',
@@ -525,6 +559,7 @@ export const CAMPAIGN_LEVELS = [
     tutorialEnabled: false,
     trickCount: 5,
     trickPool: [
+      'EYE_LOCK_RHYTHM_CHASE',
       'GIANT_BLOCK_TEASE',
       'MIDAIR_BLOCK_SOMERSAULT',
       'DOUBLE_CONE_SLIDE',
@@ -545,6 +580,7 @@ export const CAMPAIGN_LEVELS = [
     tutorialEnabled: false,
     trickCount: 6,
     trickPool: [
+      'EYE_LOCK_RHYTHM_CHASE',
       'DOUBLE_CONE_SLIDE',
       'MIDAIR_BLOCK_SOMERSAULT',
       'SHELL_SWAP_DUEL',
@@ -565,6 +601,7 @@ export const CAMPAIGN_LEVELS = [
     tutorialEnabled: false,
     trickCount: 6,
     trickPool: [
+      'EYE_LOCK_RHYTHM_CHASE',
       'GIANT_BLOCK_TEASE',
       'MIDAIR_BLOCK_SOMERSAULT',
       'DOUBLE_CONE_SLIDE',
@@ -586,6 +623,7 @@ export const CAMPAIGN_LEVELS = [
     tutorialEnabled: false,
     trickCount: 7,
     trickPool: [
+      'EYE_LOCK_RHYTHM_CHASE',
       'DOUBLE_CONE_SLIDE',
       'GIANT_BLOCK_TEASE',
       'MIDAIR_BLOCK_SOMERSAULT',
@@ -608,6 +646,7 @@ export const CAMPAIGN_LEVELS = [
     tutorialEnabled: false,
     trickCount: 7,
     trickPool: [
+      'EYE_LOCK_RHYTHM_CHASE',
       'DOUBLE_CONE_SLIDE',
       'MIDAIR_BLOCK_SOMERSAULT',
       'SHELL_SWAP_DUEL',
@@ -630,6 +669,7 @@ export const CAMPAIGN_LEVELS = [
     tutorialEnabled: false,
     trickCount: 8,
     trickPool: [
+      'EYE_LOCK_RHYTHM_CHASE',
       'GIANT_BLOCK_TEASE',
       'MIDAIR_BLOCK_SOMERSAULT',
       'DOUBLE_CONE_SLIDE',

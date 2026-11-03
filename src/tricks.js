@@ -171,6 +171,12 @@ export class TrickDirector {
       }
     }
 
+    // Guarantee EYE_LOCK_RHYTHM_CHASE appears in the routine so the eye-contact & green-line rhythm mechanic is always experienced
+    if (!chosenTricks.includes('EYE_LOCK_RHYTHM_CHASE')) {
+      chosenTricks[Math.min(1, chosenTricks.length - 1)] =
+        'EYE_LOCK_RHYTHM_CHASE';
+    }
+
     // Interleave scoop additions across the routine until reaching targetScoopCount
     let scoopsScheduled = 1;
     const interval = Math.max(
@@ -223,7 +229,18 @@ export class TrickDirector {
     this.penaltiesTaken = 0;
     this.overtimeMisses = 0;
     this.idleSeconds = 0;
-    this.passiveLimitSec = 10.5;
+    this.passiveLimitSec = 22.0;
+    this.isAfkShowActive = false;
+    this.afkScenario = 0;
+    this.afkTimer = 0;
+    this.lastAfkBeatTime = 0;
+
+    this.eyeLockHoldTimer = 0;
+    this.rhythmBeatsCompleted = 0;
+    this.rhythmBeatTimer = 0;
+    this.rhythmSide = 1;
+    this.rhythmTargetPos = new THREE.Vector3(0, 1.22, 0.27);
+    this.midpointHoverTimer = 0;
 
     this.heldItem = null;
     this.tugTimer = 0;
@@ -298,6 +315,10 @@ export class TrickDirector {
       giant: 'hmm',
       flip: 'hirr',
       empty_trap: 'cik',
+      hophop: 'hoppa',
+      afk_table: 'taunt',
+      afk_bells: 'eeeh',
+      afk_wave: 'taunt',
       hmm: 'hmm',
       hirr: 'hirr',
       eeeh: 'eeeh',
@@ -326,6 +347,10 @@ export class TrickDirector {
       giant: 'speech_giant',
       flip: 'speech_flip',
       empty_trap: 'speech_cik',
+      hophop: 'speech_hophop',
+      afk_table: 'speech_afk_table',
+      afk_bells: 'speech_afk_bells',
+      afk_wave: 'speech_afk_wave',
     };
     this.vendorBubbleText = this.save.t(keyMap[type] || 'speech_hoppa');
     this.vendorBubbleTimer = 1.25;
@@ -366,6 +391,13 @@ export class TrickDirector {
     this.coneFlipZ = 0;
     this.conePitchX = 0;
     this.lastScrapeClankTime = 0;
+    this.eyeLockHoldTimer = 0;
+    this.rhythmBeatsCompleted = 0;
+    this.rhythmBeatTimer = 0;
+    this.rhythmSide = Math.random() < 0.5 ? -1 : 1;
+    this.rhythmTargetPos = new THREE.Vector3(0, 1.22, 0.27);
+    this.midpointHoverTimer = 0;
+    this.isAfkShowActive = false;
 
     this._hideAllProps();
     this._reattachConeToPaddle();
@@ -573,6 +605,22 @@ export class TrickDirector {
         break;
       }
 
+      case 'EYE_LOCK_RHYTHM_CHASE': {
+        if (this.scoopCount < 1) {
+          this.scoopCount = 1;
+          this.world.updateIceCreamScoops(1, false);
+        }
+        this.eyeLockHoldTimer = 0;
+        this.rhythmBeatsCompleted = 0;
+        this.rhythmBeatTimer = 0;
+        this.rhythmSide = Math.random() < 0.5 ? -1 : 1;
+        this.rhythmTargetPos.set(0, 1.22, 0.27);
+        this.coneTargetPos.copy(this.rhythmTargetPos);
+        this.world.setVendorMood('mischief');
+        this._triggerVendorSpeech('hmm');
+        break;
+      }
+
       case 'FINAL_PISTACHIO_CATCH': {
         this.scoopCount = this.targetScoopCount;
         this.world.updateIceCreamScoops(this.scoopCount, true);
@@ -748,13 +796,75 @@ export class TrickDirector {
       return;
     }
 
-    // Passive timeout check
-    if (gestureState.isMoving || gestureState.isPointerDown) {
+    // Check if the player is holding their hand at the MIDPOINT of the green line (Eye-Lock trigger!)
+    const greenLineMidpoint = new THREE.Vector3(
+      this.coneWorldPos.x * 0.5,
+      1.15,
+      0.41
+    );
+    const distToMidpoint = handPos.distanceTo(greenLineMidpoint);
+    const isAtGreenMidpoint =
+      distToMidpoint < 0.24 && distToCone >= 0.26 && handPos.z < 0.51;
+
+    if (
+      isAtGreenMidpoint &&
+      (this.currentMechanic === 'SHAFT_SPIN_360' ||
+        this.currentMechanic === 'DOUBLE_CONE_SLIDE' ||
+        this.currentMechanic === 'FIGURE_EIGHT_WEAVE')
+    ) {
+      this.midpointHoverTimer += dt;
       this.idleSeconds = 0;
-    } else if (this.currentMechanic !== 'SCRAPE_FLAVOR_SCOOP') {
+      if (this.midpointHoverTimer >= 0.35) {
+        // Player paused at the middle of the green line locking eyes with the vendor!
+        this.midpointHoverTimer = 0;
+        this._hideAllProps();
+        this.currentMechanic = 'EYE_LOCK_RHYTHM_CHASE';
+        this.save.discoverTrick('EYE_LOCK_RHYTHM_CHASE');
+        this.subStep = 1; // Jump directly into eye-locked rhythmic left/right follow!
+        this.stageTimer = 0;
+        this.rhythmBeatsCompleted = 0;
+        this.rhythmBeatTimer = 0;
+        this.rhythmSide = Math.random() < 0.5 ? -1 : 1;
+        this.rhythmTargetPos.set(this.rhythmSide * 0.27, 1.22, 0.27);
+        this.coneTargetPos.copy(this.rhythmTargetPos);
+        this.world.setVendorMood('mischief');
+        this.sound.playBellNote(3, 0.85, 0);
+        this.world.strikeBell(3, 0.8);
+        this._triggerVendorSpeech('hmm');
+        this._spawnScorePopup(120, greenLineMidpoint, '👀');
+      }
+    } else {
+      this.midpointHoverTimer = Math.max(0, this.midpointHoverTimer - dt * 1.5);
+    }
+
+    // Passive timeout & Multi-Scenario AFK Show Director check
+    if (
+      gestureState.isMoving ||
+      gestureState.isPointerDown ||
+      (this.currentMechanic === 'EYE_LOCK_RHYTHM_CHASE' &&
+        this.subStep === 0 &&
+        isAtGreenMidpoint)
+    ) {
+      if (this.isAfkShowActive) {
+        this.isAfkShowActive = false;
+        this.leftHandCustomTarget = null;
+        this.conePitchX = 0;
+        this.coneFlipZ = 0;
+        this._triggerVendorSpeech('hoppa');
+      }
+      this.idleSeconds = 0;
+    } else if (
+      this.currentMechanic !== 'SCRAPE_FLAVOR_SCOOP' &&
+      this.currentMechanic !== 'TUTORIAL_WARMUP'
+    ) {
       this.idleSeconds += dt;
       if (this.idleSeconds >= this.passiveLimitSec) {
         this._endRound('PASSIVE_BORING');
+        return;
+      }
+      if (this.idleSeconds >= 2.15) {
+        this._updateAfkShow(dt, time);
+        this._applyKinematics(dt, time, gestureState);
         return;
       }
     }
@@ -887,6 +997,7 @@ export class TrickDirector {
           this.coneWorldPos,
           1.35
         );
+        this.world.churnTubIceCream(flav.index, dt * 3.8);
 
         if (this.stageTimer - this.lastScrapeClankTime > 0.38) {
           this.lastScrapeClankTime = this.stageTimer;
@@ -1004,6 +1115,7 @@ export class TrickDirector {
             this.world.giantBlockGroup.position,
             1.65
           );
+          this.world.churnTubIceCream(flav.index, dt * 3.0);
 
           if (
             this.stageTimer > 0.5 &&
@@ -1494,14 +1606,15 @@ export class TrickDirector {
       // =========================================================================
       case 'BELL_RHYTHM_FEINT': {
         if (this.bellBeatsDone < 2) {
-          // Beats 1 and 2: Vendor strikes the brass bells and dips the cone as a feint!
+          // Beats 1 and 2: Vendor raises paddle to strike the overhead brass bells and dips the cone as a feint!
           const beatPhase = (this.stageTimer % 0.85) / 0.85;
-          const bx = (this.bellBeatsDone === 0 ? -0.26 : 0.26) * (1 - beatPhase * 0.5);
-          const by = beatPhase < 0.35 ? 1.62 : 1.22;
-          const bz = beatPhase < 0.35 ? 0.05 : 0.27;
+          const bx =
+            (this.bellBeatsDone === 0 ? -0.26 : 0.26) * (1 - beatPhase * 0.5);
+          const by = beatPhase < 0.35 ? 1.74 : 1.22;
+          const bz = beatPhase < 0.35 ? -0.08 : 0.27;
 
           this.coneTargetPos.set(bx, by, bz);
-          this.conePitchX = beatPhase < 0.35 ? -0.45 : 0.28;
+          this.conePitchX = beatPhase < 0.35 ? -0.52 : 0.28;
           this.shaftRoll = beatPhase * Math.PI * 2;
 
           if (
@@ -1516,9 +1629,10 @@ export class TrickDirector {
           }
 
           if (this.stageTimer >= (this.bellBeatsDone + 1) * 0.85) {
+            const bellIdx = this.bellBeatsDone === 0 ? 1 : 5;
             this.bellBeatsDone++;
-            this.sound.playBell(0.95, bx);
-            this.world.ringBells(0.85);
+            this.sound.playBellNote(bellIdx, 0.95, bx);
+            this.world.strikeBell(bellIdx, 1.15);
             if (this.bellBeatsDone === 2) {
               this.stageTimer = 0;
               this._triggerVendorSpeech('hoppa');
@@ -1529,7 +1643,8 @@ export class TrickDirector {
           this.coneTargetPos.set(0, 1.21, 0.28);
           this.conePitchX = 0.08;
           if (gestureState.isReaching && distToCone < 0.29) {
-            this.sound.playBell(1.0, 0);
+            this.sound.playBellNote(3, 1.0, 0);
+            this.world.strikeBell(3, 1.0);
             this.sound.playGripTug(0);
             this._vibrate(30);
             this.score += 420;
@@ -1646,7 +1761,154 @@ export class TrickDirector {
       }
 
       // =========================================================================
-      // 16. PISTACHIO CROWN FINALE SNATCH (`FINAL_PISTACHIO_CATCH`)
+      // 16. EYE-LOCK MIDPOINT & RHYTHMIC GREEN-LINE CHASE (`EYE_LOCK_RHYTHM_CHASE`)
+      // =========================================================================
+      case 'EYE_LOCK_RHYTHM_CHASE': {
+        this.rhythmBeatTimer += dt * speedMult;
+
+        if (this.subStep === 0) {
+          // SubStep 0: Bring hand to the MIDDLE of the green line and hold while locking eyes with the vendor!
+          this.coneTargetPos.set(
+            this.rhythmTargetPos.x + Math.sin(time * 2.6) * 0.03,
+            this.rhythmTargetPos.y + Math.cos(time * 3.1) * 0.02,
+            this.rhythmTargetPos.z
+          );
+          // Vendor locks eyes with the player
+          this.world.setVendorMood('mischief');
+
+          const midWorld = new THREE.Vector3(
+            this.coneWorldPos.x * 0.5,
+            1.15,
+            0.41
+          );
+          const dMid = handPos.distanceTo(midWorld);
+          const holdingAtMid =
+            dMid < 0.26 || (handPos.z < 0.49 && distToCone < 0.34);
+
+          if (holdingAtMid) {
+            this.eyeLockHoldTimer += dt * 1.35;
+            this.rhythmBeatTimer = Math.max(0, this.rhythmBeatTimer - dt * 0.8);
+            if (this.eyeLockHoldTimer >= 0.32) {
+              // Eye-contact locked! Now vendor shifts cone + green line left/right in rhythm!
+              this.subStep = 1;
+              this.stageTimer = 0;
+              this.rhythmBeatTimer = 0;
+              this.rhythmBeatsCompleted = 0;
+              this.stepCooldown = 0.28;
+              this.rhythmSide = Math.random() < 0.5 ? -1 : 1;
+              this.rhythmTargetPos.set(this.rhythmSide * 0.27, 1.22, 0.27);
+              this.coneTargetPos.copy(this.rhythmTargetPos);
+              this.shaftRoll += Math.PI * 0.5 * this.rhythmSide;
+              this.conePitchX = 0.14;
+              this.coneFlipZ = 0;
+              this.sound.playBellNote(3, 0.9, 0);
+              this.world.strikeBell(3, 0.85);
+              this._triggerVendorSpeech('hmm');
+              this._vibrate(25);
+              this.score += 140;
+              this._spawnScorePopup(140, midWorld, '👀');
+            }
+          } else {
+            this.eyeLockHoldTimer = Math.max(
+              0,
+              this.eyeLockHoldTimer - dt * 1.2
+            );
+            // If player doesn't bring hand to the midpoint in time -> "Hop! Hop!" random direction + rod flip!
+            if (this.rhythmBeatTimer >= 1.25) {
+              this.rhythmBeatTimer = 0;
+              this.rhythmSide *= -1;
+              const randX =
+                this.rhythmSide * (0.16 + Math.random() * 0.16);
+              const randY = 1.16 + Math.random() * 0.24;
+              const randZ = 0.23 + Math.random() * 0.06;
+              this.rhythmTargetPos.set(randX, randY, randZ);
+              this.coneTargetPos.copy(this.rhythmTargetPos);
+              // Flip the metal rod orientation ("hop hop diye çubuğun yönünü değiştirecek")
+              this.shaftRoll += Math.PI * (Math.random() < 0.5 ? 1 : -1);
+              this.conePitchX = (Math.random() - 0.5) * 0.65;
+              this.coneFlipZ = (Math.random() - 0.5) * 0.5;
+              this.sound.playWhoosh(1.25, randX);
+              this.sound.playPaddleClank(randX);
+              this._triggerVendorSpeech('hophop');
+            }
+          }
+        } else {
+          // SubStep 1: Vendor moves the ice cream left & right; green line shifts with it!
+          // Player must move their finger in rhythm with the shifting green line!
+          this.coneTargetPos.set(
+            this.rhythmTargetPos.x + Math.sin(time * 5.2) * 0.03,
+            this.rhythmTargetPos.y + Math.cos(time * 4.4) * 0.02,
+            this.rhythmTargetPos.z
+          );
+
+          const matchedRhythm =
+            this.stepCooldown <= 0 &&
+            (distToCone < 0.29 ||
+              (Math.abs(handPos.x - this.coneWorldPos.x) < 0.16 &&
+                handPos.z < 0.45));
+
+          if (matchedRhythm) {
+            this.rhythmBeatsCompleted++;
+            this.rhythmBeatTimer = 0;
+            this.stepCooldown = 0.32;
+
+            const bellIdx = Math.min(6, 1 + this.rhythmBeatsCompleted * 2);
+            this.sound.playBellNote(bellIdx, 0.92, this.coneWorldPos.x);
+            this.world.strikeBell(bellIdx, 0.9);
+            this.sound.playGripTug(this.coneWorldPos.x);
+            this._vibrate(25);
+
+            if (this.rhythmBeatsCompleted >= 3) {
+              this.conePitchX = 0;
+              this.coneFlipZ = 0;
+              this.score += 380;
+              this._spawnScorePopup(380, this.coneWorldPos, '🎯 3/3');
+              this._triggerVendorSpeech('cheer');
+              this._advanceRoutineStep();
+            } else {
+              // Shift cone and green line to the opposite side for the next rhythmic beat!
+              this.rhythmSide *= -1;
+              const nextX = this.rhythmSide * (0.24 + Math.random() * 0.07);
+              const nextY = 1.2 + (Math.random() - 0.5) * 0.08;
+              this.rhythmTargetPos.set(nextX, nextY, 0.27);
+              this.coneTargetPos.copy(this.rhythmTargetPos);
+              this.shaftRoll += Math.PI * 0.65 * this.rhythmSide;
+              this.conePitchX = 0.12 * this.rhythmSide;
+              this.coneFlipZ = 0;
+              this.score += 120;
+              this._spawnScorePopup(
+                120,
+                this.coneWorldPos,
+                `🎵 ${this.rhythmBeatsCompleted}/3`
+              );
+              this._triggerVendorSpeech('hoppa');
+            }
+          } else if (this.rhythmBeatTimer >= 1.15) {
+            // Player didn't move to the target in time -> Vendor shouts "Hop! Hop!", flips the rod direction, and darts to a random direction!
+            this.rhythmBeatTimer = 0;
+            const randDir = Math.random() < 0.5 ? -1 : 1;
+            const randX =
+              randDir * (0.15 + Math.random() * 0.18) *
+              (Math.sign(this.rhythmTargetPos.x) === randDir ? -1 : 1);
+            const randY = 1.15 + Math.random() * 0.28;
+            const randZ = 0.22 + Math.random() * 0.07;
+            this.rhythmTargetPos.set(randX, randY, randZ);
+            this.coneTargetPos.copy(this.rhythmTargetPos);
+            // Flip the metal rod direction ("hop hop diye çubuğun yönünü değiştirecek")
+            this.shaftRoll += Math.PI;
+            this.conePitchX = (Math.random() - 0.5) * 0.72;
+            this.coneFlipZ = (Math.random() - 0.5) * 0.6;
+            this.sound.playWhoosh(1.3, randX);
+            this.sound.playPaddleClank(randX);
+            this.world.setVendorMood('laugh');
+            this._triggerVendorSpeech('hophop');
+          }
+        }
+        break;
+      }
+
+      // =========================================================================
+      // 17. PISTACHIO CROWN FINALE SNATCH (`FINAL_PISTACHIO_CATCH`)
       // =========================================================================
       case 'FINAL_PISTACHIO_CATCH': {
         if (this.subStep === 0) {
@@ -1717,6 +1979,141 @@ export class TrickDirector {
     }
 
     this._applyKinematics(dt, time, gestureState);
+  }
+
+  /**
+   * Multi-Scenario Detailed AFK / Idle Show Director:
+   * Triggered when the player does not move their hand for > 2.15s.
+   * Cycles through 4 authentic Maraş vendor routines:
+   *  0: Pulls paddle back & rhythmically raps the steel tip on the front counter table ("Tak! Tak-tak!")
+   *  1: Raises paddle high and strikes the 7 overhead hanging brass bells one by one ("Çıngır çıngır!")
+   *  2: Drums the paddle across the shiny stainless-steel ice cream bucket rims inside the cooling basin
+   *  3: Pulls the paddle back to his shoulder and waves/beckons the player with his left hand ("Huooop!")
+   */
+  _updateAfkShow(dt, time) {
+    if (!this.isAfkShowActive) {
+      this.isAfkShowActive = true;
+      this.afkTimer = 0;
+      this.lastAfkBeatTime = -1;
+      this.afkScenario = Math.floor(Math.random() * 2); // Start with Table Rap (0) or Bell Concert (1)
+      this.world.setVendorMood('mischief');
+      this._triggerVendorSpeech(
+        this.afkScenario === 0 ? 'afk_table' : 'afk_bells'
+      );
+    }
+
+    this.afkTimer += dt;
+    if (this.afkTimer >= 3.2) {
+      this.afkTimer = 0;
+      this.lastAfkBeatTime = -1;
+      this.afkScenario = (this.afkScenario + 1) % 4;
+      const speechKeys = ['afk_table', 'afk_bells', 'afk_table', 'afk_wave'];
+      this._triggerVendorSpeech(speechKeys[this.afkScenario]);
+    }
+
+    if (this.afkScenario === 0) {
+      // SCENARIO 0: Pull paddle back toward chest, then rap the metal paddle on the counter table!
+      const beatCycle = (this.afkTimer * 2.6) % 1;
+      const beatIndex = Math.floor(this.afkTimer * 2.6);
+      const isStrikingTable = beatCycle > 0.55 && beatCycle < 0.78;
+      const rapX = Math.sin(this.afkTimer * 2.4) * 0.24;
+
+      if (isStrikingTable) {
+        // Strike down onto the front copper/steel counter rail
+        this.coneTargetPos.set(rapX, 0.96, 0.14);
+        this.conePitchX = 0.62;
+        this.coneFlipZ = 0;
+        if (this.lastAfkBeatTime !== beatIndex) {
+          this.lastAfkBeatTime = beatIndex;
+          this.sound.playCounterRap(rapX, 0.94 + (beatIndex % 3) * 0.08);
+          this.world.spawnBurst(
+            new THREE.Vector3(rapX, 0.96, 0.14),
+            0xf5b942,
+            7
+          );
+          this.world.triggerScoopJiggle(0.8);
+        }
+      } else {
+        // Pull the paddle back toward chest between table raps
+        this.coneTargetPos.set(rapX * 0.6, 1.34, -0.06);
+        this.conePitchX = -0.25;
+        this.shaftRoll += dt * 6.5;
+      }
+      this.leftHandCustomTarget = null;
+    } else if (this.afkScenario === 1) {
+      // SCENARIO 1: Raise paddle high and strike the 7 overhead brass bells across the upper arch!
+      const beatIndex = Math.floor(this.afkTimer * 3.4);
+      const bellIdx = beatIndex % 7;
+      const bellObj =
+        this.world.bells && this.world.bells[bellIdx]
+          ? this.world.bells[bellIdx]
+          : null;
+      const bx = bellObj ? bellObj.baseX : (bellIdx - 3) * 0.165;
+      const subPhase = (this.afkTimer * 3.4) % 1;
+
+      this.coneTargetPos.set(
+        bx,
+        subPhase < 0.45 ? 1.76 : 1.56,
+        subPhase < 0.45 ? -0.1 : 0.04
+      );
+      this.conePitchX = subPhase < 0.45 ? -0.58 : -0.22;
+      this.coneFlipZ = 0;
+      this.shaftRoll = Math.sin(time * 7) * 0.4;
+      this.leftHandCustomTarget = null;
+
+      if (subPhase < 0.45 && this.lastAfkBeatTime !== beatIndex) {
+        this.lastAfkBeatTime = beatIndex;
+        this.world.strikeBell(bellIdx, 1.18);
+        this.sound.playBellNote(bellIdx, 0.95, bx);
+      }
+    } else if (this.afkScenario === 2) {
+      // SCENARIO 2: Drum the paddle across the shiny stainless-steel buckets inside the recessed basin!
+      const beatIndex = Math.floor(this.afkTimer * 3.2);
+      const tubIdx = beatIndex % 6;
+      const tubEntry =
+        this.world.tubPositions && this.world.tubPositions[tubIdx]
+          ? this.world.tubPositions[tubIdx]
+          : null;
+      const tx = tubEntry ? tubEntry.worldPos.x : (tubIdx - 2.5) * 0.21;
+      const tz = tubEntry ? tubEntry.worldPos.z : -0.22;
+      const subPhase = (this.afkTimer * 3.2) % 1;
+
+      this.coneTargetPos.set(
+        tx,
+        subPhase < 0.5 ? 1.02 : 1.28,
+        subPhase < 0.5 ? tz + 0.06 : 0.08
+      );
+      this.conePitchX = subPhase < 0.5 ? 0.48 : -0.15;
+      this.shaftRoll += dt * 9.0;
+      this.leftHandCustomTarget = null;
+
+      if (subPhase < 0.5 && this.lastAfkBeatTime !== beatIndex) {
+        this.lastAfkBeatTime = beatIndex;
+        this.world.churnTubIceCream(tubIdx, 0.65);
+        this.sound.playPaddleClank(tx);
+        this.world.spawnBurst(
+          new THREE.Vector3(tx, 1.0, tz + 0.06),
+          0xe2e8f0,
+          6
+        );
+      }
+    } else {
+      // SCENARIO 3: Pull the paddle all the way back to his shoulder & wave/beckon with left hand!
+      this.coneTargetPos.set(
+        0.28 + Math.sin(time * 2.5) * 0.04,
+        1.38 + Math.cos(time * 3) * 0.03,
+        -0.16
+      );
+      this.conePitchX = -0.35;
+      this.coneFlipZ = 0;
+      this.shaftRoll = Math.sin(time * 4) * 0.5;
+      // Left hand waves "come here" ("gel-gel") toward the player
+      this.leftHandCustomTarget = new THREE.Vector3(
+        -0.14 + Math.sin(time * 6.5) * 0.12,
+        1.28 + Math.cos(time * 6.5) * 0.05,
+        0.22 + Math.sin(time * 6.5) * 0.06
+      );
+    }
   }
 
   getGestureGuide() {
@@ -1822,6 +2219,35 @@ export class TrickDirector {
         radius: 42,
         color: 'green',
         label: '✊',
+      });
+      return guide;
+    }
+
+    if (this.isAfkShowActive) {
+      guide.theme = 'amber';
+      const afkIcons = ['🥄🪵', '🔔🎵', '🥄🪣', '👋😄'];
+      const afkCueKeys = [
+        'cue_afk_table',
+        'cue_afk_bells',
+        'cue_afk_table',
+        'cue_afk_wave',
+      ];
+      guide.icon = afkIcons[this.afkScenario % 4] || '🔔🎵';
+      guide.badgeText = this.save.t(afkCueKeys[this.afkScenario % 4]);
+      guide.stageProgress = Math.max(
+        0.1,
+        1 - this.idleSeconds / this.passiveLimitSec
+      );
+      guide.comets.push({
+        color: 'green',
+        points: buildCurvedScreenPath(handScreen, coneScreen, -24),
+      });
+      guide.rings.push({
+        x: coneScreen.x,
+        y: coneScreen.y,
+        radius: 38,
+        color: 'amber',
+        label: guide.icon,
       });
       return guide;
     }
@@ -2216,6 +2642,58 @@ export class TrickDirector {
           color: 'red',
           label: '✕ 🧻',
         });
+        break;
+      }
+
+      case 'EYE_LOCK_RHYTHM_CHASE': {
+        const greenPath = buildCurvedScreenPath(handScreen, coneScreen, -22);
+        const midPt =
+          greenPath[Math.floor(greenPath.length * 0.5)] || coneScreen;
+
+        if (this.subStep === 0) {
+          guide.theme = 'green';
+          guide.icon = '👀🤚';
+          guide.badgeText = this.save.t('cue_eyelock_hold');
+          guide.stageProgress = Math.min(1, this.eyeLockHoldTimer / 0.32);
+          guide.comets.push({
+            color: 'green',
+            points: greenPath,
+          });
+          // Highlight the midpoint of the green line where the player holds & locks eyes!
+          guide.rings.push({
+            x: midPt.x,
+            y: midPt.y,
+            radius: 36,
+            color: 'amber',
+            label: this.save.t('tag_eyelock'),
+          });
+          guide.rings.push({
+            x: coneScreen.x,
+            y: coneScreen.y,
+            radius: 30,
+            color: 'green',
+            label: '🍦',
+          });
+        } else {
+          guide.theme = 'green';
+          guide.icon = '👀↔️';
+          guide.badgeText = this.save.t('cue_eyelock_rhythm');
+          guide.stageProgress = Math.min(
+            1,
+            (this.rhythmBeatsCompleted + 0.35) / 3
+          );
+          guide.comets.push({
+            color: 'green',
+            points: greenPath,
+          });
+          guide.rings.push({
+            x: coneScreen.x,
+            y: coneScreen.y,
+            radius: 42,
+            color: 'green',
+            label: `${this.save.t('tag_rhythm_go')} (${this.rhythmBeatsCompleted + 1}/3)`,
+          });
+        }
         break;
       }
 

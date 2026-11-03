@@ -569,9 +569,17 @@ export class SoundEngine {
   }
 
   playBell(intensity = 1.0, panX = 0) {
+    this.playBellNote(3, intensity, panX);
+  }
+
+  playBellNote(bellIdx = 3, intensity = 1.0, panX = 0) {
     if (!this.enabled) return;
     this.init();
     if (!this.ctx) return;
+
+    // 7 Tuned Hijaz Brass Bell pitches from left (largest/lowest) to right (smallest/highest)
+    const bellScale = [0.82, 0.9, 1.0, 1.12, 1.22, 1.35, 1.5];
+    const pitchScale = bellScale[Math.abs(bellIdx) % bellScale.length] || 1.0;
 
     const now = this.ctx.currentTime;
     const freqs = [1180, 1790, 2540, 3420];
@@ -579,18 +587,55 @@ export class SoundEngine {
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
       osc.type = idx % 2 === 0 ? 'sine' : 'triangle';
-      osc.frequency.setValueAtTime(f * (0.98 + Math.random() * 0.04), now);
+      osc.frequency.setValueAtTime(
+        f * pitchScale * (0.99 + Math.random() * 0.02),
+        now
+      );
 
-      const peak = (0.13 / (idx + 1)) * intensity;
+      const peak = (0.14 / (idx + 1)) * intensity;
       gain.gain.setValueAtTime(0.001, now);
-      gain.gain.exponentialRampToValueAtTime(peak, now + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.52 - idx * 0.08);
+      gain.gain.exponentialRampToValueAtTime(peak, now + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.56 - idx * 0.08);
 
       osc.connect(gain);
       this._connectWithPan(gain, panX);
       osc.start(now);
-      osc.stop(now + 0.56);
+      osc.stop(now + 0.6);
     });
+  }
+
+  // Crisp metallic + wooden counter table rap ("Tak! Tak-tak!") when vendor knocks the paddle on the table
+  playCounterRap(panX = 0, pitchMult = 1.0) {
+    if (!this.enabled) return;
+    this.init();
+    if (!this.ctx) return;
+
+    const now = this.ctx.currentTime;
+    // 1. Low-mid wood/copper table thud
+    const bodyOsc = this.ctx.createOscillator();
+    const bodyGain = this.ctx.createGain();
+    bodyOsc.type = 'triangle';
+    bodyOsc.frequency.setValueAtTime(290 * pitchMult, now);
+    bodyOsc.frequency.exponentialRampToValueAtTime(95 * pitchMult, now + 0.065);
+    bodyGain.gain.setValueAtTime(0.24, now);
+    bodyGain.gain.exponentialRampToValueAtTime(0.001, now + 0.075);
+    bodyOsc.connect(bodyGain);
+    this._connectWithPan(bodyGain, panX);
+    bodyOsc.start(now);
+    bodyOsc.stop(now + 0.08);
+
+    // 2. High steel spatula impact click
+    const clickOsc = this.ctx.createOscillator();
+    const clickGain = this.ctx.createGain();
+    clickOsc.type = 'square';
+    clickOsc.frequency.setValueAtTime(1420 * pitchMult, now);
+    clickOsc.frequency.exponentialRampToValueAtTime(480 * pitchMult, now + 0.032);
+    clickGain.gain.setValueAtTime(0.14, now);
+    clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.038);
+    clickOsc.connect(clickGain);
+    this._connectWithPan(clickGain, panX);
+    clickOsc.start(now);
+    clickOsc.stop(now + 0.042);
   }
 
   playBellBurst() {

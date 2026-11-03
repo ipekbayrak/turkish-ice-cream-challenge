@@ -1155,10 +1155,18 @@ function animate(now) {
       director.coneWorldPos.z + 0.04
     );
   } else if (gestureState.isReaching || director.heldItem) {
+    const reachDepthT = THREE.MathUtils.clamp(
+      (gestureState.normY + 0.48) / 0.52,
+      0,
+      1
+    );
+    const dynamicZ = director.heldItem
+      ? 0.26
+      : THREE.MathUtils.lerp(0.48, 0.26, reachDepthT);
     gestureState.handWorldPos.set(
       THREE.MathUtils.clamp(gestureState.normX * 0.54, -0.5, 0.5),
       THREE.MathUtils.clamp(1.22 + gestureState.normY * 0.36, 0.92, 1.72),
-      0.26
+      dynamicZ
     );
   } else {
     gestureState.handWorldPos.set(0.22, 1.04, 0.64);
@@ -1179,7 +1187,8 @@ function animate(now) {
     dt,
     0,
     0,
-    (bellIntensity, panX) => sound.playBell(bellIntensity, panX),
+    (bellIntensity, panX, bellIdx) =>
+      sound.playBellNote(bellIdx ?? 3, bellIntensity, panX),
     voiceMouthOpen
   );
   world.render();

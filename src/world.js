@@ -376,76 +376,281 @@ export class GameWorld {
     this.cartGroup.add(baseMesh);
 
     const signPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.58, 0.76),
+      new THREE.PlaneGeometry(1.58, 0.72),
       new THREE.MeshStandardMaterial({
         map: this.cartSignTexture,
         roughness: 0.35,
         metalness: 0.3,
       })
     );
-    signPlane.position.set(0, 0.46, 0.345);
+    signPlane.position.set(0, 0.44, 0.345);
     this.cartGroup.add(signPlane);
 
-    const counterTop = new THREE.Mesh(
-      new THREE.BoxGeometry(1.86, 0.06, 0.76),
+    // =========================================================================
+    // RECESSED COOLING BASIN ("Masanın İçindeki Soğutmalı Hazne") &
+    // 6 SHINY STAINLESS-STEEL ICE CREAM BUCKETS ("Parlak Çelik Dondurma Kovaları")
+    // =========================================================================
+    const chromeSteelMat = new THREE.MeshStandardMaterial({
+      color: 0xf1f5f9,
+      metalness: 0.95,
+      roughness: 0.09,
+    });
+    const brushedSteelMat = new THREE.MeshStandardMaterial({
+      color: 0xcbd5e1,
+      metalness: 0.88,
+      roughness: 0.2,
+      side: THREE.DoubleSide,
+    });
+    const darkBasinWellMat = new THREE.MeshStandardMaterial({
+      color: 0x0f172a,
+      metalness: 0.65,
+      roughness: 0.45,
+    });
+    const frostRimMat = new THREE.MeshStandardMaterial({
+      color: 0xe0f2fe,
+      emissive: 0x38bdf8,
+      emissiveIntensity: 0.18,
+      roughness: 0.65,
+      transparent: true,
+      opacity: 0.82,
+    });
+
+    // Forward-tilted showcase basin deck so the player clearly sees inside the counter well and steel buckets!
+    this.basinDeckGroup = new THREE.Group();
+    this.basinDeckGroup.position.set(0, 0.94, 0.04);
+    this.basinDeckGroup.rotation.x = 0.22; // Tilted toward the customer POV camera
+    this.cartGroup.add(this.basinDeckGroup);
+
+    // Outer hammered brass/copper counter frame around the recessed basin
+    const frontRail = new THREE.Mesh(
+      new THREE.BoxGeometry(1.9, 0.055, 0.09),
       brassMat
     );
-    counterTop.position.y = 0.94;
-    counterTop.receiveShadow = true;
-    this.cartGroup.add(counterTop);
+    frontRail.position.set(0, 0.01, 0.34);
+    this.basinDeckGroup.add(frontRail);
 
-    // 6 Authentic Kahramanmaraş Copper Ice Cream Tubs
+    const backRail = new THREE.Mesh(
+      new THREE.BoxGeometry(1.9, 0.065, 0.1),
+      brassMat
+    );
+    backRail.position.set(0, 0.015, -0.34);
+    this.basinDeckGroup.add(backRail);
+
+    [-0.91, 0.91].forEach((sx) => {
+      const sideRail = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 0.06, 0.76),
+        brassMat
+      );
+      sideRail.position.set(sx, 0.012, 0);
+      this.basinDeckGroup.add(sideRail);
+    });
+
+    // Deep dark chilled freezer well ("Hazne Çukuru") beneath the steel deck
+    const freezerWellFloor = new THREE.Mesh(
+      new THREE.BoxGeometry(1.74, 0.04, 0.6),
+      darkBasinWellMat
+    );
+    freezerWellFloor.position.set(0, -0.11, 0);
+    this.basinDeckGroup.add(freezerWellFloor);
+
+    // Brushed Stainless-Steel Recessed Basin Deck Plate ("Çelik Hazne Tezgahı")
+    const steelDeckPlate = new THREE.Mesh(
+      new THREE.BoxGeometry(1.74, 0.018, 0.6),
+      brushedSteelMat
+    );
+    steelDeckPlate.position.set(0, -0.018, 0);
+    steelDeckPlate.receiveShadow = true;
+    this.basinDeckGroup.add(steelDeckPlate);
+
+    // Frosted cooling rails running along the steel basin
+    [-0.22, 0.22].forEach((fz) => {
+      const frostStrip = new THREE.Mesh(
+        new THREE.BoxGeometry(1.62, 0.01, 0.028),
+        frostRimMat
+      );
+      frostStrip.position.set(0, -0.005, fz);
+      this.basinDeckGroup.add(frostStrip);
+    });
+
+    // 6 Authentic Kahramanmaraş Shiny Stainless-Steel Ice Cream Buckets ("Parlak Çelik Kovalar")
     this.tubPositions = ICE_CREAM_FLAVORS.map((flav) => ({
       index: flav.index,
       id: flav.id,
       x: flav.xOffset,
       color: flav.colorHex,
-      worldPos: new THREE.Vector3(flav.xOffset, 0.96, -0.36),
+      worldPos: new THREE.Vector3(flav.xOffset, 0.97, -0.33),
     }));
 
     this.tubMeshes = [];
-    this.tubPositions.forEach((tub) => {
-      const rim = new THREE.Mesh(
-        new THREE.TorusGeometry(0.105, 0.015, 12, 24),
-        brassMat
-      );
-      rim.rotation.x = Math.PI / 2;
-      rim.position.set(tub.x, 0.975, 0.02);
-      this.cartGroup.add(rim);
+    this.tubIceGroups = [];
 
-      const iceMass = new THREE.Mesh(
+    this.tubPositions.forEach((tub, idx) => {
+      const bucketGroup = new THREE.Group();
+      bucketGroup.position.set(tub.x, 0.0, 0.01);
+      this.basinDeckGroup.add(bucketGroup);
+
+      // 1. Dark recessed socket shadow ring in the basin
+      const socketWell = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.116, 0.112, 0.12, 24),
+        darkBasinWellMat
+      );
+      socketWell.position.y = -0.062;
+      bucketGroup.add(socketWell);
+
+      // 2. Frosted cold condensation collar around each steel bucket
+      const frostCollar = new THREE.Mesh(
+        new THREE.TorusGeometry(0.115, 0.008, 10, 24),
+        frostRimMat
+      );
+      frostCollar.rotation.x = Math.PI / 2;
+      frostCollar.position.y = -0.004;
+      bucketGroup.add(frostCollar);
+
+      // 3. Tall Shiny Stainless-Steel Bucket Cylinder Wall ("Parlak Çelik Kova Gövdesi")
+      const steelBucketWall = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.106, 0.096, 0.135, 26, 1, true),
+        chromeSteelMat
+      );
+      steelBucketWall.position.y = -0.015;
+      bucketGroup.add(steelBucketWall);
+
+      // Inner brushed steel wall so the inside of the bucket gleams around the ice cream
+      const innerBucketWall = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.102, 0.094, 0.13, 24, 1, true),
+        brushedSteelMat
+      );
+      innerBucketWall.position.y = -0.015;
+      bucketGroup.add(innerBucketWall);
+
+      // 4. Mirror-Polished Rolled Steel Lip Flange ("Parlak Çelik Kova Ağzı Çemberi")
+      const steelRimFlange = new THREE.Mesh(
+        new THREE.TorusGeometry(0.107, 0.013, 14, 28),
+        chromeSteelMat
+      );
+      steelRimFlange.rotation.x = Math.PI / 2;
+      steelRimFlange.position.y = 0.048;
+      bucketGroup.add(steelRimFlange);
+
+      // 5. Stainless-Steel Side Bail Handles on each bucket ("Çelik Kova Kulpları")
+      [-0.112, 0.112].forEach((hx) => {
+        const handleEar = new THREE.Mesh(
+          new THREE.TorusGeometry(0.016, 0.004, 8, 12, Math.PI),
+          chromeSteelMat
+        );
+        handleEar.position.set(hx, 0.036, 0);
+        handleEar.rotation.z = hx < 0 ? Math.PI / 2 : -Math.PI / 2;
+        bucketGroup.add(handleEar);
+      });
+
+      // 6. Sculpted, Swirled Maraş Ice Cream Mass Inside the Shiny Steel Bucket!
+      const iceGroup = new THREE.Group();
+      iceGroup.position.y = 0.018;
+      bucketGroup.add(iceGroup);
+
+      const iceMat = new THREE.MeshStandardMaterial({
+        color: tub.color,
+        roughness: 0.32,
+        metalness: 0.04,
+      });
+
+      // Base full-bucket ice cream layer
+      const iceBase = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.097, 0.09, 0.055, 22),
+        iceMat
+      );
+      iceBase.position.y = -0.008;
+      iceBase.userData.flavorIndex = tub.index;
+      iceGroup.add(iceBase);
+
+      // Main sculpted stretchy dome with paddle-churned ridges
+      const iceDome = new THREE.Mesh(
         new THREE.SphereGeometry(
-          0.098,
-          18,
-          12,
+          0.094,
+          22,
+          14,
           0,
           Math.PI * 2,
           0,
-          Math.PI * 0.58
+          Math.PI * 0.62
         ),
-        new THREE.MeshStandardMaterial({ color: tub.color, roughness: 0.36 })
+        iceMat
       );
-      iceMass.position.set(tub.x, 0.94, 0.02);
-      iceMass.userData.flavorIndex = tub.index;
-      this.cartGroup.add(iceMass);
-      this.tubMeshes.push(iceMass);
+      iceDome.position.y = 0.008;
+      iceDome.scale.set(1.0, 0.72, 1.0);
+      iceDome.userData.flavorIndex = tub.index;
+      iceGroup.add(iceDome);
+
+      // Stretchy swirled folds & peaks on top of the ice cream in the bucket
+      for (let s = 0; s < 3; s++) {
+        const angle = (s / 3) * Math.PI * 2 + idx * 0.7;
+        const swirlFold = new THREE.Mesh(
+          new THREE.TorusGeometry(0.044 - s * 0.008, 0.018, 10, 18, Math.PI * 1.35),
+          iceMat
+        );
+        swirlFold.rotation.x = Math.PI / 2 + 0.18;
+        swirlFold.rotation.z = angle;
+        swirlFold.position.set(
+          Math.cos(angle) * 0.022,
+          0.038 + s * 0.01,
+          Math.sin(angle) * 0.022
+        );
+        swirlFold.userData.flavorIndex = tub.index;
+        iceGroup.add(swirlFold);
+      }
+
+      // Garnish bits on top of the tub ice cream (pistachio / chocolate / berry specks)
+      const speckColor =
+        idx === 1
+          ? 0x4ade80
+          : idx === 2
+            ? 0x3b1c0e
+            : idx === 3
+              ? 0x9f1239
+              : idx === 4
+                ? 0xd97706
+                : 0x80ed99;
+      const speckMat = new THREE.MeshStandardMaterial({
+        color: speckColor,
+        roughness: 0.4,
+      });
+      for (let g = 0; g < 6; g++) {
+        const ga = (g / 6) * Math.PI * 2;
+        const speck = new THREE.Mesh(
+          new THREE.DodecahedronGeometry(0.008, 0),
+          speckMat
+        );
+        speck.position.set(
+          Math.cos(ga) * 0.048,
+          0.052 + (g % 2) * 0.006,
+          Math.sin(ga) * 0.048
+        );
+        iceGroup.add(speck);
+      }
+
+      this.tubMeshes.push(iceDome, iceBase);
+      this.tubIceGroups.push({
+        group: iceGroup,
+        baseY: 0.018,
+        churnEnergy: 0,
+        phase: idx * 1.1,
+      });
     });
 
-    // Cold Frost Mist Particles rising from the 6 copper tubs
+    // Cold Frost Mist Particles rising from the recessed steel buckets
     const mistMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
+      color: 0xe0f2fe,
       transparent: true,
-      opacity: 0.18,
+      opacity: 0.22,
     });
-    for (let m = 0; m < 12; m++) {
+    for (let m = 0; m < 16; m++) {
       const mote = new THREE.Mesh(
-        new THREE.SphereGeometry(0.032, 8, 8),
+        new THREE.SphereGeometry(0.028, 8, 8),
         mistMat
       );
       mote.position.set(
-        (Math.random() - 0.5) * 1.25,
+        (Math.random() - 0.5) * 1.35,
         0.98 + Math.random() * 0.2,
-        -0.36
+        -0.33
       );
       this.scene.add(mote);
       this.frostMotes.push({
@@ -456,12 +661,12 @@ export class GameWorld {
     }
 
     // Waffle Cone Dispenser Stack on Left Corner of Cart
-    this.coneStackWorldPos = new THREE.Vector3(-0.77, 1.12, -0.22);
+    this.coneStackWorldPos = new THREE.Vector3(-0.79, 1.14, -0.22);
     const coneStackGroup = new THREE.Group();
-    coneStackGroup.position.set(-0.77, 0.97, 0.16);
+    coneStackGroup.position.set(-0.81, 0.98, 0.22);
     for (let c = 0; c < 6; c++) {
       const stackCone = new THREE.Mesh(
-        new THREE.ConeGeometry(0.052, 0.16, 16),
+        new THREE.ConeGeometry(0.05, 0.155, 16),
         new THREE.MeshStandardMaterial({
           map: this.waffleTexture,
           roughness: 0.65,
@@ -473,61 +678,204 @@ export class GameWorld {
     }
     this.cartGroup.add(coneStackGroup);
 
+    // =========================================================================
+    // DETAILED OVERHEAD ARCH & 7 MULTI-PART MARAŞ BRASS BELLS ("Detaylı Çanlar")
+    // Positioned at y = 1.90 so all 7 bells and their swinging clappers are
+    // prominently visible in the upper third of the screen!
+    // =========================================================================
     const leftPost = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.028, 0.032, 1.28, 12),
+      new THREE.CylinderGeometry(0.028, 0.034, 1.15, 14),
       brassMat
     );
-    leftPost.position.set(-0.84, 1.58, 0);
+    leftPost.position.set(-0.86, 1.48, 0.12);
     this.cartGroup.add(leftPost);
 
     const rightPost = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.028, 0.032, 1.28, 12),
+      new THREE.CylinderGeometry(0.028, 0.034, 1.15, 14),
       brassMat
     );
-    rightPost.position.set(0.84, 1.58, 0);
+    rightPost.position.set(0.86, 1.48, 0.12);
     this.cartGroup.add(rightPost);
 
     const canopy = new THREE.Mesh(
-      new THREE.BoxGeometry(1.92, 0.12, 0.72),
-      new THREE.MeshStandardMaterial({ color: 0x8c141b, roughness: 0.5 })
+      new THREE.BoxGeometry(1.94, 0.1, 0.68),
+      new THREE.MeshStandardMaterial({ color: 0x8c141b, roughness: 0.48 })
     );
-    canopy.position.set(0, 2.22, 0);
+    canopy.position.set(0, 2.02, 0.06);
     this.cartGroup.add(canopy);
 
     const canopyTrim = new THREE.Mesh(
-      new THREE.BoxGeometry(1.96, 0.04, 0.76),
+      new THREE.BoxGeometry(1.98, 0.038, 0.72),
       brassMat
     );
-    canopyTrim.position.set(0, 2.15, 0);
+    canopyTrim.position.set(0, 1.96, 0.06);
     this.cartGroup.add(canopyTrim);
 
-    for (let b = 0; b < 6; b++) {
-      const bx = -0.62 + b * 0.248;
-      const bellPivot = new THREE.Group();
-      bellPivot.position.set(bx, 2.13, 0.24);
+    // Ornate Horizontal Brass Bell Crossbar ("Pirinç Çan Askı Borusu")
+    const bellCrossbar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.016, 0.016, 1.72, 16),
+      brassMat
+    );
+    bellCrossbar.rotation.z = Math.PI / 2;
+    bellCrossbar.position.set(0, 1.91, 0.25);
+    this.cartGroup.add(bellCrossbar);
 
-      const bellBody = new THREE.Mesh(
-        new THREE.ConeGeometry(0.054, 0.098, 16),
+    const polishedBrassBellMat = new THREE.MeshStandardMaterial({
+      color: 0xffcf48,
+      metalness: 0.92,
+      roughness: 0.14,
+    });
+    const antiqueBronzeBandMat = new THREE.MeshStandardMaterial({
+      color: 0xb45309,
+      metalness: 0.85,
+      roughness: 0.28,
+    });
+    const bellHollowMat = new THREE.MeshStandardMaterial({
+      color: 0x1a0b05,
+      roughness: 0.85,
+    });
+    const crimsonSilkMat = new THREE.MeshStandardMaterial({
+      color: 0xd90429,
+      roughness: 0.55,
+    });
+
+    const bellCount = 7;
+    for (let b = 0; b < bellCount; b++) {
+      const bx = -0.66 + b * 0.22;
+      // Center bell (b=3) is largest; graduated sizes outward
+      const distFromCenter = Math.abs(b - 3);
+      const bellScale = 1.16 - distFromCenter * 0.08;
+
+      const bellPivot = new THREE.Group();
+      bellPivot.position.set(bx, 1.91, 0.25);
+      bellPivot.scale.setScalar(bellScale);
+
+      // 1. Top Brass Suspension Ring & Chain Links ("Askı Halkası ve Zincir")
+      const topMountRing = new THREE.Mesh(
+        new THREE.TorusGeometry(0.018, 0.005, 10, 18),
+        antiqueBronzeBandMat
+      );
+      bellPivot.add(topMountRing);
+
+      const chainLink = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.005, 0.005, 0.032, 8),
         brassMat
       );
-      bellBody.position.y = -0.05;
-      bellPivot.add(bellBody);
+      chainLink.position.y = -0.018;
+      bellPivot.add(chainLink);
 
-      const clapper = new THREE.Mesh(
-        new THREE.SphereGeometry(0.018, 8, 8),
-        darkWoodMat
+      // 2. Embossed Crown Cap ("Çan Tepeliği")
+      const crownCap = new THREE.Mesh(
+        new THREE.SphereGeometry(0.028, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.6),
+        antiqueBronzeBandMat
       );
-      clapper.position.y = -0.098;
-      bellPivot.add(clapper);
+      crownCap.position.y = -0.048;
+      bellPivot.add(crownCap);
+
+      // 3. Upper Bell Dome & Flared Skirt ("Kademeli Pirinç Çan Gövdesi")
+      const upperDome = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.025, 0.048, 0.055, 22),
+        polishedBrassBellMat
+      );
+      upperDome.position.y = -0.068;
+      upperDome.castShadow = true;
+      bellPivot.add(upperDome);
+
+      const lowerSkirt = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.048, 0.074, 0.058, 24),
+        polishedBrassBellMat
+      );
+      lowerSkirt.position.y = -0.122;
+      lowerSkirt.castShadow = true;
+      bellPivot.add(lowerSkirt);
+
+      // 4. Engraved Decorative Waist Bands ("İşlemeli Kuşaklar")
+      [-0.088, -0.128].forEach((by) => {
+        const r = by === -0.088 ? 0.046 : 0.062;
+        const band = new THREE.Mesh(
+          new THREE.TorusGeometry(r, 0.0038, 8, 22),
+          antiqueBronzeBandMat
+        );
+        band.rotation.x = Math.PI / 2;
+        band.position.y = by;
+        bellPivot.add(band);
+      });
+
+      // 5. Thick Flared Acoustic Lip Rim ("Çan Ağzı Çemberi") + Dark Hollow Interior
+      const acousticLip = new THREE.Mesh(
+        new THREE.TorusGeometry(0.073, 0.0085, 12, 26),
+        polishedBrassBellMat
+      );
+      acousticLip.rotation.x = Math.PI / 2;
+      acousticLip.position.y = -0.15;
+      bellPivot.add(acousticLip);
+
+      const hollowInterior = new THREE.Mesh(
+        new THREE.CircleGeometry(0.068, 20),
+        bellHollowMat
+      );
+      hollowInterior.rotation.x = Math.PI / 2;
+      hollowInterior.position.y = -0.148;
+      bellPivot.add(hollowInterior);
+
+      // 6. Glowing Golden Acoustic Shimmer Ring when struck!
+      const shimmerMat = new THREE.MeshBasicMaterial({
+        color: 0xffe194,
+        transparent: true,
+        opacity: 0,
+        side: THREE.DoubleSide,
+      });
+      const shimmerRing = new THREE.Mesh(
+        new THREE.RingGeometry(0.075, 0.095, 24),
+        shimmerMat
+      );
+      shimmerRing.rotation.x = Math.PI / 2;
+      shimmerRing.position.y = -0.152;
+      bellPivot.add(shimmerRing);
+
+      // 7. Articulated Independent Inner Clapper Pendulum + Red Silk Tassel ("Sallanan Çan Dili & Püskülü")
+      const clapperPivot = new THREE.Group();
+      clapperPivot.position.y = -0.065;
+      bellPivot.add(clapperPivot);
+
+      const clapperRod = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.004, 0.004, 0.095, 8),
+        antiqueBronzeBandMat
+      );
+      clapperRod.position.y = -0.048;
+      clapperPivot.add(clapperRod);
+
+      const clapperBall = new THREE.Mesh(
+        new THREE.SphereGeometry(0.019, 14, 12),
+        antiqueBronzeBandMat
+      );
+      clapperBall.position.y = -0.098;
+      clapperPivot.add(clapperBall);
+
+      const silkTassel = new THREE.Mesh(
+        new THREE.ConeGeometry(0.012, 0.042, 10),
+        crimsonSilkMat
+      );
+      silkTassel.position.y = -0.128;
+      clapperPivot.add(silkTassel);
 
       this.cartGroup.add(bellPivot);
       this.bells.push({
+        index: b,
         pivot: bellPivot,
-        worldPos: new THREE.Vector3(bx, 2.04, -0.14),
+        clapperPivot,
+        shimmerRing,
+        shimmerMat,
+        shimmerTimer: 0,
+        worldPos: new THREE.Vector3(bx, 1.79, -0.13),
         velZ: 0,
         velX: 0,
         angleZ: 0,
         angleX: 0,
+        clapperAngleZ: 0,
+        clapperVelZ: 0,
+        clapperAngleX: 0,
+        clapperVelX: 0,
       });
     }
   }
@@ -1867,9 +2215,44 @@ export class GameWorld {
 
   ringBells(power = 1.0) {
     this.bells.forEach((b, i) => {
-      b.velZ += (i % 2 === 0 ? 1 : -1) * (7 + Math.random() * 5) * power;
-      b.velX += (Math.random() - 0.5) * 6 * power;
+      const sign = i % 2 === 0 ? 1 : -1;
+      b.velZ += sign * (8.5 + Math.random() * 5) * power;
+      b.velX += (Math.random() - 0.5) * 6.5 * power;
+      b.clapperVelZ += -sign * (15 + Math.random() * 8) * power;
+      b.clapperVelX += (Math.random() - 0.5) * 10 * power;
+      b.shimmerTimer = Math.max(b.shimmerTimer, 0.36 * power);
     });
+  }
+
+  /**
+   * Strikes a specific overhead brass bell (`0..6`), triggering realistic bell-body swing,
+   * independent clapper rebound against the lip, golden shimmer ring, and spark burst!
+   */
+  strikeBell(bellIndex, power = 1.0) {
+    if (!this.bells || !this.bells.length) return;
+    const idx = Math.abs(Math.round(bellIndex)) % this.bells.length;
+    const b = this.bells[idx];
+    if (!b) return;
+
+    const dir = idx < 3 ? -1 : idx > 3 ? 1 : Math.random() < 0.5 ? -1 : 1;
+    b.velZ += dir * 13.5 * power;
+    b.velX += (0.5 + Math.random() * 0.5) * 9.0 * power;
+    b.clapperVelZ += -dir * 24.0 * power;
+    b.clapperVelX += 14.0 * power;
+    b.shimmerTimer = 0.52;
+    this.spawnBurst(b.worldPos, 0xffe194, Math.round(10 * power));
+  }
+
+  /**
+   * Animates the ice cream mass inside a specific stainless-steel bucket when scraped!
+   */
+  churnTubIceCream(tubIndex, power = 1.0) {
+    if (!this.tubIceGroups || !this.tubIceGroups.length) return;
+    const idx = Math.abs(Math.round(tubIndex)) % this.tubIceGroups.length;
+    const tig = this.tubIceGroups[idx];
+    if (tig) {
+      tig.churnEnergy = Math.min(1.5, tig.churnEnergy + 0.65 * power);
+    }
   }
 
   spawnBurst(worldPos, color = 0xf5b942, count = 16) {
@@ -2140,6 +2523,22 @@ export class GameWorld {
       m.mesh.position.x = m.baseX + Math.sin(m.phase * 2) * 0.03;
     });
 
+    // Animate the swirled ice cream mounds inside the 6 shiny stainless-steel buckets!
+    if (this.tubIceGroups) {
+      this.tubIceGroups.forEach((tig) => {
+        if (tig.churnEnergy > 0.005) {
+          tig.churnEnergy = Math.max(0, tig.churnEnergy - dt * 1.6);
+          tig.group.rotation.y += dt * 7.5 * tig.churnEnergy;
+          const swell = 1 + Math.sin(time * 18 + tig.phase) * 0.12 * tig.churnEnergy;
+          tig.group.scale.set(1 / Math.sqrt(swell), swell, 1 / Math.sqrt(swell));
+          tig.group.position.y = tig.baseY + tig.churnEnergy * 0.018;
+        } else {
+          tig.group.scale.set(1, 1, 1);
+          tig.group.position.y = tig.baseY;
+        }
+      });
+    }
+
     if (this.sliceCueGroup.visible) {
       this.sliceCueGroup.position.set(
         this.paddleGroup.position.x * 0.5,
@@ -2176,27 +2575,74 @@ export class GameWorld {
 
     const handPos = this.touristHand.position;
 
+    // Coupled 2-DOF Bell Body + Independent Internal Clapper Pendulum & Shimmer Ring Animation
     this.bells.forEach((b) => {
       const distHand = handPos.distanceTo(b.worldPos);
       const distPaddle = paddlePos.distanceTo(b.worldPos);
       if (distHand < 0.16 && Math.abs(b.velZ) < 4) {
-        b.velZ += (handPos.x < b.worldPos.x ? 1 : -1) * 10;
+        const sign = handPos.x < b.worldPos.x ? 1 : -1;
+        b.velZ += sign * 11;
         b.velX += 7;
-        if (onBellHit) onBellHit(0.75, b.worldPos.x);
+        b.clapperVelZ += -sign * 20;
+        b.shimmerTimer = 0.42;
+        this.spawnBurst(b.worldPos, 0xffe194, 7);
+        if (onBellHit) onBellHit(0.78, b.worldPos.x, b.index);
       } else if (distPaddle < 0.18 && Math.abs(b.velZ) < 4) {
-        b.velZ += (paddlePos.x < b.worldPos.x ? 1 : -1) * 11;
+        const sign = paddlePos.x < b.worldPos.x ? 1 : -1;
+        b.velZ += sign * 12;
         b.velX += 8;
-        if (onBellHit) onBellHit(0.9, b.worldPos.x);
+        b.clapperVelZ += -sign * 22;
+        b.shimmerTimer = 0.48;
+        this.spawnBurst(b.worldPos, 0xffe194, 9);
+        if (onBellHit) onBellHit(0.92, b.worldPos.x, b.index);
       }
 
-      const springZ = -120 * b.angleZ - 5.2 * b.velZ;
-      const springX = -120 * b.angleX - 5.2 * b.velX;
+      // Outer brass bell swing physics
+      const springZ = -115 * b.angleZ - 4.4 * b.velZ;
+      const springX = -115 * b.angleX - 4.4 * b.velX;
       b.velZ += springZ * dt;
       b.velX += springX * dt;
-      b.angleZ += b.velZ * dt;
-      b.angleX += b.velX * dt;
-      b.pivot.rotation.z = b.angleZ;
+      b.angleZ = THREE.MathUtils.clamp(b.angleZ + b.velZ * dt, -0.68, 0.68);
+      b.angleX = THREE.MathUtils.clamp(b.angleX + b.velX * dt, -0.55, 0.55);
+
+      // High-frequency acoustic vibration shudder while ringing
+      const ringVib =
+        b.shimmerTimer > 0 ? Math.sin(time * 68 + b.index) * 0.025 * b.shimmerTimer : 0;
+      b.pivot.rotation.z = b.angleZ + ringVib;
       b.pivot.rotation.x = b.angleX;
+
+      // Independent inner clapper pendulum with rim collision rebound!
+      if (b.clapperPivot) {
+        const cSpringZ = -210 * b.clapperAngleZ - 3.6 * b.clapperVelZ - springZ * 0.45;
+        const cSpringX = -210 * b.clapperAngleX - 3.6 * b.clapperVelX - springX * 0.45;
+        b.clapperVelZ += cSpringZ * dt;
+        b.clapperVelX += cSpringX * dt;
+        b.clapperAngleZ += b.clapperVelZ * dt;
+        b.clapperAngleX += b.clapperVelX * dt;
+
+        // Rim impact bounce when clapper hits inside of bell wall
+        if (Math.abs(b.clapperAngleZ) > 0.34) {
+          b.clapperAngleZ = Math.sign(b.clapperAngleZ) * 0.34;
+          b.clapperVelZ *= -0.62;
+        }
+        if (Math.abs(b.clapperAngleX) > 0.3) {
+          b.clapperAngleX = Math.sign(b.clapperAngleX) * 0.3;
+          b.clapperVelX *= -0.62;
+        }
+        b.clapperPivot.rotation.z = b.clapperAngleZ;
+        b.clapperPivot.rotation.x = b.clapperAngleX;
+      }
+
+      // Acoustic golden shimmer ring expansion
+      if (b.shimmerTimer > 0) {
+        b.shimmerTimer = Math.max(0, b.shimmerTimer - dt);
+        const norm = b.shimmerTimer / 0.52;
+        b.shimmerMat.opacity = norm * 0.85;
+        const sScale = 1 + (1 - norm) * 0.9;
+        b.shimmerRing.scale.set(sScale, sScale, 1);
+      } else if (b.shimmerMat) {
+        b.shimmerMat.opacity = 0;
+      }
     });
 
     this.pupils.forEach((p) => {
