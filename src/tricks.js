@@ -1,4 +1,29 @@
+import {scrapeServing,scrapeBladePoint} from './scrape-serving.js';
+import {beginTrickEntry,finishTrickEntry,updateTrickTransition,joinAuthoredPose,finishAuthoredPose,clearTrickTransition} from './trick-transition.js';
+import {createIdleBellPhrase,idleBellPhraseAt} from './idle-bell-phrase.js';
+import {updateFlavorRefusal} from './flavor-refusal.js';
+import {FLAVOR_FEINT_ID,createFlavorFeintPlan,displayedFlavorIndex} from './flavor-feint-plan.js';
+import {activateFlavorFeint,enterFlavorFeint,updateFlavorFeint,flavorFeintCue,clearFlavorFeint} from './flavor-feint-show.js';
+import {RhythmClock} from './rhythm-clock.js';
+import {normalizeStage} from './progression.js';
+import {getStageConfig} from './protocol.js';
+import {normalizeFlavorIndex} from './flavors.js';
+import {poleHasFood} from './pole-hygiene.js';
+import { researchedServicePlaying } from './researched-service.js';
 import * as THREE from 'three';
+import { CUSTOMER_SERVICE_IDS, CUSTOMER_MOLD, CUSTOMER_SCOOP, customerServicePlaying, customerOpeningRoutine } from './customer-service.js';
+import { getShellTargets, classifyShellPick } from './shell-targeting.js';
+import { StretchCutGesture, stretchCutGuide, STRETCH_CUT_COPY } from './stretch-cut.js';
+import { enterChoreography, advanceChoreography, updateChoreographyBridge, clearChoreography, choreographyGuide, selectRoutineSlots, isChoreographedRoutine } from './trick-routines.js';
+import { axialReachX } from './reach-offer.js';
+import { scoopPath, moldPath, bellPath, surfaceStrikePath } from './trick-motion.js';
+import { MAX_SCOOPS, getStageOrderOptions } from './venues.js';
+import { GestureValidation } from './gesture-validation.js';
+import { FigureEightGesture, createFigureEightPath, figureEightWorldPoint, figureEightViewportChanged } from './figure-eight.js';
+import { VendorFlourish, VendorPoleRejoin, VENDOR_FLOURISH_SECONDS, canRejoinVendorCone, finishVendorRejoin, setFlourishPose, clearVendorFlourish } from './vendor-flourish.js';
+import { isTimedVendorShow, isIdleVendorAction, isQuietVendorPresentation, markIdleSettling, tickIdleGuide, suppressIdleScene } from './idle-presentation.js';
+import { enterExtraTrick, updateExtraTrick, extraTrickCue, enterServingNapkin, updateServingNapkin, servingNapkinCue } from './trick-extensions.js';
+import { enterNestedService, separateNestedCone, updateNestedService, nestedServiceCue, servicePresentationPlaying } from './serving-sequence.js';
 import {
   CAMPAIGN_LEVELS,
   GAME_MODES,
@@ -61,11 +86,12 @@ export class TrickDirector {
     this.resetRound(this.currentStage);
   }
 
-  setOrderConfig(scoopCount, flavorIndices) {
-    this.targetScoopCount = Math.max(2, Math.min(4, Number(scoopCount) || 3));
+  setOrderConfig(scoopCount, flavorIndices, stageNumber = this.currentStage) {
+    const bounds = getStageOrderOptions(stageNumber);
+    this.targetScoopCount = Math.max(bounds.min, Math.min(bounds.max, Math.round(Number(scoopCount) || bounds.default)));
     if (Array.isArray(flavorIndices) && flavorIndices.length > 0) {
-      this.selectedFlavors = flavorIndices.slice(0, 4);
-      while (this.selectedFlavors.length < 4) {
+      this.selectedFlavors = flavorIndices.slice(0, MAX_SCOOPS).map(normalizeFlavorIndex);
+      while (this.selectedFlavors.length < MAX_SCOOPS) {
         this.selectedFlavors.push(
           this.selectedFlavors[this.selectedFlavors.length - 1] ?? 0
         );
@@ -76,8 +102,8 @@ export class TrickDirector {
   }
 
   _getFlavorForScoop(scoopIdxZeroBased) {
-    const fIdx =
-      this.selectedFlavors[scoopIdxZeroBased % this.selectedFlavors.length] ?? 0;
+    const ordered=this.selectedFlavors[scoopIdxZeroBased % this.selectedFlavors.length]??0;
+    const fIdx=displayedFlavorIndex(this.flavorFeint,scoopIdxZeroBased,ordered);
     return (
       ICE_CREAM_FLAVORS[fIdx % ICE_CREAM_FLAVORS.length] || ICE_CREAM_FLAVORS[0]
     );
@@ -133,6 +159,7 @@ export class TrickDirector {
     this.world.ringBells(0.85);
     this.world.setVendorMood('laugh');
     this._vibrate([60, 40, 75]);
+    this.ui?.onReaction?.({ kind: 'mistake', trickId: this.currentShowId || this.currentMechanic, componentId: this.currentMechanic, stage: this.currentStage, vendorIndex: this.levelIndex, index: this.routineIndex, score: this.score });
 
     if (this.hearts <= 0) {
       this._triggerVendorSpeech('laugh');
@@ -146,37 +173,22 @@ export class TrickDirector {
    * Builds a dynamic, semi-randomized & progressive routine for the given stage (1..10)
    * so no two rounds play identically!
    */
-  _buildDynamicRoutineForStage(stageCfg, includeTutorial = false) {
-    const seq = [];
-    if (includeTutorial) {
-      seq.push('TUTORIAL_WARMUP');
-    }
+  _buildDynamicRoutineForStage(stageCfg) {
+    const seq = []; // Start directly at the cart; no automatic tutorial step.
 
     // Always start by scraping the 1st chosen flavor & introducing the signature Double Cone or Giant Block
     seq.push('SCRAPE_FLAVOR_SCOOP');
 
     const pool = shuffleArray(stageCfg.trickPool || []);
     const count = Math.max(3, stageCfg.trickCount || 4);
-    const chosenTricks = [];
-
-    // Ensure high variety by picking from the shuffled pool
-    for (let i = 0; i < count; i++) {
-      const candidate = pool[i % pool.length];
-      if (
-        chosenTricks.length > 0 &&
-        chosenTricks[chosenTricks.length - 1] === candidate
-      ) {
-        const alt = pool[(i + 1) % pool.length];
-        chosenTricks.push(alt);
-      } else {
-        chosenTricks.push(candidate);
-      }
-    }
+    // Compound shows occupy the original slot budget, with at most 1/2/3 per
+    // early/middle/late round so a larger repertoire does not lengthen every turn.
+    const chosenTricks = shuffleArray(selectRoutineSlots(pool, count, stageCfg.stage || this.currentStage || 1));
 
     // Guarantee EYE_LOCK_RHYTHM_CHASE appears in the routine so the eye-contact & green-line rhythm mechanic is always experienced
     if (!chosenTricks.includes('EYE_LOCK_RHYTHM_CHASE')) {
-      chosenTricks[Math.min(1, chosenTricks.length - 1)] =
-        'EYE_LOCK_RHYTHM_CHASE';
+      const baseSlot = chosenTricks.findIndex((id, index) => index > 0 && !isChoreographedRoutine(id));
+      chosenTricks[baseSlot >= 0 ? baseSlot : 0] = 'EYE_LOCK_RHYTHM_CHASE';
     }
 
     // Interleave scoop additions across the routine until reaching targetScoopCount
@@ -204,24 +216,35 @@ export class TrickDirector {
       scoopsScheduled++;
     }
 
+    // The layered paper/wafer sequence resolves directly into the final service,
+    // after every ordered scoop has been prepared. It still occupies one slot.
+    const layeredIndex = seq.indexOf('LAYERED_SERVICE_TEASE');
+    if (layeredIndex >= 0) seq.push(...seq.splice(layeredIndex, 1));
     seq.push('FINAL_PISTACHIO_CATCH');
     return seq;
   }
 
-  resetRound(stageNumber = this.currentStage, runTutorial = false) {
-    const clampedStage = Math.max(
-      1,
-      Math.min(CAMPAIGN_LEVELS.length, Number(stageNumber) || 1)
-    );
+  resetRound(stageNumber = this.currentStage, runTutorial = false, { preserveCustomerCone = false } = {}) {
+    clearFlavorFeint(this);
+    const keepCustomerCone = preserveCustomerCone && this.world.conePivot.parent === this.world.heldSocket;
+    const clampedStage = normalizeStage(stageNumber);
     this.currentStage = clampedStage;
-    this.config = CAMPAIGN_LEVELS[clampedStage - 1] || CAMPAIGN_LEVELS[0];
+    this.config = getStageConfig(clampedStage);
+    this.rhythmClock=null;
+    this.world.vendorBeatPhase=null;
     this.levelIndex = this.config.vendorIdx;
+    const orderBounds = getStageOrderOptions(this.currentStage);
+    this.targetScoopCount = Math.max(orderBounds.min, Math.min(orderBounds.max, Math.round(this.targetScoopCount) || orderBounds.default));
+    this.selectedFlavors = Array.from({ length: MAX_SCOOPS }, (_, index) => this.selectedFlavors[index] ?? this.selectedFlavors[this.selectedFlavors.length - 1] ?? 0);
 
     this.world.setVendorCharacter(this.levelIndex);
+    this.world.setServingScale?.(this.config.scoopScale ?? 1);
     this.world.applySelectedFlavorColors(this.selectedFlavors);
 
     this.active = false;
     this.roundEnded = false;
+    clearChoreography(this);
+    this.gestureValidation = new GestureValidation();
 
     this.maxHearts = this.config.hearts || 3;
     this.hearts = this.maxHearts;
@@ -233,6 +256,8 @@ export class TrickDirector {
     this.idleSeconds = 0;
     this.passiveLimitSec = 22.0;
     this.isAfkShowActive = false;
+    clearVendorFlourish(this);
+    this.afkPromptTimer=null;
     this.afkScenario = 0;
     this.afkTimer = 0;
     this.lastAfkBeatTime = 0;
@@ -254,8 +279,10 @@ export class TrickDirector {
     this.floatingPopups = [];
     this.vignetteFlash = { color: 'green', alpha: 0 };
 
-    this.coneWorldPos = new THREE.Vector3(0, 1.24, 0.22);
-    this.coneTargetPos = new THREE.Vector3(0, 1.24, 0.22);
+    this.coneWorldPos = keepCustomerCone
+      ? this.world.paddleGroup.position.clone()
+      : new THREE.Vector3(0, 1.24, 0.22);
+    this.coneTargetPos = this.coneWorldPos.clone();
     this.world.coneSpring.pos.copy(this.coneWorldPos);
     this.world.coneSpring.target.copy(this.coneTargetPos);
     this.world.coneSpring.vel.set(0, 0, 0);
@@ -265,32 +292,54 @@ export class TrickDirector {
     this.conePitchX = 0;
     this.leftHandCustomTarget = null;
 
-    const shouldRunTutorial =
-      runTutorial ||
-      this.forceTutorialNext ||
-      (this.currentStage === 1 && !this.save.data.tutorialCompleted);
     this.forceTutorialNext = false;
-
-    this.routine = this._buildDynamicRoutineForStage(
-      this.config,
-      shouldRunTutorial
-    );
+    this.pendingTrickAdvance = 0;
+    clearTrickTransition(this);
+    this.world.collectedCones?.reset();
+    this.world.clearSlicePresentation?.();
+    this.world.clearServingNapkin?.();
+    this.servingNapkinState = null;
+    this.paperReturnPose=null;
+    this.nestedService = null; this.layeredService = null;
+    this.lastAfkSurfaceKey = null;
+    this.lastAfkContactKey = null;
+    this.extraTrick = null;
+    this.researchedService = null;
+    this.customerService = null; this.customerConeStart = keepCustomerCone;
+    this.carryScoopOffsetY = null; this.world.coneHandTiltZ = 0;
+    this.speechClock = 0;
+    this.lastSpeechAt = -Infinity;
+    this.lastSpeechContext = '';
+    this.lastSpeechType = '';
+    this.captionLockUntil = 0;
+    this.routine = this._buildDynamicRoutineForStage(this.config);
 
     this._hideAllProps();
-    this._reattachConeToPaddle();
+    if (!keepCustomerCone) this._reattachConeToPaddle();
     this.world.updateIceCreamScoops(0, false);
-    this._enterRoutineStep(0);
+    // A reset prepares data only. Inactive menus/order greetings must not build
+    // active trick props, stretch ribbons or speech before startRound().
+    this.routineIndex = 0;
+    this.currentMechanic = this.routine[0] || 'SCRAPE_FLAVOR_SCOOP';
+    this.currentShowId = this.currentMechanic;
+    this.subStep = 0;
+    this.stageTimer = 0;
+    this.stepCooldown = 0;
   }
 
   _reattachConeToPaddle() {
     if (this.world.conePivot.parent !== this.world.paddleGroup) {
-      this.world.paddleGroup.add(this.world.conePivot);
-      this.world.conePivot.position.set(0, 0.02, 0);
-      this.world.conePivot.rotation.set(0, 0, 0);
+      if(this.active&&this.world.stallEffects)this.world.handoffCone('paddle');
+      else{this.world.paddleGroup.add(this.world.conePivot);this.world.conePivot.position.set(0,.02,0);this.world.conePivot.rotation.set(0,0,0);}
     }
   }
 
   _hideAllProps() {
+    this.idleStrandWasActive = false;
+    this.world.clearTrickPresentations?.();
+    this.world.setConeInVendorHand(false);
+    this.world.carryScoop.visible = false;
+    this.world.tubIceGroups.forEach(tub => { tub.fill = 1; });
     this.world.mainConeMesh.visible = true;
     this.world.conePivot.visible = true;
     this.world.outerConeGroup.visible = false;
@@ -310,7 +359,25 @@ export class TrickDirector {
     }
   }
 
+  /** Optional in-world story caption; it never changes game state or timing. */
+  sayLine(text, type = 'hmm', seconds = 2.4) {
+    if (typeof text !== 'string' || !text.trim()) return;
+    this.vendorBubbleText = text.trim();
+    this.vendorBubbleTimer = Math.max(0.6, Math.min(6, seconds));
+    this.captionLockUntil = (this.speechClock || 0) + this.vendorBubbleTimer;
+    const voiceOrigin = this.world.vendorGroup.getWorldPosition(new THREE.Vector3());
+    this.sound.speakVendor(type, this.levelIndex, voiceOrigin.x);
+  }
+
   _triggerVendorSpeech(type = 'hoppa') {
+    const now = this.speechClock || 0;
+    const context = `${this.routineIndex}:${this.currentMechanic}:${this.subStep}`;
+    const sameContext = context === this.lastSpeechContext;
+    const elapsed = now - (this.lastSpeechAt ?? -Infinity);
+    if (sameContext && (elapsed < 0.5 || (type === this.lastSpeechType && elapsed < 1.4))) return;
+    this.lastSpeechAt = now;
+    this.lastSpeechContext = context;
+    this.lastSpeechType = type;
     const soundMap = {
       scrape: 'hmm',
       double_cone: 'eeeh',
@@ -332,7 +399,10 @@ export class TrickDirector {
       shock: 'shock',
     };
     const soundType = soundMap[type] || 'hoppa';
-    this.sound.speakVendor(soundType, this.levelIndex, this.coneWorldPos.x);
+    // Voice belongs to the vendor, not to the moving ice cream/paddle.
+    const voiceOrigin = this.world.vendorGroup.getWorldPosition(new THREE.Vector3());
+    const voiceAccepted = this.sound.speakVendor(soundType, this.levelIndex, voiceOrigin.x);
+    if (voiceAccepted === false) return;
 
     const keyMap = {
       hmm: 'speech_hmm',
@@ -354,15 +424,26 @@ export class TrickDirector {
       afk_bells: 'speech_afk_bells',
       afk_wave: 'speech_afk_wave',
     };
-    this.vendorBubbleText = this.save.t(keyMap[type] || 'speech_hoppa');
-    this.vendorBubbleTimer = 1.25;
+    if (now >= (this.captionLockUntil || 0)) {
+      this.vendorBubbleText = this.save.t(keyMap[type] || 'speech_hoppa');
+      this.vendorBubbleTimer = 1.25;
+    }
   }
 
-  startRound() {
+  startRound({ customerCone = this.customerConeStart || false } = {}) {
+    if (customerCone && this.world.conePivot.parent === this.world.heldSocket) {
+      this.routine = customerOpeningRoutine(this.routine, this.targetScoopCount);
+    }
+    this.flavorFeint=createFlavorFeintPlan(this.routine,this.selectedFlavors.slice(0,this.targetScoopCount),this.targetScoopCount,{random:this.flavorFeintRandom||Math.random});
+    if(this.flavorFeint)this.routine=this.flavorFeint.routine;
+    this.customerConeStart = false;
     this.active = true;
     this.roundEnded = false;
     this.idleSeconds = 0;
-    this.sound.tempoMultiplier = this.config.speedMult;
+    this.rhythmClock=new RhythmClock(this.config.tempoFactor||1);
+    this.sound.bindRhythmClock?.(this.rhythmClock);
+    this.sound.rhythmClock=this.rhythmClock;
+    this.sound.tempoMultiplier = this.config.musicTempo||this.config.speedMult;
     this.sound.startMusic();
     this.sound.playBell(0.75, 0);
     this.world.ringBells(0.55);
@@ -378,10 +459,34 @@ export class TrickDirector {
     // Dynamic every frame via getGestureGuide()
   }
 
-  _enterRoutineStep(stepIndex) {
+  _enterRoutineStep(stepIndex,componentId=null){
+    const entry=this.active&&this.world.scene&&this.world.lArmRig?.handRig?beginTrickEntry(this):null;
+    // A new request begins at the currently rendered pose, including when an
+    // earlier presentation was interrupted. Never finish an obsolete lead-in.
+    this.trickTransition=this.pendingTrickEntry=this.servingHandoff=this.pendingServingOwner=null;
+    this.pendingEntryPaper=this.entryPaperPreparation=this.afterEntryPaperPose=null;
+    this._initializeRoutineStep(stepIndex,componentId);
+    if(entry)finishTrickEntry(this,entry);
+  }
+
+  _initializeRoutineStep(stepIndex, componentId = null) {
+    this.sound.syncMusicBeat?.();
+    clearVendorFlourish(this);
+    this.afkPromptTimer=null;
+    this.pendingTrickAdvance = 0;
+    this.extraTrick = null;
+    this.researchedService = null;
+    this.customerService = null; this.carryScoopOffsetY = null; this.world.coneHandTiltZ = 0;
+    this.servingNapkinState = null;
+    this.paperReturnPose=null;
+    this.nestedService = null; this.layeredService = null;
+    this.presentationStartPos = this.coneWorldPos.clone();
+    this.scrapeBladeStart=null;
+    this.lastBellContact = -1;
     this.routineIndex = stepIndex;
-    this.currentMechanic =
-      this.routine[stepIndex] || 'FINAL_PISTACHIO_CATCH';
+    if(this.routine[stepIndex]==='FINAL_PISTACHIO_CATCH'&&this.flavorFeint?.status==='active')this.routine.splice(stepIndex,0,FLAVOR_FEINT_ID);
+    const showId = this.routine[stepIndex] || 'FINAL_PISTACHIO_CATCH';
+    this.currentMechanic = enterChoreography(this, showId, componentId);
     this.stageTimer = 0;
     this.subStep = 0;
     this.stepCooldown = 0;
@@ -401,27 +506,33 @@ export class TrickDirector {
     this.midpointHoverTimer = 0;
     this.isAfkShowActive = false;
 
+    const keepCustomerServing = CUSTOMER_SERVICE_IDS.includes(this.currentMechanic) &&
+      (this.world.conePivot.parent === this.world.heldSocket || this.world.conePivot.parent === this.world.lArmRig.handGroup);
     this._hideAllProps();
-    this._reattachConeToPaddle();
+    if (!keepCustomerServing) this._reattachConeToPaddle();
     this.heldItem = null;
     this.world.setVendorMood('smile');
 
-    // Discover trick in the 15-Trick Encyclopedia if it's in TRICK_CATALOG
-    if (TRICK_CATALOG.some((t) => t.id === this.currentMechanic)) {
-      this.save.discoverTrick(this.currentMechanic);
+    for (const id of new Set([this.currentShowId, this.currentMechanic])) {
+      if (TRICK_CATALOG.some((t) => t.id === id)) this.save.discoverTrick(id);
     }
 
     this.protocol.emitCommand(PLAYER_ROLES.VENDOR, 'ENTER_TRICK', {
-      trickId: this.currentMechanic,
+      trickId: this.currentShowId || this.currentMechanic,
+      componentId: this.currentMechanic,
+      componentIndex: this.choreography?.index ?? 0,
       stepIndex,
     });
 
+    activateFlavorFeint(this,stepIndex);
+    if(enterFlavorFeint(this))return;
+    if(this.currentMechanic==='FINAL_PISTACHIO_CATCH')this.world.applySelectedFlavorColors(this.selectedFlavors);
     const currentFlavor = this._getFlavorForScoop(Math.max(0, this.scoopCount));
     const currentTubPos = this._getTubWorldPosForScoop(
       Math.max(0, this.scoopCount)
     );
 
-    switch (this.currentMechanic) {
+    if (!enterExtraTrick(this)) switch (this.currentMechanic) {
       case 'TUTORIAL_WARMUP': {
         this.scoopCount = 1;
         this.world.updateIceCreamScoops(1, false);
@@ -431,15 +542,9 @@ export class TrickDirector {
       }
 
       case 'SCRAPE_FLAVOR_SCOOP': {
-        const nextScoopIdx = Math.min(3, this.scoopCount);
+        const nextScoopIdx = Math.min(MAX_SCOOPS - 1, this.scoopCount);
         const flav = this._getFlavorForScoop(nextScoopIdx);
         const tubPos = this._getTubWorldPosForScoop(nextScoopIdx);
-        this.world.stretchyStrand.attach(
-          tubPos,
-          this.coneWorldPos,
-          flav.colorHex,
-          false
-        );
         this.world.setVendorMood('smile');
         this._triggerVendorSpeech('scrape');
         break;
@@ -451,11 +556,7 @@ export class TrickDirector {
           this.scoopCount = 1;
           this.world.updateIceCreamScoops(1, false);
         }
-        this.world.outerConeGroup.visible = true;
-        this.world.outerConeGroup.position.set(0, -0.052, 0.008);
-        this.world.outerConeGroup.rotation.set(0, 0, 0.09);
-        this.leftHandCustomTarget = new THREE.Vector3(-0.12, 1.18, 0.24);
-        this.coneTargetPos.set(0, 1.22, 0.28);
+        enterNestedService(this);
         this.world.setVendorMood('mischief');
         this._triggerVendorSpeech('double_cone');
         break;
@@ -463,19 +564,13 @@ export class TrickDirector {
 
       case 'GIANT_BLOCK_TEASE': {
         // Lift the entire 5-KILO GIANT ICE CREAM BLOCK out of the selected flavor tub!
-        const flav = this._getFlavorForScoop(Math.min(3, this.scoopCount));
+        const flav = this._getFlavorForScoop(Math.min(MAX_SCOOPS - 1, this.scoopCount));
         const tubPos = this._getTubWorldPosForScoop(
-          Math.min(3, this.scoopCount)
+          Math.min(MAX_SCOOPS - 1, this.scoopCount)
         );
         this.world.setGiantBlockColor(flav.colorHex);
-        this.world.giantBlockGroup.visible = true;
+        this.world.giantBlockGroup.visible = false;
         this.world.giantBlockGroup.position.copy(tubPos);
-        this.world.stretchyStrand.attach(
-          tubPos,
-          this.coneWorldPos,
-          flav.colorHex,
-          true
-        );
         this.world.setVendorMood('mischief');
         this._triggerVendorSpeech('giant');
         break;
@@ -485,14 +580,8 @@ export class TrickDirector {
         // Launch the giant ice cream mass into mid-air and flip it 360°!
         const flav = this._getFlavorForScoop(Math.max(0, this.scoopCount - 1));
         this.world.setGiantBlockColor(flav.colorHex);
-        this.world.giantBlockGroup.visible = true;
+        this.world.giantBlockGroup.visible = false;
         this.world.giantBlockGroup.position.copy(this.coneWorldPos);
-        this.world.stretchyStrand.attach(
-          this.coneWorldPos,
-          this.world.giantBlockGroup.position,
-          flav.colorHex,
-          true
-        );
         this.sound.playWhoosh(1.35, 0);
         this.world.setVendorMood('laugh');
         this._triggerVendorSpeech('flip');
@@ -532,6 +621,7 @@ export class TrickDirector {
       }
 
       case 'MEGA_TAFFY_SLICE': {
+        this.cutGesture = new StretchCutGesture();
         if (this.scoopCount < this.targetScoopCount) {
           this.scoopCount++;
           this.world.updateIceCreamScoops(this.scoopCount, false);
@@ -539,9 +629,9 @@ export class TrickDirector {
         this.world.triggerScoopJiggle(1.25);
         this.sound.playPaddleClank(0.1);
         this.sound.playScoopAdded();
-        this.coneTargetPos.set(0, 1.5, 0.14);
+        this.coneTargetPos.set(0.18, 1.39, 0.14);
         this.conePitchX = -0.28;
-        this.world.sliceCueGroup.visible = true;
+        this.world.sliceCueGroup.visible = false; // One projected guide follows the real strand.
         this.world.stretchyStrand.attach(
           currentTubPos,
           this.coneWorldPos,
@@ -553,17 +643,12 @@ export class TrickDirector {
       }
 
       case 'NAPKIN_CONE_FAKEOUT': {
-        this.world.napkinConeProp.visible = true;
-        this.coneTargetPos.set(-0.38, 1.44, -0.12);
-        this.conePitchX = -0.35;
-        this.leftHandCustomTarget = new THREE.Vector3(0, 1.22, 0.28);
-        this.world.setVendorMood('laugh');
-        this._triggerVendorSpeech('eeeh');
+        enterServingNapkin(this);
         break;
       }
 
       case 'SHELL_SWAP_DUEL': {
-        this.world.napkinConeProp.visible = true;
+        this.world.napkinConeProp.visible = true;this.world.reuseEmptyCone?.(this.world.napkinConeProp);
         this.swapSide = Math.random() < 0.5 ? -1 : 1;
         this.coneTargetPos.set(this.swapSide * 0.28, 1.25, 0.2);
         this.leftHandCustomTarget = new THREE.Vector3(
@@ -577,6 +662,7 @@ export class TrickDirector {
       }
 
       case 'FIGURE_EIGHT_WEAVE': {
+        this.figureEight = new FigureEightGesture(createFigureEightPath(this.world));
         this.coneTargetPos.set(0, 1.25, 0.24);
         this.world.setVendorMood('mischief');
         this._triggerVendorSpeech('hirr');
@@ -626,6 +712,7 @@ export class TrickDirector {
       case 'FINAL_PISTACHIO_CATCH': {
         this.scoopCount = this.targetScoopCount;
         this.world.updateIceCreamScoops(this.scoopCount, true);
+        this.world.setServingNapkin?.({ owner: 'vendor', peel: 0, visible: true });
         this.world.triggerScoopJiggle(1.3);
         this.sound.playBell(0.88, 0.2);
         this.world.ringBells(0.75);
@@ -635,9 +722,17 @@ export class TrickDirector {
         break;
       }
     }
+    if (this.active) this.ui?.onTrickStart?.({ trickId: this.currentShowId || this.currentMechanic, componentId: this.currentMechanic, componentIndex: this.choreography?.index ?? 0, stage: this.currentStage, vendorIndex: this.levelIndex, index: this.routineIndex });
   }
 
   _advanceRoutineStep() {
+    const componentId = this.currentMechanic;
+    const pendingBridge = advanceChoreography(this);
+    this.ui?.onReaction?.({ kind: 'success', trickId: this.currentShowId || componentId, componentId, componentIndex: this.choreography ? Math.max(0, this.choreography.completed.length - 1) : 0, componentCount: this.choreography?.routine.componentIds.length || 1, showComplete: !pendingBridge, stage: this.currentStage, vendorIndex: this.levelIndex, index: this.routineIndex, score: this.score });
+    if (pendingBridge) {
+      this.sound.playShowBoost(1, this.coneWorldPos.x);
+      return; // Connector animation owns the interval before the next component.
+    }
     this.tricksSurvived++;
     this.sound.playShowBoost(2, this.coneWorldPos.x);
     this.sound.playCrowdReaction('cheer');
@@ -662,25 +757,12 @@ export class TrickDirector {
    * in the player's hand while the vendor pulls the inner cone + ice cream out!
    */
   _triggerOuterConeSeparation() {
-    this.heldItem = 'EMPTY_CONE';
-    this.world.outerConeGroup.visible = false;
-    this.world.leftHandConeProp.visible = false;
-    this.world.mainConeMesh.visible = true;
-    this.world.heldEmptyCone.visible = true;
-
-    this.sound.playWaferSlide(0);
-    this.sound.playBell(0.85, 0.15);
-    this.sound.playCrowdReaction('chuckle');
-    this.world.triggerSpectatorReaction('cheer');
-    this.world.ringBells(0.7);
-    this.world.setVendorMood('laugh');
-    this._triggerVendorSpeech('eeeh');
-    this._vibrate([35, 30, 45]);
+    separateNestedCone(this);
   }
 
   attemptSnatch(handWorldPos) {
     if (!this.active || this.roundEnded) return;
-    if (this.heldItem === 'NAPKIN_CONE' || this.heldItem === 'EMPTY_CONE') return;
+    if (['NAPKIN_CONE', 'NAPKIN', 'EMPTY_CONE'].includes(this.heldItem)) return;
     this.idleSeconds = 0;
 
     this.protocol.emitCommand(PLAYER_ROLES.CUSTOMER, 'ATTEMPT_SNATCH', {
@@ -688,10 +770,32 @@ export class TrickDirector {
     });
   }
 
+  tickSpeech(dt) {
+    this.speechClock = (this.speechClock || 0) + Math.max(0, dt);
+    this.vendorBubbleTimer = Math.max(0, this.vendorBubbleTimer - Math.max(0, dt));
+  }
+
   update(dt, time, gestureState) {
-    if (this.vendorBubbleTimer > 0) {
-      this.vendorBubbleTimer = Math.max(0, this.vendorBubbleTimer - dt);
+    this._updateSerial=(this._updateSerial||0)+1;
+    if(this.active&&this.world.lArmRig?.handRig&&!this.servingHandoff){this.world.scene.updateMatrixWorld(true);this._servingFrame={parent:this.world.conePivot.parent,matrix:this.world.conePivot.matrixWorld.clone()};}
+    this._motionStepKey=`${this.routineIndex}:${this.currentMechanic}:${this.subStep}:${this.choreography?.index??0}`;
+    this.tickSpeech(dt);
+    let gameDt=dt*(this.config?.tempoFactor||1);
+    if(this.active&&!this.roundEnded&&this.rhythmClock){
+      const previous=this.rhythmClock.time;
+      const notes=this.rhythmClock.advance(dt);
+      gameDt=this.rhythmClock.time-previous;
+      this.sound.playRhythmNotes?.(notes);
+      time=this.rhythmClock.time;
+      this.world.vendorBeatPhase=((this.rhythmClock.step-1+this.rhythmClock.phase)/8)%1;
     }
+    tickIdleGuide(this);
+    if (isIdleVendorAction(this)) suppressIdleScene(this);
+    this.contactPathOwnsMotion=false;
+    this.presentationExact = false;
+    this.presentationBell = null;
+    this.presentationSurface = null;
+    this.presentationStrikeTip = null;
     if (this.vignetteFlash.alpha > 0) {
       this.vignetteFlash.alpha = Math.max(
         0,
@@ -709,34 +813,92 @@ export class TrickDirector {
       if (!this.roundEnded) {
         // Expressive idle 3D motion: vendor gently tilts up/down and spins the cone around the shaft
         this.coneTargetPos.set(
-          Math.sin(time * 1.2) * 0.18,
-          1.25 + Math.cos(time * 1.7) * 0.06,
-          0.21
+          Math.sin(time * 0.7) * 0.055,
+          1.22 + Math.cos(time * 1.1) * 0.018,
+          0.16
         );
-        this.shaftRoll = time * 1.4;
-        this.conePitchX = Math.sin(time * 1.7) * 0.22;
+        this.shaftRoll = Math.sin(time * 0.7) * 0.08;
+        this.conePitchX = 0.06;
       }
       this._applyKinematics(dt, time, gestureState);
       return;
     }
 
+    // A player may interrupt the back sweep at any point. Return around the
+    // same outside hip before restoring the prompt; do not cut through the
+    // torso or spend the player's catch window during this short recovery.
+    if(updateTrickTransition(this,dt,gestureState)){this._applyKinematics(dt,time,gestureState);return;}
+    updateFlavorRefusal(this,dt,gestureState);
+    if(updateFlavorFeint(this,dt,gestureState)){this._applyKinematics(dt,time,gestureState);return;}
+    if(this.flourishPreparation && !this.vendorFlourish && !this.afkRejoin &&
+      (gestureState.isMoving || gestureState.isPointerDown)){
+      this.flourishPreparation.abort=true;
+      this._updateAfkShow(dt,time);this._applyKinematics(dt,time,gestureState);
+      return;
+    }
+    if(this.afkRejoin || (!this.vendorFlourish && this.isAfkShowActive &&
+      (gestureState.isMoving || gestureState.isPointerDown) && canRejoinVendorCone(this.world))){
+      this.afkRejoin ||= new VendorPoleRejoin(this.world,this.afkPromptTimer??this.stageTimer);
+      setFlourishPose(this,this.afkRejoin.step(dt));this._applyKinematics(dt,time,gestureState);
+      if(this.afkRejoin.inContact){finishVendorRejoin(this);this._triggerVendorSpeech('hoppa');}
+      return;
+    }
+    if (this.vendorFlourish && (this.vendorFlourish.returning || gestureState.isMoving || gestureState.isPointerDown)) {
+      this.vendorFlourish.beginReturn();
+      setFlourishPose(this,this.vendorFlourish.step(dt));
+      this._applyKinematics(dt,time,gestureState);
+      if(this.vendorFlourish.done){
+        const savedTimer=this.vendorFlourish.stageTimer;
+        this.vendorFlourish=null;this.flourishPreparation=null;
+        if(canRejoinVendorCone(this.world))this.afkRejoin=new VendorPoleRejoin(this.world,savedTimer);
+        else{clearVendorFlourish(this);this.isAfkShowActive=false;this.idleSeconds=0;this.stageTimer=savedTimer;markIdleSettling(this);}
+      }
+      return;
+    }
+
+    if (updateChoreographyBridge(this, gameDt, gestureState)) {
+      this._applyKinematics(dt, time, gestureState);
+      return;
+    }
+
     const speedMult = this.config.speedMult || 1.0;
-    this.stageTimer += dt * speedMult;
+    // Give the show its snap back without taking time away from a catch, pull,
+    // trace or rhythm response. Only authored preparation/return phases hurry.
+    const preparing = this.currentMechanic === 'SCRAPE_FLAVOR_SCOOP' ||
+      researchedServicePlaying(this) || customerServicePlaying(this) || servicePresentationPlaying(this);
+    this.stageTimer += gameDt / (this.config?.tempoFactor||1) * speedMult * (preparing ? 1.22 : 1);
     if (this.stepCooldown > 0) {
       this.stepCooldown = Math.max(0, this.stepCooldown - dt);
     }
 
+    // Validate raw intent, never the hand that presentation may snap to the cone.
     const handPos = gestureState.handWorldPos;
-    const distToCone = handPos.distanceTo(this.coneWorldPos);
+    const intentPos = gestureState.intentWorldPos || handPos;
+    const distToCone = intentPos.distanceTo(this.coneWorldPos);
+    const rhythmRequest = this.currentMechanic === 'EYE_LOCK_RHYTHM_CHASE' && this.subStep === 1
+      ? this.rhythmTargetPos.toArray().map((n) => n.toFixed(3)).join(':') : '';
+    const shellWindow = this.currentMechanic === 'SHELL_SWAP_DUEL' ? (this.stageTimer >= 1.2 ? 'choice' : 'shuffle') : '';
+    const opportunity = `${this.routineIndex}:${this.currentMechanic}:${this.subStep}:${this.heldItem || ''}:${this.bellBeatsDone}:${this.rhythmBeatsCompleted}:${rhythmRequest}:${shellWindow}`;
+    this.gestureValidation.update(gestureState, dt, opportunity);
+    const validReach = (radius = 0.28) => this.gestureValidation.reach('reach', distToCone, radius, dt);
+    const validSlice = (near = true) => this.gestureValidation.slice('slice', near);
+    const validPull = () => this.gestureValidation.pull('pull');
+
+    if (this.pendingTrickAdvance > 0) {
+      this.pendingTrickAdvance = Math.max(0, this.pendingTrickAdvance - dt);
+      this._applyKinematics(dt, time, gestureState);
+      if (this.pendingTrickAdvance === 0) this._advanceRoutineStep();
+      return;
+    }
 
     // 1. Holding the Fake Napkin Cone -> Swipe sideways to toss it away!
     if (this.heldItem === 'NAPKIN_CONE') {
       this.isGraspingPaddleCone = false;
       if (
         this.stepCooldown <= 0 &&
-        (Math.abs(gestureState.vx) > 1.15 || gestureState.speed > 1.35)
+        validSlice()
       ) {
-        this.world.throwHeldProp('NAPKIN_CONE', gestureState.vx || 1);
+        this.world.collectEmptyCone?.(this.world.heldNapkinCone,`shell:${this.routineIndex}:${this.swapSide}`);
         if (this.world.heldNapkinCone) {
           this.world.heldNapkinCone.visible = false;
         }
@@ -746,9 +908,7 @@ export class TrickDirector {
         this.score += 140;
         this._spawnScorePopup(140, this.world.touristHand.position);
 
-        if (this.currentMechanic === 'NAPKIN_CONE_FAKEOUT') {
-          this._advanceRoutineStep();
-        } else if (this.currentMechanic === 'SHELL_SWAP_DUEL') {
+        if (this.currentMechanic === 'SHELL_SWAP_DUEL') {
           this.world.napkinConeProp.visible = true;
           this.swapSide *= -1;
           this.stageTimer = 0;
@@ -759,27 +919,26 @@ export class TrickDirector {
     }
 
     // 2. Holding the Outer Empty Cone from `DOUBLE_CONE_SLIDE` -> Fit it back under the inner cone or flick it away!
-    if (this.heldItem === 'EMPTY_CONE') {
+    if (this.heldItem === 'EMPTY_CONE' && this.currentMechanic !== 'DOUBLE_CONE_SLIDE') {
       this.isGraspingPaddleCone = false;
       this.coneTargetPos.set(
         0.18 + Math.sin(time * 3.2) * 0.06,
         1.35 + Math.cos(time * 2.5) * 0.04,
         0.22
       );
-      this.shaftRoll += dt * 4.5;
+      this.shaftRoll += gameDt * 4.5;
       this.conePitchX = Math.sin(time * 3) * 0.25;
 
       const flickedSideways =
         this.stepCooldown <= 0 &&
-        (Math.abs(gestureState.vx) > 1.25 || gestureState.speed > 1.45);
+        validSlice();
       const attachedUnderScoops =
         this.stepCooldown <= 0 &&
-        gestureState.isReaching &&
-        distToCone < 0.29;
+        validReach(0.29);
 
       if (attachedUnderScoops || flickedSideways) {
         if (flickedSideways && !attachedUnderScoops) {
-          this.world.throwHeldProp('EMPTY_CONE', gestureState.vx || 1);
+          this.world.collectEmptyCone?.(this.world.heldEmptyCone,`empty:${this.routineIndex}`);
           this.sound.playWhoosh(1.2, 0);
         } else {
           this.sound.playConePop(0);
@@ -804,15 +963,15 @@ export class TrickDirector {
       1.15,
       0.41
     );
-    const distToMidpoint = handPos.distanceTo(greenLineMidpoint);
+    const distToMidpoint = intentPos.distanceTo(greenLineMidpoint);
     const isAtGreenMidpoint =
-      distToMidpoint < 0.24 && distToCone >= 0.26 && handPos.z < 0.51;
+      (gestureState.isPointerDown || gestureState.isMouseHover) && distToMidpoint < 0.24 && distToCone >= 0.26 && intentPos.z < 0.51;
 
     if (
       isAtGreenMidpoint &&
+      this.gestureValidation.reach('midpoint', distToMidpoint, 0.24, dt) &&
       (this.currentMechanic === 'SHAFT_SPIN_360' ||
-        this.currentMechanic === 'DOUBLE_CONE_SLIDE' ||
-        this.currentMechanic === 'FIGURE_EIGHT_WEAVE')
+        (this.currentMechanic === 'DOUBLE_CONE_SLIDE' && this.subStep === 0 && !this.heldItem))
     ) {
       this.midpointHoverTimer += dt;
       this.idleSeconds = 0;
@@ -840,7 +999,10 @@ export class TrickDirector {
     }
 
     // Passive timeout & Multi-Scenario AFK Show Director check
+    const watchingNewPresentation = isTimedVendorShow(this) || researchedServicePlaying(this) || customerServicePlaying(this) || servicePresentationPlaying(this) || (this.currentMechanic === 'WHOLE_MOLD_ON_CONE' && this.subStep === 0) ||
+      (this.currentMechanic === 'SCOOP_LIFT_BACK' && (this.subStep === 0 || (this.subStep === 2 && this.stageTimer < 0.55)));
     if (
+      watchingNewPresentation ||
       gestureState.isMoving ||
       gestureState.isPointerDown ||
       (this.currentMechanic === 'EYE_LOCK_RHYTHM_CHASE' &&
@@ -849,6 +1011,9 @@ export class TrickDirector {
     ) {
       if (this.isAfkShowActive) {
         this.isAfkShowActive = false;
+        clearVendorFlourish(this);
+        // This branch already resumes the mechanic below in this same frame.
+        this.world.setConeInVendorHand(false);
         this.leftHandCustomTarget = null;
         this.conePitchX = 0;
         this.coneFlipZ = 0;
@@ -871,6 +1036,11 @@ export class TrickDirector {
       }
     }
 
+    if (updateExtraTrick(this, gameDt, time, { intentPos, handPos, gestureState, validReach, validSlice, validPull, realDt:dt })) {
+      this._applyKinematics(dt, time, gestureState);
+      return;
+    }
+
     switch (this.currentMechanic) {
       // =========================================================================
       // 0. 10-SECOND INTERACTIVE 3-STEP TUTORIAL (`TUTORIAL_WARMUP`)
@@ -886,7 +1056,7 @@ export class TrickDirector {
           this.shaftRoll = Math.sin(time * 2) * 0.3;
           this.conePitchX = 0.1;
 
-          if (gestureState.isReaching && distToCone < 0.29) {
+          if (validReach(0.29)) {
             this.tugTimer += dt * 2.2;
             this.isGraspingPaddleCone = true;
             if (this.tugTimer >= 0.45) {
@@ -905,6 +1075,7 @@ export class TrickDirector {
             }
           } else {
             this.isGraspingPaddleCone = false;
+            this.tugTimer = Math.max(0, this.tugTimer - dt * 2.2);
           }
         } else if (this.subStep === 1) {
           // Step 2 (~3.3s): Red upside-down trap — keep hand pulled back!
@@ -916,16 +1087,17 @@ export class TrickDirector {
             0.25
           );
 
+          const pulledBack = validPull();
           if (gestureState.isReaching && distToCone < 0.25) {
             this.stageTimer = Math.max(0, this.stageTimer - 0.5);
             this._triggerVendorSpeech('cik');
             this._vibrate(35);
-          } else if (this.stageTimer >= 2.1) {
+          } else if (this.stageTimer >= 2.1 && pulledBack) {
             this.subStep = 2;
             this.stageTimer = 0;
             this.coneFlipZ = 0;
             this.conePitchX = -0.25;
-            this.coneTargetPos.set(0, 1.48, 0.15);
+            this.coneTargetPos.set(0.18, 1.39, 0.15);
             this.world.sliceCueGroup.visible = true;
             const flav = this._getFlavorForScoop(0);
             const tubPos = this._getTubWorldPosForScoop(0);
@@ -947,16 +1119,13 @@ export class TrickDirector {
             dt,
             tubPos,
             this.coneWorldPos,
-            1.25
+            0.72
           );
           const strandMid = new THREE.Vector3(0, 1.22, 0.18);
-          const distToStrand = handPos.distanceTo(strandMid);
+          const distToStrand = intentPos.distanceTo(strandMid);
 
           if (
-            (gestureState.isReaching &&
-              distToStrand < 0.36 &&
-              Math.abs(gestureState.vx) > 0.85) ||
-            this.stageTimer >= 3.8
+            validSlice(distToStrand < 0.36)
           ) {
             this.world.stretchyStrand.detach();
             this.world.sliceCueGroup.visible = false;
@@ -976,38 +1145,28 @@ export class TrickDirector {
       // 1. SCRAPING & CHURNING PLAYER'S CHOSEN FLAVOR FROM ITS COPPER TUB
       // =========================================================================
       case 'SCRAPE_FLAVOR_SCOOP': {
-        const nextScoopIdx = Math.min(3, this.scoopCount);
+        if(this.scoopCount>=this.targetScoopCount){this._advanceRoutineStep();break;}
+        const nextScoopIdx = Math.min(MAX_SCOOPS - 1, this.scoopCount);
         const flav = this._getFlavorForScoop(nextScoopIdx);
         const tubPos = this._getTubWorldPosForScoop(nextScoopIdx);
 
         const p = Math.min(1, this.stageTimer / 1.45);
-        const churnX = tubPos.x + Math.sin(this.stageTimer * 11) * 0.08;
-        const churnY =
-          1.03 +
-          Math.abs(Math.sin(this.stageTimer * 8)) * 0.24 +
-          p * 0.18;
-        const churnZ = -0.28 + Math.cos(this.stageTimer * 9) * 0.07;
-
-        this.coneTargetPos.set(churnX, churnY, churnZ);
-        // Active 3D shaft spinning and up-down pitching while churning!
-        this.shaftRoll += dt * 11;
-        this.conePitchX = Math.sin(this.stageTimer * 10) * 0.45;
-
-        this.world.stretchyStrand.update(
-          dt,
-          tubPos,
-          this.coneWorldPos,
-          1.35
-        );
-        this.world.churnTubIceCream(flav.index, dt * 3.8);
-
-        if (this.stageTimer - this.lastScrapeClankTime > 0.38) {
+        // Keep the existing cone in the left hand while the free spatula scrapes.
+        this.world.setConeInVendorHand(true);
+        this.leftHandCustomTarget = new THREE.Vector3(0.20, 1.17, -0.22);
+        this.world.scene.updateMatrixWorld(true);
+        const deposit = this.world.getScoopAnchor(nextScoopIdx);
+        this.scrapeBladeStart ||= scrapeBladePoint(this.world);
+        scrapeServing(this,{progress:p,start:this.scrapeBladeStart,tub:tubPos,deposit,color:flav.colorHex,radius:this.world.scoopMeshes[nextScoopIdx].geometry?.parameters.radius*this.world.scoopMeshes[nextScoopIdx].scale.y||.064});
+        if(p>=.92)this.world.updateIceCreamScoops(Math.min(this.targetScoopCount,this.scoopCount+1),false);
+        if(p>=.30&&p<=.69)this.world.churnTubIceCream(flav.index,dt*3.8);
+        if (p >= 0.30 && p < 0.51 && this.stageTimer - this.lastScrapeClankTime > 0.16) {
           this.lastScrapeClankTime = this.stageTimer;
           this.sound.playPaddleClank(tubPos.x);
         }
 
         if (this.stageTimer >= 1.45) {
-          this.scoopCount = Math.min(4, this.scoopCount + 1);
+          this.scoopCount = Math.min(this.targetScoopCount, this.scoopCount + 1);
           this.world.updateIceCreamScoops(this.scoopCount, false);
           this.world.stretchyStrand.detach();
           this.world.triggerScoopJiggle(1.4);
@@ -1023,57 +1182,7 @@ export class TrickDirector {
       // 2. VISIBLY NESTED DOUBLE CONE (`DOUBLE_CONE_SLIDE` - Çift Külah Tuzağı)
       // =========================================================================
       case 'DOUBLE_CONE_SLIDE': {
-        if (this.subStep === 0) {
-          // Vendor visibly slides the outer cone onto the inner cone with left hand, then extends both
-          const introT = Math.min(1, this.stageTimer / 0.7);
-          this.world.outerConeGroup.visible = true;
-          // Animate the outer cone sliding up from -0.095 to -0.052 so the nesting is crystal clear!
-          this.world.outerConeGroup.position.y = THREE.MathUtils.lerp(
-            -0.098,
-            -0.052,
-            introT
-          );
-          this.world.outerConeGroup.rotation.z =
-            0.11 + Math.sin(time * 6) * 0.03;
-
-          if (introT < 0.85) {
-            this.leftHandCustomTarget = this.coneWorldPos
-              .clone()
-              .add(new THREE.Vector3(-0.04, -0.08, 0.02));
-          } else {
-            this.leftHandCustomTarget = null;
-          }
-
-          this.coneTargetPos.set(
-            Math.sin(this.stageTimer * 3.5) * 0.1,
-            1.21 + Math.cos(this.stageTimer * 4) * 0.04,
-            0.29
-          );
-          this.conePitchX = 0.22 + Math.sin(this.stageTimer * 5) * 0.12;
-          this.shaftRoll = Math.sin(this.stageTimer * 3) * 0.4;
-
-          // When player reaches for the nested double cone, trigger the inner-cone extraction!
-          if (
-            this.stageTimer > 0.45 &&
-            gestureState.isReaching &&
-            distToCone < 0.29
-          ) {
-            this.subStep = 1;
-            this.stageTimer = 0;
-            this.stepCooldown = 0.45;
-            // Paddle pulls the inner cone + ice cream high up and back while leaving outer cone in player's hand!
-            this.coneTargetPos.set(0.22, 1.46, 0.08);
-            this.conePitchX = -0.32;
-            this.shaftRoll = Math.PI;
-            this._triggerOuterConeSeparation();
-          } else if (this.stageTimer >= 2.7) {
-            // If player waited out the bait without touching, vendor spins & moves on
-            this.world.outerConeGroup.visible = false;
-            this.score += 200;
-            this._spawnScorePopup(200, this.coneWorldPos);
-            this._advanceRoutineStep();
-          }
-        }
+        updateNestedService(this, gameDt, time, { intentPos, validReach, validSlice });
         break;
       }
 
@@ -1081,43 +1190,29 @@ export class TrickDirector {
       // 3. GIANT 5-KILO BLOCK EXTRACTION (`GIANT_BLOCK_TEASE` - Kalıptan Kocaman Dondurma)
       // =========================================================================
       case 'GIANT_BLOCK_TEASE': {
-        const scoopIdx = Math.min(3, this.scoopCount);
+        const scoopIdx = Math.min(MAX_SCOOPS - 1, this.scoopCount);
         const flav = this._getFlavorForScoop(scoopIdx);
         const tubPos = this._getTubWorldPosForScoop(scoopIdx);
 
         if (this.subStep === 0) {
-          // Lift the giant 5-kilo block out of the copper tub and thrust it toward the player's face!
-          const p = Math.min(1, this.stageTimer / 0.85);
-          const bx = THREE.MathUtils.lerp(
-            tubPos.x,
-            Math.sin(this.stageTimer * 4) * 0.12,
-            p
-          );
-          const by = THREE.MathUtils.lerp(1.05, 1.32, p);
-          const bz = THREE.MathUtils.lerp(-0.28, 0.31, p);
-
-          this.coneTargetPos.set(bx, by, bz);
-          this.conePitchX = 0.28 * p;
-          this.shaftRoll = Math.sin(this.stageTimer * 5) * 0.55;
-
-          this.world.giantBlockGroup.visible = true;
-          this.world.giantBlockGroup.position.copy(this.coneWorldPos).add(
-            new THREE.Vector3(0, 0.06, 0.04)
-          );
-          this.world.giantBlockGroup.rotation.set(
-            Math.sin(time * 5) * 0.2,
-            time * 1.8,
-            Math.cos(time * 4) * 0.18
-          );
-
-          // Multi-strand viscoelastic taffy stretches from the tub all the way to the giant block!
-          this.world.stretchyStrand.update(
-            dt,
-            tubPos,
-            this.world.giantBlockGroup.position,
-            1.65
-          );
-          this.world.churnTubIceCream(flav.index, dt * 3.0);
+          // Extract the selected mold, present it, then lower it into the same tub.
+          const pose = moldPath(Math.min(1, this.stageTimer / 2.05), tubPos, false, this.world.getTubMoldSeat(flav.index));
+          this.world.setConeInVendorHand(true);
+          this.leftHandCustomTarget = new THREE.Vector3(.32,this.scoopCount>4?1.18:1.25,-.12);
+          this.coneTargetPos.copy(pose.position).y -= this.world.giantBlockHeight * 0.40;
+          this.presentationExact = true;
+          this.shaftRoll = 0;
+          this.conePitchX = 0;
+          this.world.giantBlockGroup.visible = pose.visible;
+          if(pose.visible)this.world.beginTubMold(flav.index);
+          else if(this.stageTimer/2.05>=.95)this.world.returnTubMold(flav.index);
+          this.world.giantBlockGroup.position.copy(pose.position);
+          this.world.giantBlockGroup.rotation.set(0, pose.rotation, 0);
+          this.world.tubMoldTransfer?.align();
+          if (pose.visible && this.stageTimer < 0.78) {
+            if(!this.world.stretchyStrand.active)this.world.stretchyStrand.attach(tubPos,pose.position,flav.colorHex,true);
+            this.world.stretchyStrand.update(dt, tubPos, pose.position, 0.70);
+          } else this.world.stretchyStrand.detach();
 
           if (
             this.stageTimer > 0.5 &&
@@ -1134,7 +1229,9 @@ export class TrickDirector {
           }
 
           if (this.stageTimer >= 2.05) {
-            // Vendor drops the 5-kilo block back into the tub, carves a scoop onto the cone, and presents it!
+            // The block is already submerged; return the prepared cone to the paddle.
+            this.world.setConeInVendorHand(false);
+            this.world.tubIceGroups[flav.index].fill = 1;
             this.subStep = 1;
             this.stageTimer = 0;
             this.world.giantBlockGroup.visible = false;
@@ -1158,7 +1255,7 @@ export class TrickDirector {
             0.27
           );
           this.conePitchX = 0.1;
-          if (gestureState.isReaching && distToCone < 0.28) {
+          if (validReach(0.28)) {
             this.sound.playGripTug(0);
             this._vibrate(25);
             this.score += 340;
@@ -1174,36 +1271,30 @@ export class TrickDirector {
       // =========================================================================
       case 'MIDAIR_BLOCK_SOMERSAULT': {
         if (this.subStep === 0) {
-          // Launch the giant ice cream mass in a high parabolic arc with a 720° mid-air somersault!
+          // The same block leaves its bucket, turns in the air and returns visibly.
           const duration = 1.45;
           const p = Math.min(1, this.stageTimer / duration);
-          const arcY = 1.24 + Math.sin(p * Math.PI) * 0.64;
-          const arcX = Math.sin(p * Math.PI * 2) * 0.22;
-          const arcZ = 0.16 + Math.sin(p * Math.PI) * 0.12;
-
-          // Paddle dips down and then rises to catch the somersaulting block
-          this.coneTargetPos.set(
-            arcX * 0.6,
-            1.16 + Math.sin(p * Math.PI) * 0.22,
-            0.2
-          );
-          this.conePitchX = Math.sin(p * Math.PI * 2) * 0.55;
-          this.shaftRoll = p * Math.PI * 2;
-
-          this.world.giantBlockGroup.visible = true;
-          this.world.giantBlockGroup.position.set(arcX, arcY, arcZ);
-          // Full mid-air somersault rotation (X and Z)!
-          this.world.giantBlockGroup.rotation.x = p * Math.PI * 4;
-          this.world.giantBlockGroup.rotation.z = p * Math.PI * 2;
-
-          this.world.stretchyStrand.update(
-            dt,
-            this.coneWorldPos,
-            this.world.giantBlockGroup.position,
-            1.5
-          );
+          const flavorIndex = Math.max(0, this.scoopCount - 1);
+          const tubPos = this._getTubWorldPosForScoop(flavorIndex);
+          const flav = this._getFlavorForScoop(flavorIndex);
+          const pose = moldPath(p, tubPos, true, this.world.getTubMoldSeat(flav.index));
+          this.world.setConeInVendorHand(true);
+          this.leftHandCustomTarget = new THREE.Vector3(.32,this.scoopCount>4?1.18:1.25,-.12);
+          this.coneTargetPos.copy(pose.position).y -= this.world.giantBlockHeight * 0.42;
+          this.presentationExact = true;
+          this.shaftRoll = 0;
+          this.conePitchX = 0;
+          this.world.giantBlockGroup.visible = pose.visible;
+          if(pose.visible)this.world.beginTubMold(flav.index);
+          else if(p>=.95)this.world.returnTubMold(flav.index);
+          this.world.giantBlockGroup.position.copy(pose.position);
+          this.world.giantBlockGroup.rotation.set(pose.rotation, 0, Math.sin(pose.rotation) * 0.22);
+          this.world.tubMoldTransfer?.align();
+          this.world.stretchyStrand.detach();
 
           if (p >= 1) {
+            this.world.setConeInVendorHand(false);
+            this.world.tubIceGroups[flav.index].fill = 1;
             this.subStep = 1;
             this.stageTimer = 0;
             this.world.giantBlockGroup.visible = false;
@@ -1226,7 +1317,7 @@ export class TrickDirector {
             1.21,
             0.27
           );
-          if (gestureState.isReaching && distToCone < 0.28) {
+          if (validReach(0.28)) {
             this.sound.playGripTug(this.coneWorldPos.x);
             this._vibrate(25);
             this.score += 380;
@@ -1241,11 +1332,18 @@ export class TrickDirector {
       // 5. 360° AXIAL SHAFT SPIN (`SHAFT_SPIN_360` - Kendi Etrafında Çevirme)
       // =========================================================================
       case 'SHAFT_SPIN_360': {
-        // Rapidly rolls the metal rod between his palms so the cone spins 360° around its own shaft
-        this.shaftRoll += dt * 15.0;
-        this.conePitchX = Math.sin(this.stageTimer * 7) * 0.35;
+        // A rapid own-axis turn and small wrist tilt keep the serving clear
+        // of the torso; the lateral rhythm/catch windows are unchanged.
+        this.shaftRoll += gameDt * 15.0;
+        this.conePitchX = Math.sin(this.stageTimer * 7) * .15;
 
         if (this.tugTimer > 0) {
+          if (this.gestureValidation.interrupted || distToCone > 0.38) {
+            this.tugTimer = 0;
+            this.isGraspingPaddleCone = false;
+            this.world.stretchyStrand.detach();
+            break;
+          }
           this.tugTimer -= dt;
           this.isGraspingPaddleCone = true;
           const flav = this._getFlavorForScoop(Math.max(0, this.scoopCount - 1));
@@ -1266,7 +1364,7 @@ export class TrickDirector {
             this._vibrate([20, 30]);
 
             if (this.subStep === 1) {
-              this.coneTargetPos.set(-0.28, 1.28, 0.22);
+              this.coneTargetPos.set(axialReachX(this.world,-0.28,1), 1.28, 0.22);
               this.score += 170;
               this._spawnScorePopup(170, this.coneWorldPos, '🌀');
             } else {
@@ -1282,12 +1380,11 @@ export class TrickDirector {
               ? Math.sin(this.stageTimer * 3.5) * 0.22
               : -0.26 + Math.cos(this.stageTimer * 4) * 0.14;
           const targetY = 1.24 + Math.sin(this.stageTimer * 5) * 0.08;
-          this.coneTargetPos.set(targetX, targetY, 0.25);
+          this.coneTargetPos.set(axialReachX(this.world,targetX,this.subStep), targetY, 0.25);
 
           if (
             this.stepCooldown <= 0 &&
-            gestureState.isReaching &&
-            distToCone < 0.28
+            validReach(0.28)
           ) {
             this.tugTimer = 0.22;
             this.isGraspingPaddleCone = true;
@@ -1342,7 +1439,7 @@ export class TrickDirector {
           this.conePitchX = 0.12;
           this.coneFlipZ = 0;
 
-          if (gestureState.isReaching && distToCone < 0.28) {
+          if (validReach(0.28)) {
             this.sound.playGripTug(0);
             this._vibrate(25);
             this.score += 320;
@@ -1392,7 +1489,7 @@ export class TrickDirector {
           this.coneFlipZ = 0;
           this.conePitchX = 0.08;
           this.coneTargetPos.set(-0.18, 1.18, 0.27);
-          if (gestureState.isReaching && distToCone < 0.28) {
+          if (validReach(0.28)) {
             this.sound.playGripTug(-0.18);
             this._vibrate(25);
             this.score += 340;
@@ -1442,7 +1539,7 @@ export class TrickDirector {
           }
         } else {
           this.coneTargetPos.set(0.15, 1.22, 0.27);
-          if (gestureState.isReaching && distToCone < 0.28) {
+          if (validReach(0.28)) {
             this.sound.playGripTug(0.15);
             this._vibrate(25);
             this.score += 330;
@@ -1460,33 +1557,32 @@ export class TrickDirector {
         const tubPos = this._getTubWorldPosForScoop(
           Math.max(0, this.scoopCount - 1)
         );
+        if (this.idleStrandWasActive) {
+          this.world.stretchyStrand.attach(tubPos,this.coneWorldPos,this._getFlavorForScoop(Math.max(0,this.scoopCount-1)).colorHex,true);
+          this.cutGesture = new StretchCutGesture();
+          this.idleStrandWasActive = false;
+        }
         this.coneTargetPos.set(
-          Math.sin(time * 2.4) * 0.14,
-          1.5 + Math.cos(time * 3) * 0.04,
+          0.18 + Math.sin(time * 2.4) * 0.035,
+          1.39 + Math.cos(time * 3) * 0.025,
           0.14
         );
         this.conePitchX = -0.25;
         this.shaftRoll = Math.sin(time * 3) * 0.35;
 
+        this.cutGesture ??= new StretchCutGesture();
+        const cutting = this.cutGesture.update(gestureState, dt, stretchCutGuide(this.world));
+        this.world.stretchyStrand.setHandPressure?.(cutting.push ? { t: cutting.parameter, offset: cutting.push } : null);
+        this.world.setStretchCutPresentation?.(cutting);
         this.world.stretchyStrand.update(
           dt,
           tubPos,
           this.coneWorldPos,
-          1.45
+          0.80
         );
 
-        const strandMid = new THREE.Vector3(
-          this.coneWorldPos.x * 0.5,
-          1.22,
-          0.18
-        );
-        const distToStrand = handPos.distanceTo(strandMid);
-
-        if (
-          gestureState.isReaching &&
-          distToStrand < 0.36 &&
-          Math.abs(gestureState.vx) > 0.9
-        ) {
+        if (cutting.cut) {
+          this.world.triggerSlice?.(cutting.point, this._getFlavorForScoop(Math.max(0, this.scoopCount - 1)).colorHex, cutting.direction);
           this.world.stretchyStrand.detach();
           this.world.sliceCueGroup.visible = false;
           this.conePitchX = 0;
@@ -1494,35 +1590,17 @@ export class TrickDirector {
           this._triggerVendorSpeech('cheer');
           this._vibrate([20, 30]);
           this.score += 360;
-          this._spawnScorePopup(360, strandMid, '✂️');
-          this._advanceRoutineStep();
+          this._spawnScorePopup(360, cutting.point, '✂️');
+          this.pendingTrickAdvance = 0.42;
         }
         break;
       }
 
       // =========================================================================
-      // 10. STUFFED NAPKIN CONE PRANK (`NAPKIN_CONE_FAKEOUT`)
+      // 10. REAL SERVING PAPER HANDOFF (`NAPKIN_CONE_FAKEOUT`)
       // =========================================================================
       case 'NAPKIN_CONE_FAKEOUT': {
-        const fakeWorldPos = this.leftHandCustomTarget;
-        const distToFake = handPos.distanceTo(fakeWorldPos);
-        this.shaftRoll += dt * 4.0;
-        this.conePitchX = Math.sin(time * 4) * 0.25;
-
-        if (
-          this.stepCooldown <= 0 &&
-          gestureState.isReaching &&
-          distToFake < 0.29
-        ) {
-          this.stepCooldown = 0.45;
-          this._putNapkinConeInTouristHand();
-        } else if (this.stageTimer >= 1.95) {
-          this._triggerVendorSpeech('hoppa');
-          this._vibrate(25);
-          this.score += 360;
-          this._spawnScorePopup(360, this.coneWorldPos);
-          this._advanceRoutineStep();
-        }
+        updateServingNapkin(this, gameDt, time, { intentPos, gestureState, validReach, validSlice, realDt:dt });
         break;
       }
 
@@ -1547,17 +1625,20 @@ export class TrickDirector {
           this.conePitchX = 0.08;
 
           if (this.stepCooldown <= 0 && gestureState.isReaching) {
-            const distReal = handPos.distanceTo(this.coneWorldPos);
-            const distFake = handPos.distanceTo(this.leftHandCustomTarget);
+            const pick = classifyShellPick(gestureState.aimNormX ?? gestureState.normX, gestureState.aimNormY ?? gestureState.normY, getShellTargets(this.world));
+            // Both choices require the same fresh deliberate reach and dwell.
+            // A real grab still settling must never fall through to the decoy.
+            const grabbedReal = this.gestureValidation.reach('shell-real', pick.candidate === 'real' ? pick.realDistance : Infinity, pick.radius, dt);
+            const grabbedFake = this.gestureValidation.reach('shell-fake', pick.candidate === 'fake' ? pick.fakeDistance : Infinity, pick.radius, dt);
 
-            if (distReal < 0.27) {
+            if (grabbedReal) {
               this.sound.playGripTug(this.coneWorldPos.x);
               this._triggerVendorSpeech('cheer');
               this._vibrate(25);
               this.score += 400;
               this._spawnScorePopup(400, this.coneWorldPos, '👐');
               this._advanceRoutineStep();
-            } else if (distFake < 0.28) {
+            } else if (grabbedFake) {
               this.stepCooldown = 0.45;
               this._putNapkinConeInTouristHand();
             }
@@ -1570,35 +1651,26 @@ export class TrickDirector {
       // 12. 3D FIGURE-EIGHT WRIST WEAVE (`FIGURE_EIGHT_WEAVE` - Sekiz Çizme)
       // =========================================================================
       case 'FIGURE_EIGHT_WEAVE': {
-        const t8 = this.stageTimer * 3.8;
-        const figX = Math.sin(t8) * 0.32;
-        const figY = 1.26 + Math.sin(t8 * 2) * 0.16;
-        const figZ = 0.22 + Math.cos(t8) * 0.06;
-
-        this.coneTargetPos.set(figX, figY, figZ);
-        this.shaftRoll = t8 * 1.8;
-        this.conePitchX = Math.cos(t8 * 2) * 0.42;
-        this.coneFlipZ = Math.sin(t8) * 0.35;
-
-        if (this.tugTimer > 0) {
-          this.tugTimer -= dt;
-          this.isGraspingPaddleCone = true;
-          if (this.tugTimer <= 0) {
-            this.isGraspingPaddleCone = false;
-            this.conePitchX = 0;
-            this.coneFlipZ = 0;
-            this.sound.playGripTug(this.coneWorldPos.x);
-            this._triggerVendorSpeech('cheer');
-            this._vibrate([25, 30]);
-            this.score += 360;
-            this._spawnScorePopup(360, this.coneWorldPos, '♾️');
-            this._advanceRoutineStep();
-          }
-        } else if (gestureState.isReaching && distToCone < 0.28) {
-          this.tugTimer = 0.2;
-          this.isGraspingPaddleCone = true;
+        this.figureEight ||= new FigureEightGesture(createFigureEightPath(this.world));
+        if(figureEightViewportChanged(this.figureEight.frame,this.world))this.figureEight=new FigureEightGesture(createFigureEightPath(this.world));
+        const trace = this.figureEight;
+        const completed = trace.update(gestureState, dt);
+        // The cone joins the player's completed stroke; there is no snapped
+        // player grip or timed hold that can masquerade as drawing an eight.
+        const phase = trace.started ? trace.phase : this.stageTimer / 1.85;
+        figureEightWorldPoint(trace.frame, phase, this.coneTargetPos);
+        this.shaftRoll = Math.sin(phase * Math.PI * 2) * .65;
+        this.conePitchX = Math.cos(phase * Math.PI * 4) * .24;
+        this.coneFlipZ = Math.sin(phase * Math.PI * 2) * .2;
+        this.isGraspingPaddleCone = false;
+        if (completed) {
+          this.conePitchX = this.coneFlipZ = 0;
           this.sound.playGripTug(this.coneWorldPos.x);
-          this._vibrate(25);
+          this._triggerVendorSpeech('cheer');
+          this._vibrate([25, 30]);
+          this.score += 360;
+          this._spawnScorePopup(360, this.coneWorldPos, '♾️');
+          this._advanceRoutineStep();
         }
         break;
       }
@@ -1610,14 +1682,19 @@ export class TrickDirector {
         if (this.bellBeatsDone < 2) {
           // Beats 1 and 2: Vendor raises paddle to strike the overhead brass bells and dips the cone as a feint!
           const beatPhase = (this.stageTimer % 0.85) / 0.85;
-          const bx =
-            (this.bellBeatsDone === 0 ? -0.26 : 0.26) * (1 - beatPhase * 0.5);
-          const by = beatPhase < 0.35 ? 1.74 : 1.22;
-          const bz = beatPhase < 0.35 ? -0.08 : 0.27;
-
-          this.coneTargetPos.set(bx, by, bz);
-          this.conePitchX = beatPhase < 0.35 ? -0.52 : 0.28;
-          this.shaftRoll = beatPhase * Math.PI * 2;
+          const bellIdx = this.bellBeatsDone === 0 ? 1 : 5;
+          const contact = this.world.getBellStrikeTarget(bellIdx);
+          const bx = contact.x;
+          const rest = new THREE.Vector3(this.bellBeatsDone === 0 ? -0.20 : 0.20, 1.22, 0.27);
+          this.world.setConeInVendorHand(beatPhase < 0.52);
+          this.leftHandCustomTarget = beatPhase < 0.52 ? new THREE.Vector3(0.22, 1.18, -0.24) : null;
+          this.coneTargetPos.copy(bellPath(beatPhase, rest, contact));
+          this.presentationExact = true;
+          this.conePitchX = 0;
+          this.shaftRoll = 0;
+          if (beatPhase >= 0.28 && beatPhase < 0.43 && this.lastBellContact !== this.bellBeatsDone) {
+            this.presentationBell = { index: bellIdx, beat: this.bellBeatsDone, power: 1.0 };
+          }
 
           if (
             this.stepCooldown <= 0 &&
@@ -1633,10 +1710,10 @@ export class TrickDirector {
           if (this.stageTimer >= (this.bellBeatsDone + 1) * 0.85) {
             const bellIdx = this.bellBeatsDone === 0 ? 1 : 5;
             this.bellBeatsDone++;
-            this.sound.playBellNote(bellIdx, 0.95, bx);
-            this.world.strikeBell(bellIdx, 1.15);
+
             if (this.bellBeatsDone === 2) {
               this.stageTimer = 0;
+              this.world.setConeInVendorHand(false);
               this._triggerVendorSpeech('hoppa');
             }
           }
@@ -1644,7 +1721,7 @@ export class TrickDirector {
           // Beat 3: Real window!
           this.coneTargetPos.set(0, 1.21, 0.28);
           this.conePitchX = 0.08;
-          if (gestureState.isReaching && distToCone < 0.29) {
+          if (validReach(0.29)) {
             this.sound.playBellNote(3, 1.0, 0);
             this.world.strikeBell(3, 1.0);
             this.sound.playGripTug(0);
@@ -1654,6 +1731,7 @@ export class TrickDirector {
             this._advanceRoutineStep();
           } else if (this.stageTimer >= 2.2) {
             this.bellBeatsDone = 0;
+            this.lastBellContact = -1;
             this.stageTimer = 0;
           }
         }
@@ -1698,7 +1776,7 @@ export class TrickDirector {
           this.coneTargetPos.set(0, 1.18, 0.28);
           this.coneFlipZ = 0;
           this.conePitchX = 0.08;
-          if (gestureState.isReaching && distToCone < 0.29) {
+          if (validReach(0.29)) {
             this.sound.playGripTug(0);
             this._vibrate(25);
             this.score += 390;
@@ -1751,7 +1829,7 @@ export class TrickDirector {
             1.21,
             0.28
           );
-          if (gestureState.isReaching && distToCone < 0.29) {
+          if (validReach(0.29)) {
             this.sound.playGripTug(0);
             this._vibrate(25);
             this.score += 410;
@@ -1783,9 +1861,8 @@ export class TrickDirector {
             1.15,
             0.41
           );
-          const dMid = handPos.distanceTo(midWorld);
-          const holdingAtMid =
-            dMid < 0.26 || (handPos.z < 0.49 && distToCone < 0.34);
+          const dMid = intentPos.distanceTo(midWorld);
+          const holdingAtMid = this.gestureValidation.reach('eye-lock', dMid, 0.26, dt);
 
           if (holdingAtMid) {
             this.eyeLockHoldTimer += dt * 1.35;
@@ -1830,8 +1907,7 @@ export class TrickDirector {
               this.conePitchX = (Math.random() - 0.5) * 0.65;
               this.coneFlipZ = (Math.random() - 0.5) * 0.5;
               this.sound.playWhoosh(1.25, randX);
-              this.sound.playPaddleClank(randX);
-              this._triggerVendorSpeech('hophop');
+                this._triggerVendorSpeech('hophop');
             }
           }
         } else {
@@ -1845,9 +1921,7 @@ export class TrickDirector {
 
           const matchedRhythm =
             this.stepCooldown <= 0 &&
-            (distToCone < 0.29 ||
-              (Math.abs(handPos.x - this.coneWorldPos.x) < 0.16 &&
-                handPos.z < 0.45));
+            this.gestureValidation.follow(`beat:${this.rhythmTargetPos.x.toFixed(3)}:${this.rhythmTargetPos.y.toFixed(3)}`, this.rhythmTargetPos, dt);
 
           if (matchedRhythm) {
             this.rhythmBeatsCompleted++;
@@ -1901,7 +1975,6 @@ export class TrickDirector {
             this.conePitchX = (Math.random() - 0.5) * 0.72;
             this.coneFlipZ = (Math.random() - 0.5) * 0.6;
             this.sound.playWhoosh(1.3, randX);
-            this.sound.playPaddleClank(randX);
             this.world.setVendorMood('laugh');
             this._triggerVendorSpeech('hophop');
           }
@@ -1922,22 +1995,15 @@ export class TrickDirector {
           this.conePitchX = Math.sin(time * 3) * 0.15;
           this.shaftRoll = Math.sin(time * 2.5) * 0.4;
 
-          if (gestureState.isReaching && distToCone < 0.29) {
+          if (validReach(0.29)) {
             this.subStep = 1;
             this.tugTimer = 0.36;
             this.heldItem = 'FULL_CONE_TUG';
-            this.world.heldSocket.add(this.world.conePivot);
-            this.world.conePivot.position.set(0, 0.05, 0);
-            this.world.conePivot.rotation.set(0, 0, 0);
-            const topFlav = this._getFlavorForScoop(
-              Math.max(0, this.scoopCount - 1)
-            );
-            this.world.stretchyStrand.attach(
-              this.coneWorldPos,
-              handPos,
-              topFlav.colorHex,
-              true
-            );
+            this.world.handoffCone('player');
+            // The filled cone is already in the customer's hand. The empty
+            // paddle releases it; no chocolate-colored rope joins it to the man.
+            this.world.stretchyStrand.detach();
+            this.finalReleaseStart = this.coneWorldPos.clone();
             this.sound.playGripTug(0);
             this._vibrate(35);
             return;
@@ -1957,18 +2023,15 @@ export class TrickDirector {
           }
         } else if (this.subStep === 1) {
           this.tugTimer -= dt;
-          const handWorld = new THREE.Vector3();
-          this.world.touristHand.getWorldPosition(handWorld);
-          this.world.stretchyStrand.update(
-            dt,
-            this.coneWorldPos,
-            handWorld.clone().add(new THREE.Vector3(0, 0.08, 0)),
-            1.25
-          );
+          const pulledFree = validPull();
+          this.world.stretchyStrand.detach();
+          const releaseProgress = THREE.MathUtils.clamp((.36 - this.tugTimer) / .36, 0, 1);
+          this.finalReleaseStart ||= this.coneWorldPos.clone();
+          this.coneTargetPos.copy(this.finalReleaseStart).lerp(new THREE.Vector3(.24, 1.35, -.15), releaseProgress);
+          this.leftHandCustomTarget = null;
 
           if (
-            this.tugTimer <= 0 ||
-            handWorld.distanceTo(this.coneWorldPos) > 0.28
+            this.tugTimer <= 0 && pulledFree
           ) {
             this.world.stretchyStrand.detach();
             this._triggerVendorSpeech('cheer');
@@ -1986,120 +2049,157 @@ export class TrickDirector {
   /**
    * Multi-Scenario Detailed AFK / Idle Show Director:
    * Triggered when the player does not move their hand for > 2.15s.
-   * Cycles through 4 authentic Maraş vendor routines:
+   * Cycles through five noninteractive vendor presentations:
    *  0: Pulls paddle back & rhythmically raps the steel tip on the front counter table ("Tak! Tak-tak!")
    *  1: Raises paddle high and strikes the 7 overhead hanging brass bells one by one ("Çıngır çıngır!")
    *  2: Drums the paddle across the shiny stainless-steel ice cream bucket rims inside the cooling basin
    *  3: Pulls the paddle back to his shoulder and waves/beckons the player with his left hand ("Huooop!")
+   *  4: Keeps the serving in front while the bare pole travels outside the hip/back.
    */
+  _poseAfkSurfaceStrike(kind, beatIndex, phase, contact, power = 0.75) {
+    const key = `${kind}:${beatIndex}`;
+    if (this.lastAfkSurfaceKey !== key) {
+      this.lastAfkSurfaceKey = key;
+      this.afkSurfaceStart = this.world.getPaddleStrikePoint(new THREE.Vector3());
+    }
+    this.world.setConeInVendorHand(true);
+    this.leftHandCustomTarget = new THREE.Vector3(0.24, 1.20, -0.24);
+    if(poleHasFood(this.world)){
+      this.world.vendorPoleFree=false;this.presentationStrikeTip=null;this.presentationSurface=null;
+      this.coneTargetPos.y=Math.max(1.28,this.coneTargetPos.y);return;
+    }
+    this.world.vendorPoleFree=true;
+    const tip = surfaceStrikePath(phase, this.afkSurfaceStart, contact, 0.14);
+    const noseOffset = this.world.getPaddleStrikePoint(new THREE.Vector3()).sub(this.world.paddleGroup.position);
+    this.coneTargetPos.copy(tip).sub(noseOffset);
+    this.presentationStrikeTip = tip;
+    this.presentationExact = true;
+    this.shaftRoll = 0;
+    this.conePitchX = 0;
+    this.coneFlipZ = 0;
+    if (phase >= 0.48 && phase < 0.68 && this.lastAfkContactKey !== key) {
+      this.presentationSurface = { kind, point: contact.clone(), key, beat: beatIndex, power };
+    }
+  }
+
   _updateAfkShow(dt, time) {
+    this.world.vendorBellLook=null;
+    suppressIdleScene(this);
     if (!this.isAfkShowActive) {
+      clearTrickTransition(this);
       this.isAfkShowActive = true;
+      this.afkPromptTimer=this.stageTimer;
+      this.ui?.onReaction?.({ kind: 'afk', trickId: this.currentShowId || this.currentMechanic, componentId: this.currentMechanic, stage: this.currentStage, vendorIndex: this.levelIndex, index: this.routineIndex });
       this.afkTimer = 0;
       this.lastAfkBeatTime = -1;
-      this.afkScenario = Math.floor(Math.random() * 2); // Start with Table Rap (0) or Bell Concert (1)
+      this.lastAfkSurfaceKey = null;
+      this.lastAfkBellKey = null;
+      this.afkBellPhrase=null;
+      this.lastAfkContactKey = null;
+      const enoughIdleTime=!Number.isFinite(this.passiveLimitSec)||this.passiveLimitSec-(this.idleSeconds||0)>VENDOR_FLOURISH_SECONDS+1;
+      const foodOnCone=this.world.scoopStackGroup?.parent===this.world.conePivot&&Boolean(this.world.paddleContact?.highestVisible(this.world));
+      const canSweep = foodOnCone && enoughIdleTime && !this.heldItem && !this.world.carryScoop?.visible &&
+        (this.world.conePivot.parent===this.world.paddleGroup || this.world.coneHeldByVendor);
+      const starts=canSweep?[0,1,4]:[0,1];
+      this.afkScenario = starts[Math.floor(Math.random()*starts.length)];
       this.world.setVendorMood('mischief');
       this._triggerVendorSpeech(
-        this.afkScenario === 0 ? 'afk_table' : 'afk_bells'
+        this.afkScenario === 0 ? 'afk_table' : this.afkScenario===1?'afk_bells':'afk_wave'
       );
     }
 
+    if (this.afkScenario === 3) this.world.setConeInVendorHand(false);
+    // Receive the actual serving before drumming. The same prepared hand pose
+    // used by the back flourish prevents a one-frame wrist/food ownership snap.
+    if(this.afkScenario!==4&&this.afkScenario!==3&&this.world.lArmRig?.handRig&&
+       (this.flourishPreparation||this.world.conePivot.parent===this.world.paddleGroup)&&
+       !this.world.carryScoop?.visible&&!this.world.giantBlockGroup?.visible){
+      if(!this.flourishPreparation?.release){
+        if(!this._prepareIdleServing(dt))return;
+        const tip=this.world.getPaddleStrikePoint(new THREE.Vector3());
+        const target=this.afkScenario===0?this.world.getCounterStrikeTarget(0).add(new THREE.Vector3(0,.14,0)):
+          this.afkScenario===1?this.world.getBellStrikeTarget((this.afkBellPhrase ||= createIdleBellPhrase(this.world.bells.length)).indices[0]).add(new THREE.Vector3(0,-.16,0)):
+          this.world.tubPositions[0].worldPos.clone().add(new THREE.Vector3(0,.24,.02));
+        this.flourishPreparation.release={age:0,tip,start:tip.clone(),target,forward:this.world.paddleRollGroup.getWorldDirection(new THREE.Vector3()),rear:this.world._rearGripDistance??.6};
+      }
+      const release=this.flourishPreparation.release;release.age+=dt;
+      const u=THREE.MathUtils.smoothstep(release.age,0,.45);release.tip.lerpVectors(release.start,release.target,u);
+      const goal=release.tip.clone().sub(new THREE.Vector3(-.26,1.40,-.45)).normalize();
+      this.world.vendorPoleFree=true;
+      this.world.vendorPoleForwardHint=release.forward.clone().lerp(goal,u).normalize();
+      this.world.vendorRearGripHint=THREE.MathUtils.lerp(release.rear,.60,u);
+      this.leftHandCustomTarget=new THREE.Vector3(.25,1.20,-.235);
+      const offset=this.world.getPaddleStrikePoint(new THREE.Vector3()).sub(this.world.paddleGroup.position);
+      this.coneTargetPos.copy(release.tip).sub(offset);this.presentationStrikeTip=release.tip;
+      this.presentationExact=true;this.shaftRoll=this.conePitchX=this.coneFlipZ=0;
+      if(release.age<.45)return;
+      const saved=this.flourishPreparation.stageTimer,abort=this.flourishPreparation.abort;
+      this.flourishPreparation=null;this.world.vendorPoleFree=true;
+      this.world.vendorPoleForwardHint=null;this.world.vendorRearGripHint=null;
+      if(abort){this.afkRejoin=new VendorPoleRejoin(this.world,saved);return;}
+    }
     this.afkTimer += dt;
-    if (this.afkTimer >= 3.2) {
+    if (this.afkTimer >= (this.afkScenario===4?VENDOR_FLOURISH_SECONDS:3.2) && (!this.vendorFlourish || this.vendorFlourish.done) &&
+        !(this.afkScenario===4 && this.flourishPreparation && !this.vendorFlourish)) {
       this.afkTimer = 0;
       this.lastAfkBeatTime = -1;
-      this.afkScenario = (this.afkScenario + 1) % 4;
-      const speechKeys = ['afk_table', 'afk_bells', 'afk_table', 'afk_wave'];
+      this.lastAfkBellKey=null;this.afkBellPhrase=null;
+      clearVendorFlourish(this);
+      this.afkScenario = (this.afkScenario + 1) % 5;
+      if(this.afkScenario===4 && (this.heldItem || this.world.carryScoop?.visible ||
+        this.world.scoopStackGroup?.parent!==this.world.conePivot || !this.world.paddleContact?.highestVisible(this.world) ||
+        (Number.isFinite(this.passiveLimitSec)&&this.passiveLimitSec-(this.idleSeconds||0)<=VENDOR_FLOURISH_SECONDS+1) ||
+        (this.world.conePivot.parent!==this.world.paddleGroup && !this.world.coneHeldByVendor)))this.afkScenario=0;
+      const speechKeys = ['afk_table', 'afk_bells', 'hmm', 'afk_wave', 'afk_wave'];
       this._triggerVendorSpeech(speechKeys[this.afkScenario]);
     }
 
     if (this.afkScenario === 0) {
-      // SCENARIO 0: Pull paddle back toward chest, then rap the metal paddle on the counter table!
-      const beatCycle = (this.afkTimer * 2.6) % 1;
       const beatIndex = Math.floor(this.afkTimer * 2.6);
-      const isStrikingTable = beatCycle > 0.55 && beatCycle < 0.78;
-      const rapX = Math.sin(this.afkTimer * 2.4) * 0.24;
-
-      if (isStrikingTable) {
-        // Strike down onto the front copper/steel counter rail
-        this.coneTargetPos.set(rapX, 0.96, 0.14);
-        this.conePitchX = 0.62;
-        this.coneFlipZ = 0;
-        if (this.lastAfkBeatTime !== beatIndex) {
-          this.lastAfkBeatTime = beatIndex;
-          this.sound.playCounterRap(rapX, 0.94 + (beatIndex % 3) * 0.08);
-          this.world.spawnBurst(
-            new THREE.Vector3(rapX, 0.96, 0.14),
-            0xf5b942,
-            7
-          );
-          this.world.triggerScoopJiggle(0.8);
-        }
-      } else {
-        // Pull the paddle back toward chest between table raps
-        this.coneTargetPos.set(rapX * 0.6, 1.34, -0.06);
-        this.conePitchX = -0.25;
-        this.shaftRoll += dt * 6.5;
-      }
-      this.leftHandCustomTarget = null;
+      const phase = (this.afkTimer * 2.6) % 1;
+      // Select a fixed rail point per beat; the contact cannot slide under the tip.
+      const x = Math.sin(beatIndex * 0.92) * 0.24;
+      const contact = this.world.getCounterStrikeTarget(x);
+      this._poseAfkSurfaceStrike('counter', beatIndex, phase, contact, 0.74);
     } else if (this.afkScenario === 1) {
-      // SCENARIO 1: Raise paddle high and strike the 7 overhead brass bells across the upper arch!
-      const beatIndex = Math.floor(this.afkTimer * 3.4);
-      const bellIdx = beatIndex % 7;
-      const bellObj =
-        this.world.bells && this.world.bells[bellIdx]
-          ? this.world.bells[bellIdx]
-          : null;
-      const bx = bellObj ? bellObj.baseX : (bellIdx - 3) * 0.165;
-      const subPhase = (this.afkTimer * 3.4) % 1;
-
-      this.coneTargetPos.set(
-        bx,
-        subPhase < 0.45 ? 1.76 : 1.56,
-        subPhase < 0.45 ? -0.1 : 0.04
-      );
-      this.conePitchX = subPhase < 0.45 ? -0.58 : -0.22;
+      // Pole-to-rim contact, then sound and bell swing on that contact frame.
+      const phrase=this.afkBellPhrase ||= createIdleBellPhrase(this.world.bells.length);
+      const pulse=idleBellPhraseAt(phrase,this.afkTimer);
+      const beatIndex=pulse.beat,bellIdx=pulse.index,phase=pulse.phase;this.world.vendorBellLook=pulse.striking?bellIdx:null;
+      const contact = this.world.getBellStrikeTarget(bellIdx);
+      this.world.setConeInVendorHand(true);
+      this.leftHandCustomTarget = new THREE.Vector3(0.22, 1.18, -0.24);
+      this.world.vendorPoleFree=!poleHasFood(this.world);
+      if(poleHasFood(this.world)){this.coneTargetPos.y=Math.max(1.28,this.coneTargetPos.y);return;}
+      if(this.lastAfkBellKey!==beatIndex){this.lastAfkBellKey=beatIndex;this.afkBellRest=this.world.getPaddleStrikePoint(new THREE.Vector3());}
+      const tip=bellPath(phase,this.afkBellRest,contact);
+      const offset=this.world.getPaddleStrikePoint(new THREE.Vector3()).sub(this.world.paddleGroup.position);
+      this.coneTargetPos.copy(tip).sub(offset);this.presentationStrikeTip=tip;
+      this.presentationExact = true;
+      this.conePitchX = 0;
       this.coneFlipZ = 0;
-      this.shaftRoll = Math.sin(time * 7) * 0.4;
-      this.leftHandCustomTarget = null;
-
-      if (subPhase < 0.45 && this.lastAfkBeatTime !== beatIndex) {
-        this.lastAfkBeatTime = beatIndex;
-        this.world.strikeBell(bellIdx, 1.18);
-        this.sound.playBellNote(bellIdx, 0.95, bx);
+      this.shaftRoll = 0;
+      if (pulse.striking && phase >= .28 && phase < .43 && this.lastAfkBeatTime !== beatIndex) {
+        this.presentationBell = { index: bellIdx, beat: beatIndex, power: .9, afk: true };
       }
     } else if (this.afkScenario === 2) {
-      // SCENARIO 2: Drum the paddle across the shiny stainless-steel buckets inside the recessed basin!
-      const beatIndex = Math.floor(this.afkTimer * 3.2);
-      const tubIdx = beatIndex % 6;
-      const tubEntry =
-        this.world.tubPositions && this.world.tubPositions[tubIdx]
-          ? this.world.tubPositions[tubIdx]
-          : null;
-      const tx = tubEntry ? tubEntry.worldPos.x : (tubIdx - 2.5) * 0.21;
-      const tz = tubEntry ? tubEntry.worldPos.z : -0.22;
-      const subPhase = (this.afkTimer * 3.2) % 1;
-
-      this.coneTargetPos.set(
-        tx,
-        subPhase < 0.5 ? 1.02 : 1.28,
-        subPhase < 0.5 ? tz + 0.06 : 0.08
-      );
-      this.conePitchX = subPhase < 0.5 ? 0.48 : -0.15;
-      this.shaftRoll += dt * 9.0;
-      this.leftHandCustomTarget = null;
-
-      if (subPhase < 0.5 && this.lastAfkBeatTime !== beatIndex) {
-        this.lastAfkBeatTime = beatIndex;
-        this.world.churnTubIceCream(tubIdx, 0.65);
-        this.sound.playPaddleClank(tx);
-        this.world.spawnBurst(
-          new THREE.Vector3(tx, 1.0, tz + 0.06),
-          0xe2e8f0,
-          6
-        );
-      }
-    } else {
+      const beatIndex = Math.floor(this.afkTimer * .9);
+      const phase = (this.afkTimer * .9) % 1;
+      const tubIndex = beatIndex % this.world.tubPositions.length;
+      this.world.setConeInVendorHand(true);
+      this.leftHandCustomTarget=new THREE.Vector3(.24,1.24,-.24);
+      if(poleHasFood(this.world)){this.coneTargetPos.y=Math.max(1.28,this.coneTargetPos.y);return;}
+      this.world.vendorPoleFree=true;
+      const tub=this.world.tubPositions[tubIndex].worldPos;
+      const dip=tub.clone().add(new THREE.Vector3(0,.025,0)),above=tub.clone().add(new THREE.Vector3(0,.24,.02));
+      const tip=above.clone();
+      if(phase<.25)tip.lerp(dip,THREE.MathUtils.smoothstep(phase,0,.25));
+      else if(phase<.65){const t=(phase-.25)/.40;tip.copy(dip).add(new THREE.Vector3(Math.sin(t*Math.PI*4)*.025,Math.sin(t*Math.PI)*.008,Math.cos(t*Math.PI*4)*.02));this.world.churnTubIceCream(tubIndex,dt*.7);}
+      else tip.copy(dip).lerp(above,THREE.MathUtils.smoothstep(phase,.65,.9));
+      const offset=this.world.getPaddleStrikePoint(new THREE.Vector3()).sub(this.world.paddleGroup.position);
+      this.coneTargetPos.copy(tip).sub(offset);this.presentationStrikeTip=tip;this.presentationExact=true;
+      this.shaftRoll=this.conePitchX=this.coneFlipZ=0;
+    } else if (this.afkScenario===3) {
       // SCENARIO 3: Pull the paddle all the way back to his shoulder & wave/beckon with left hand!
       this.coneTargetPos.set(
         0.28 + Math.sin(time * 2.5) * 0.04,
@@ -2115,14 +2215,40 @@ export class TrickDirector {
         1.28 + Math.cos(time * 6.5) * 0.05,
         0.22 + Math.sin(time * 6.5) * 0.06
       );
+    } else {
+      // Only the bare pole goes behind the master. The same cone remains in
+      // his front hand and a tangent shaft avoids cutting across the torso.
+      if(!this.vendorFlourish){
+        if(!this._prepareIdleServing(dt))return;
+        const prep=this.flourishPreparation;
+        if(prep.abort){this.afkRejoin=new VendorPoleRejoin(this.world,prep.stageTimer);return;}
+        this.vendorFlourish=new VendorFlourish(this.world,prep.stageTimer);
+      }
+      setFlourishPose(this,this.vendorFlourish.step(dt));
     }
+  }
+
+  _prepareIdleServing(dt){
+    const w=this.world;
+    if(!this.flourishPreparation){w.beginVendorConeReceive?.();this.flourishPreparation={age:0,from:this.coneWorldPos.clone(),stageTimer:this.stageTimer};}
+    const prep=this.flourishPreparation;prep.age+=dt;w.vendorConeReceiveProgress=Math.min(1,prep.age/.25);
+    this.leftHandCustomTarget=new THREE.Vector3(.25,1.20,-.235);
+    const u=THREE.MathUtils.clamp(prep.age/.44,0,1),blend=u*u*(3-2*u);
+    this.coneTargetPos.copy(prep.from).lerp(new THREE.Vector3(.25,1.31,-.20),blend);
+    this.presentationExact=true;this.shaftRoll=this.conePitchX=this.coneFlipZ=0;
+    w.scene.updateMatrixWorld(true);
+    const grip=w.lArmRig.handGroup.localToWorld(new THREE.Vector3(0,.11,.035)),cone=w.conePivot.getWorldPosition(new THREE.Vector3());
+    if(prep.age<.44||grip.distanceTo(cone)>.04)return false;
+    w.setConeInVendorHand(true);w.vendorConeReceiveProgress=null;w.vendorConeReceiveFrom=null;return true;
   }
 
   getGestureGuide() {
     const w = Math.max(1, window.visualViewport?.width || window.innerWidth);
     const h = Math.max(1, window.visualViewport?.height || window.innerHeight);
     const handScreen = this.world.projectToScreen(
-      this.world.touristHand.position
+      this.world.playerAimAnchor
+        ? this.world.playerAimAnchor.getWorldPosition(this.guideHandPoint ||= new THREE.Vector3())
+        : this.world.touristHand.position
     );
     const coneScreen = this.world.projectToScreen(
       this.coneWorldPos.clone().add(new THREE.Vector3(0, 0.04, 0))
@@ -2137,7 +2263,7 @@ export class TrickDirector {
       this.routineIndex / Math.max(1, this.routine.length - 1)
     );
 
-    const trickInfo = this.save.getTrickInfo(this.currentMechanic);
+    const trickInfo = this.save.getTrickInfo(this.currentShowId || this.currentMechanic);
 
     const guide = {
       active: this.active && !this.roundEnded,
@@ -2162,7 +2288,32 @@ export class TrickDirector {
           : null,
     };
 
-    if (!guide.active) return guide;
+    if (isQuietVendorPresentation(this)) {
+      guide.quiet = true;
+      guide.theme = 'amber';
+      const afkIcons = ['🥄🪵', '🔔🎵', '🥄🪣', '👋😄', '🥄'];
+      const afkCueKeys = [
+        'cue_afk_table',
+        'cue_afk_bells',
+        'cue_afk_stir',
+        'cue_afk_wave',
+        'cue_afk_wave',
+      ];
+      guide.icon = afkIcons[this.afkScenario % 5] || '🔔🎵';
+      guide.badgeText = this.save.t(afkCueKeys[this.afkScenario % 5]);
+      guide.stageProgress = Math.max(
+        0.1,
+        1 - this.idleSeconds / this.passiveLimitSec
+      );
+      // These are the vendor's idle gestures, not a request to grab the pole.
+      // Return before held-item/grip cues or the choreography decorator can add targets.
+      return guide;
+    }
+
+    if (!guide.active) return choreographyGuide(this, guide);
+
+    if(this.trickTransition||this.pendingTrickEntry||this.pendingEntryPaper||this.entryPaperPreparation||this.servingHandoff){guide.quiet=true;guide.icon='👀';guide.badgeText=this.save.lang==='tr'?'USTAYI İZLE':'WATCH THE VENDOR';guide.comets=[];guide.rings=[];return guide;}
+    if (this.choreography?.bridge) return choreographyGuide(this, guide);
 
     if (this.heldItem === 'NAPKIN_CONE') {
       guide.theme = 'red';
@@ -2186,10 +2337,10 @@ export class TrickDirector {
         color: 'red',
         label: '🤚💨',
       });
-      return guide;
+      return choreographyGuide(this, guide);
     }
 
-    if (this.heldItem === 'EMPTY_CONE') {
+    if (this.heldItem === 'EMPTY_CONE' && !(this.currentMechanic==='DOUBLE_CONE_SLIDE'&&this.subStep===1&&!this.nestedService?.pulled)) {
       guide.theme = 'amber';
       guide.icon = '🍦⬆️';
       guide.badgeText = this.save.t('cue_return_cone');
@@ -2204,7 +2355,7 @@ export class TrickDirector {
         color: 'green',
         label: this.save.t('tag_on_paddle'),
       });
-      return guide;
+      return choreographyGuide(this, guide);
     }
 
     if (this.isGraspingPaddleCone || this.heldItem === 'FULL_CONE_TUG') {
@@ -2222,36 +2373,38 @@ export class TrickDirector {
         color: 'green',
         label: '✊',
       });
-      return guide;
+      return choreographyGuide(this, guide);
     }
 
-    if (this.isAfkShowActive) {
+
+    if (this.pendingTrickAdvance > 0) {
       guide.theme = 'amber';
-      const afkIcons = ['🥄🪵', '🔔🎵', '🥄🪣', '👋😄'];
-      const afkCueKeys = [
-        'cue_afk_table',
-        'cue_afk_bells',
-        'cue_afk_table',
-        'cue_afk_wave',
-      ];
-      guide.icon = afkIcons[this.afkScenario % 4] || '🔔🎵';
-      guide.badgeText = this.save.t(afkCueKeys[this.afkScenario % 4]);
-      guide.stageProgress = Math.max(
-        0.1,
-        1 - this.idleSeconds / this.passiveLimitSec
-      );
-      guide.comets.push({
-        color: 'green',
-        points: buildCurvedScreenPath(handScreen, coneScreen, -24),
-      });
-      guide.rings.push({
-        x: coneScreen.x,
-        y: coneScreen.y,
-        radius: 38,
-        color: 'amber',
-        label: guide.icon,
-      });
+      guide.icon = this.currentMechanic === 'MEGA_TAFFY_SLICE' ? '✂️' : '🍦';
+      guide.badgeText = '✓';
+      return choreographyGuide(this, guide);
+    }
+    const flavorCue=flavorFeintCue(this);
+    if(flavorCue){
+      const refusing=flavorCue.kind==='reject';guide.quiet=!refusing;guide.theme='amber';guide.icon=refusing?'🤚↔':'👀';guide.badgeText=flavorCue.text;guide.stageProgress=flavorCue.progress;
+      if(refusing){
+        const x=THREE.MathUtils.clamp(handScreen.x,w*.2,w*.8),y=THREE.MathUtils.clamp(handScreen.y-30,h*.45,h-100);
+        const left={x:x-38,y},right={x:x+38,y};
+        guide.comets.push({color:'amber',points:buildCurvedScreenPath(left,right,0)},{color:'amber',points:buildCurvedScreenPath(right,left,0)});
+      }
       return guide;
+    }
+    const extraCue = extraTrickCue(this) || servingNapkinCue(this) || nestedServiceCue(this);
+    if (extraCue) {
+      const target = extraCue.screen || this.world.projectToScreen(extraCue.target);
+      const pull = extraCue.kind === 'pull';
+      const waiting = extraCue.kind === 'wait';
+      guide.theme = pull ? 'red' : waiting ? 'amber' : 'green';
+      guide.icon = pull ? '🤚⬇️' : waiting ? '👀' : extraCue.kind === 'return' ? '🍦⬆️' : '✊';
+      guide.badgeText = extraCue.badgeText || this.save.t(pull ? 'cue_pull_back' : waiting ? 'cue_swap_watch' : extraCue.kind === 'return' ? 'cue_return_cone' : 'cue_reach');
+      guide.stageProgress = THREE.MathUtils.clamp(extraCue.progress, 0, 1);
+      if (!waiting) guide.comets.push({ color: guide.theme, points: buildCurvedScreenPath(pull ? target : handScreen, pull ? safePullScreen : target, pull ? 18 : -24) });
+      if (!extraCue.quiet) guide.rings.push({ x: target.x, y: target.y, radius: extraCue.radius||38, color: guide.theme, label: waiting ? '👀' : pull ? '↓' : extraCue.kind==='return'?'↑':'✊' });
+      return choreographyGuide(this, guide);
     }
 
     switch (this.currentMechanic) {
@@ -2419,8 +2572,19 @@ export class TrickDirector {
         break;
       }
 
-      case 'SHAFT_SPIN_360':
       case 'FIGURE_EIGHT_WEAVE': {
+        guide.theme = 'green'; guide.icon = '♾️';
+        guide.figureEight = this.figureEight?.guide();
+        guide.badgeText = this.save.lang === 'tr' ? 'SEKİZİ TAMAMLA' : 'COMPLETE THE EIGHT';
+        guide.stageProgress = this.figureEight?.progress || 0;
+        if (guide.figureEight) {
+          const target = guide.figureEight.started ? guide.figureEight.next : guide.figureEight.start;
+          guide.rings.push({ x: target.x, y: target.y, radius: guide.figureEight.radius, color: 'green', label: guide.figureEight.started ? '·' : '∞' });
+        }
+        break;
+      }
+
+      case 'SHAFT_SPIN_360': {
         guide.theme = 'green';
         guide.icon =
           this.currentMechanic === 'SHAFT_SPIN_360' ? '🌀🤚' : '♾️🤚';
@@ -2552,22 +2716,18 @@ export class TrickDirector {
 
       case 'MEGA_TAFFY_SLICE': {
         guide.theme = 'green';
-        guide.icon = '✂️↔️';
-        guide.badgeText = this.save.t('cue_slice');
-        const leftCut = this.world.projectToScreen(
-          new THREE.Vector3(-0.26, 1.22, 0.18)
-        );
-        const rightCut = this.world.projectToScreen(
-          new THREE.Vector3(0.26, 1.22, 0.18)
-        );
+        guide.icon = '✋';
+        guide.badgeText = STRETCH_CUT_COPY[this.save.lang] || STRETCH_CUT_COPY.en;
+        const cutGuide = stretchCutGuide(this.world);
+        if (!cutGuide) break;
         guide.comets.push({
           color: 'green',
-          points: buildCurvedScreenPath(leftCut, rightCut, -8),
+          points: buildCurvedScreenPath(cutGuide.from, cutGuide.to, 0),
         });
         guide.rings.push({
-          x: (leftCut.x + rightCut.x) * 0.5,
-          y: (leftCut.y + rightCut.y) * 0.5,
-          radius: 32,
+          x: cutGuide.center.x,
+          y: cutGuide.center.y,
+          radius: 25,
           color: 'green',
           label: this.save.t('tag_slice'),
         });
@@ -2575,9 +2735,9 @@ export class TrickDirector {
       }
 
       case 'SHELL_SWAP_DUEL': {
-        const fakeScreen = this.leftHandCustomTarget
-          ? this.world.projectToScreen(this.leftHandCustomTarget)
-          : { x: w * 0.35, y: h * 0.48 };
+        const targets = getShellTargets(this.world);
+        const realScreen = targets.real.screen;
+        const fakeScreen = targets.fake.screen;
 
         if (this.stageTimer < 1.2) {
           guide.theme = 'amber';
@@ -2585,8 +2745,8 @@ export class TrickDirector {
           guide.badgeText = this.save.t('cue_swap_watch');
           guide.stageProgress = this.stageTimer / 1.2;
           guide.rings.push({
-            x: coneScreen.x,
-            y: coneScreen.y,
+            x: realScreen.x,
+            y: realScreen.y,
             radius: 30,
             color: 'green',
             label: '🍦',
@@ -2604,11 +2764,11 @@ export class TrickDirector {
           guide.badgeText = this.save.t('cue_swap_pick');
           guide.comets.push({
             color: 'green',
-            points: buildCurvedScreenPath(handScreen, coneScreen, -24),
+            points: buildCurvedScreenPath(handScreen, realScreen, -24),
           });
           guide.rings.push({
-            x: coneScreen.x,
-            y: coneScreen.y,
+            x: realScreen.x,
+            y: realScreen.y,
             radius: 38,
             color: 'green',
             label: '✓ 🍦',
@@ -2621,29 +2781,8 @@ export class TrickDirector {
             label: '✕ 🧻',
           });
         }
-        break;
-      }
-
-      case 'NAPKIN_CONE_FAKEOUT': {
-        const fakeScreen = this.leftHandCustomTarget
-          ? this.world.projectToScreen(this.leftHandCustomTarget)
-          : { x: w * 0.5, y: h * 0.48 };
-
-        guide.theme = 'red';
-        guide.icon = '🤚⬇️';
-        guide.badgeText = this.save.t('cue_pull_back');
-        guide.stageProgress = Math.min(1, this.stageTimer / 1.95);
-        guide.comets.push({
-          color: 'red',
-          points: buildCurvedScreenPath(fakeScreen, safePullScreen, 18),
-        });
-        guide.rings.push({
-          x: fakeScreen.x,
-          y: fakeScreen.y,
-          radius: 42,
-          color: 'red',
-          label: '✕ 🧻',
-        });
+        guide.rings = guide.rings.filter(ring => ring.color === 'red' ? targets.fake.visible : targets.real.visible);
+        if (!targets.real.visible) { guide.comets = []; guide.theme = 'amber'; guide.badgeText = this.save.t('cue_swap_watch'); }
         break;
       }
 
@@ -2722,40 +2861,113 @@ export class TrickDirector {
       }
     }
 
-    return guide;
+    return choreographyGuide(this, guide);
   }
 
   _applyKinematics(dt, time, gestureState) {
+    joinAuthoredPose(this,dt);
+    this.world.beginPoseFrame?.();
+    this.world.presentationAxialSpin=this.active&&!this.isAfkShowActive&&this.currentMechanic==='SHAFT_SPIN_360';
+    const servingTarget = (this.servingPoseTarget ||= new THREE.Vector3()).copy(this.coneTargetPos);
+    if((this.presentationStrikeTip||this.presentationSurface)&&poleHasFood(this.world)){
+      this.presentationStrikeTip=null;this.presentationSurface=null;this.presentationExact=false;
+      servingTarget.y=Math.max(servingTarget.y,1.28);
+    }
+    // Bigger orders stay big, but an ordinary offer sits lower so the master remains visible.
+    // Exact scraping/impact trajectories and customer-owned cones retain their physical anchors.
+    if (this.active && !this.isAfkShowActive && !this.presentationExact && this.scoopCount > 4 &&
+        this.world.conePivot.parent === this.world.paddleGroup && servingTarget.y >= 1.12 && servingTarget.y <= 1.36) {
+      const near = THREE.MathUtils.clamp((servingTarget.z - .04) / .16, 0, 1);
+      const drop = .06 + Math.min(3, this.scoopCount - 5) * .04;
+      // The napkin is pinched below the rim: keep it above the lower gesture HUD,
+      // and offer slightly beside the face instead of pushing the paper offscreen.
+      if (this.currentMechanic === 'NAPKIN_CONE_FAKEOUT') {
+        servingTarget.x += .12 * near;
+        servingTarget.y -= Math.min(.06, drop) * near;
+      } else if(this.currentMechanic!=='SHAFT_SPIN_360') servingTarget.y -= drop * near;
+      // Axial offers already reserve room for the cluster horizontally. Keep
+      // their authored height: lowering them hides the wafer on short phones.
+    }
     if (this.isGraspingPaddleCone && gestureState) {
-      const coupledTarget = this.coneTargetPos
+      const coupledTarget = servingTarget
         .clone()
         .lerp(gestureState.handWorldPos, 0.45);
       this.world.coneSpring.target.copy(coupledTarget);
     } else {
-      this.world.coneSpring.target.copy(this.coneTargetPos);
+      this.world.coneSpring.target.copy(servingTarget);
     }
 
-    this.coneWorldPos.copy(this.world.coneSpring.step(dt));
+    if (this.presentationExact) {
+      // Authored contact paths must reach the bucket/rim, not lag behind them.
+      this.world.coneSpring.pos.copy(this.coneTargetPos);
+      this.world.coneSpring.vel.set(0, 0, 0);
+      this.coneWorldPos.copy(this.coneTargetPos);
+    } else this.coneWorldPos.copy(this.world.coneSpring.step(dt));
     this.world.paddleGroup.position.copy(this.coneWorldPos);
 
     this.world.vendorHead.rotation.y = this.coneWorldPos.x * 0.28;
     this.world.fezTassel.rotation.z =
       -0.35 - this.coneWorldPos.x * 0.35 + Math.sin(time * 3.5) * 0.05;
 
+    this.world.paddleCarryOffsetY = this.carryScoopOffsetY ?? 0.035;
     this.world.orientPaddleAndHands(
       this.shaftRoll,
       this.leftHandCustomTarget,
       dt,
       this.coneFlipZ,
-      this.conePitchX
+      this.conePitchX,
+      this.isAfkShowActive&&this.afkScenario===3?'wave':null
     );
+    this.coneWorldPos.copy(this.world.paddleGroup.position);
+    if (this.presentationStrikeTip) {
+      const correction = this.presentationStrikeTip.clone().sub(this.world.getPaddleStrikePoint(new THREE.Vector3()));
+      this.world.paddleGroup.position.add(correction);
+      this.coneWorldPos.copy(this.world.paddleGroup.position);
+      this.coneTargetPos.copy(this.coneWorldPos);
+      this.world.coneSpring.pos.copy(this.coneWorldPos);
+      this.world.coneSpring.target.copy(this.coneWorldPos);
+      this.world.orientPaddleAndHands(0, this.leftHandCustomTarget, dt, 0, 0);
+    }
+    if (this.world.carryScoop.visible) {
+      this.world.carryScoop.position.copy(this.coneWorldPos).y += this.carryScoopOffsetY ?? 0.035;
+    }
+    if (this.presentationSurface && !poleHasFood(this.world)) {
+      const hit = this.presentationSurface;
+      const actual = this.world.getPaddleStrikePoint(new THREE.Vector3());
+      if (this.lastAfkContactKey !== hit.key && actual.distanceTo(hit.point) <= 0.02) {
+        this.world.triggerCounterImpact?.(hit.point, hit.power);
+        if (hit.kind === 'counter') this.sound.playCounterRap(hit.point.x, 0.94 + (hit.beat % 3) * 0.08);
+        else this.sound.playPaddleClank(hit.point.x);
+        this.lastAfkContactKey = hit.key;
+        this.lastAfkBeatTime = hit.beat;
+      }
+    }
+    if (this.presentationBell && !poleHasFood(this.world)) {
+      const hit = this.presentationBell;
+      const contact = this.world.getBellStrikeTarget(hit.index);
+      if (this.world.getPaddleStrikePoint().distanceTo(contact) < 0.07) {
+        this.world.strikeBell(hit.index, hit.power);
+        this.sound.playBellNote(hit.index, hit.power, contact.x);
+        if (hit.afk) this.lastAfkBeatTime = hit.beat;
+        else this.lastBellContact = hit.beat;
+      }
+    }
+    finishAuthoredPose(this);
   }
 
   _endRound(outcomeType) {
+    clearTrickTransition(this);
+    clearFlavorFeint(this);
+    this.rhythmClock?.stop();this.world.vendorBeatPhase=null;this.sound.stopMusic?.();
     if (this.roundEnded) return;
     this.roundEnded = true;
     this.active = false;
+    clearVendorFlourish(this);
+    clearChoreography(this);
     this.isGraspingPaddleCone = false;
+    this.pendingTrickAdvance = 0;
+    this.world.clearTrickPresentations?.();
+    this.world.clearServingNapkin?.();
     this.world.napkinProp.visible = false;
     this.world.napkinConeProp.visible = false;
     this.world.leftHandConeProp.visible = false;
@@ -2794,6 +3006,7 @@ export class TrickDirector {
       this.world.heldSocket.add(this.world.conePivot);
       this.world.conePivot.position.set(0, 0.05, 0);
       this.world.conePivot.rotation.set(0, 0, 0);
+      this.world.setServingNapkin?.({ owner: 'vendor', peel: 0, visible: true });
 
       this.sound.playPenalty();
       this._vibrate(80);
@@ -2841,6 +3054,7 @@ export class TrickDirector {
       this.world.heldSocket.add(this.world.conePivot);
       this.world.conePivot.position.set(0, 0.05, 0);
       this.world.conePivot.rotation.set(0, 0, 0);
+      this.world.setServingNapkin?.({ owner: 'vendor', peel: 0, visible: true });
       this.world.setVendorMood('laugh');
 
       this.sound.playWinFanfare();

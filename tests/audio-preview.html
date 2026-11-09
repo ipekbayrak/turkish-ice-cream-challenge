@@ -1,0 +1,71 @@
+<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Usta ve müzik · Ses kontrolü</title>
+<style>body{font:15px system-ui;background:#f8f0e3;color:#38291c;max-width:900px;margin:24px auto;padding:18px}button,select{font:inherit;padding:10px 13px;border:1px solid #9d7048;border-radius:8px;background:#fff7e8;color:inherit;margin:5px 5px 5px 0;cursor:pointer}table{border-collapse:collapse;width:100%;margin-top:16px}td,th{padding:9px;border-bottom:1px solid #d1bea8;text-align:left}#status{min-height:24px}small{color:#735e4c}label{display:inline-flex;align-items:center;gap:8px}progress{width:100px}section{padding:14px 0;border-bottom:1px solid #dacbb6}#level{font-variant-numeric:tabular-nums}</style>
+<h1>Usta ve müzik</h1><p>Kısa, sözcüksüz ve yumuşak karakter tepkileri; boşlukları olan hafif bir ritim. Bu sayfa geliştirme kontrolüdür. İnsan kaydı veya konuşma servisi kullanılmaz.</p>
+<label>Usta <select id="vendor"><option value="0">Kadir</option><option value="1" selected>Pala</option><option value="2">Cezmi</option><option value="3">Haydar</option></select></label>
+<label>Tepki <select id="reaction"><option value="hoppa">Kısa uh</option><option value="hmm">Meraklı mm</option><option value="hirr">Hafif efor</option><option value="laugh">Kısa kıkırdama</option><option value="eeeh">Muzip hee</option><option value="taunt">Şakacı mırıldanma</option><option value="shock">Küçük şaşkınlık</option><option value="cheer">Sevinç</option><option value="cik">Küçük tepki</option></select></label>
+<section><button id="measure">Üret ve ölç</button><button id="live">Müzikle canlı tepki</button><button id="music">Yalnız müzik</button><button id="stop">Sesi durdur</button><button id="new-round">Yeni tur</button><button id="spam">Sıklık sınırı</button><button id="blocked">Engelli sesi dene</button><button id="resume">İzni aç</button><div>Dudak hareketi <progress id="mouth" max="1" value="0"></progress> <span id="level">Etkin kaynak: 0</span></div></section>
+<section><button id="before-mix">Önce · karışım</button><button id="after-mix">Sonra · karışım</button><button id="before-music">Önce · müzik</button><button id="after-music">Sonra · müzik</button><button id="export">Son karışımı WAV indir</button><small>Karışım: müzik, üç kısa usta tepkisi, külah kaydırma ve kopma efekti. Sürümler arasında normalizasyon yapılmaz.</small></section>
+<p id="status" role="status">Hazır. Ses kullanıcı düğmesine basınca başlar.</p>
+<table><thead><tr><th>Tepki</th><th>RMS</th><th>Tepe</th><th>Pay</th><th>Dinle</th></tr></thead><tbody id="rows"></tbody></table>
+<p><small>Ölçümler gerçek stereo OfflineAudioContext çıktısıdır. Pay, 0 dBFS'ye kalan dijital başlık payıdır; cihaz ses seviyesi değildir. Tepkiler en az 3,2 saniye aralıklı, aynı aile 7 saniye aralıklı ve tur başına en fazla 6 adettir. Çan ve hareket bildirimleri korunur. Önce kaydı, önceki WebAudio nota/efekt grafiğidir; sonra aynı oyun sentezini kullanır.</small></p>
+<script type="module">
+import {SoundEngine} from '../src/audio.js';
+import {USTA_BASE_PITCH,VENDOR_REACTIONS,musicStepSeconds} from '../src/sound-palette.js';
+import {LEGACY_VOICE_PITCH,LEGACY_REACTIONS,synthesizeLegacyVocal,scheduleLegacyMusic,scheduleReferenceNote} from './fixtures/audio-legacy-reference.js';
+const $=id=>document.getElementById(id),live=new SoundEngine();
+const labels={hmm:'Meraklı mm',hirr:'Hafif efor',hoppa:'Kısa uh',laugh:'Kısa kıkırdama',eeeh:'Muzip hee',taunt:'Şakacı mırıldanma',shock:'Küçük şaşkınlık',cheer:'Sevinç',cik:'Küçük tepki'};
+let playback,source,lastBuffer,playGeneration=0,blockedResume=null;
+const restoreResume=()=>{if(blockedResume){live.ctx.resume=blockedResume;blockedResume=null;}};
+const stop=()=>{restoreResume();playGeneration++;try{source?.stop();}catch{}source=null;live.setMuted(true);};
+function play(buffer){stop();lastBuffer=buffer;playback ||=new AudioContext();playback.resume();source=playback.createBufferSource();source.buffer=buffer;source.connect(playback.destination);source.start();}
+function metrics(buffer){let energy=0,peak=0;for(let channel=0;channel<buffer.numberOfChannels;channel++)for(const value of buffer.getChannelData(channel)){energy+=value*value;peak=Math.max(peak,Math.abs(value));}const rms=Math.sqrt(energy/(buffer.length*buffer.numberOfChannels));return{rms:20*Math.log10(rms||1e-12),peak,headroom:-20*Math.log10(peak||1e-12)};}
+function reaction(engine,key,vendor,at=0,legacy=false,variation=1){
+ const gestures=(legacy?LEGACY_REACTIONS:VENDOR_REACTIONS)[key],pitch=(legacy?LEGACY_VOICE_PITCH:USTA_BASE_PITCH)[vendor];
+ engine.voiceGain.gain.value=legacy?1.3:1.45;
+ gestures.forEach((gesture,index)=>{
+  const seed=variation*83+index*17+vendor*971;
+  if(!legacy)engine._playVendorGesture({...gesture,offset:at+(gesture.offset||0)},pitch,0,seed);
+  else {const samples=synthesizeLegacyVocal(engine.ctx.sampleRate,pitch,gesture,seed),buffer=engine.ctx.createBuffer(1,samples.length,engine.ctx.sampleRate);buffer.getChannelData(0).set(samples);const src=engine.ctx.createBufferSource();src.buffer=buffer;engine._connectWithPan(src,0,engine.voiceGain);src.start(at+(gesture.offset||0));}
+ });
+ const end=at+Math.max(...gestures.map(g=>(g.offset||0)+g.duration)),level=legacy?.75:.68;
+ const gain=engine.musicGain.gain;gain.setValueAtTime(1,at);gain.linearRampToValueAtTime(level,at+.025);gain.setValueAtTime(level,end);gain.linearRampToValueAtTime(1,end+.12);
+}
+async function render(kind,vendor,legacy=false){
+ const long=kind==='music'||kind==='context',engine=new SoundEngine();engine.ctx=new OfflineAudioContext(2,Math.ceil(48000*(long?14.48:1)),48000);engine.init=()=>engine._setupMixer();engine.init();
+ if(long){if(legacy)scheduleLegacyMusic(engine.ctx,engine.musicGain,64);else{let at=0;for(let step=0;step<64;step++){engine._playMusicStep(step,at);at+=musicStepSeconds(step,1);}}}
+ if(kind==='context'){
+  for(const [index,cue]of [{at:2,key:'hmm'},{at:6,key:'hoppa'},{at:10,key:'laugh'}].entries())reaction(engine,cue.key,vendor,cue.at,legacy,index+1);
+  scheduleReferenceNote(engine.ctx,engine.masterGain,{frequency:310,end:680,glide:.11,peak:.18,endGain:.001,decay:.12,duration:.13,type:'triangle'},2.01,0);
+  scheduleReferenceNote(engine.ctx,engine.masterGain,{frequency:190,end:590,glide:.065,peak:.24,endGain:.001,decay:.08,duration:.09,type:'sine'},6.01,0);
+ }else if(!long)reaction(engine,kind,vendor,0,legacy);
+ return engine.ctx.startRendering();
+}
+$('measure').onclick=async()=>{
+ stop();$('status').textContent='Üretiliyor…';$('rows').replaceChildren();
+ try{for(const [kind,name]of [...Object.entries(labels),['music','Yeni müzik'],['context','Yeni karışım']]){
+  const buffer=await render(kind,Number($('vendor').value)),m=metrics(buffer),row=document.createElement('tr');
+  row.innerHTML=`<td>${name}</td><td>${m.rms.toFixed(2)} dB</td><td>${m.peak.toFixed(4)}</td><td>${m.headroom.toFixed(1)} dB</td><td><button>Dinle</button></td>`;row.querySelector('button').onclick=()=>play(buffer);$('rows').append(row);
+ }$('status').textContent='Ölçüm tamamlandı: 9 tepki, müzik ve karışım hazır.';}catch(error){$('status').textContent=`Hata: ${error.message}`;}
+};
+async function compare(kind,legacy){stop();const generation=playGeneration;$('status').textContent='Karşılaştırma üretiliyor…';const buffer=await render(kind,Number($('vendor').value),legacy);if(generation!==playGeneration)return;const m=metrics(buffer);play(buffer);$('status').textContent=`${legacy?'Önce':'Sonra'} ${kind==='music'?'müzik':'karışım'} · RMS ${m.rms.toFixed(2)} dB · tepe ${m.peak.toFixed(4)} · pay ${m.headroom.toFixed(1)} dB`;}
+$('before-mix').onclick=()=>compare('context',true);$('after-mix').onclick=()=>compare('context',false);$('before-music').onclick=()=>compare('music',true);$('after-music').onclick=()=>compare('music',false);
+$('live').onclick=()=>{stop();live.setMuted(false);live.startMusic();const accepted=live.speakVendor($('reaction').value,Number($('vendor').value),0);$('status').textContent=accepted?'Canlı tepki çalındı.':'Sıklık sınırı: tekrar sessiz bırakıldı.';};
+$('music').onclick=()=>{stop();live.setMuted(false);live.startMusic();$('status').textContent='Yalnız müzik çalıyor.';};
+$('stop').onclick=()=>{stop();$('status').textContent='Sessiz: müzik, usta, efektler ve bekleyen sesler durdu.';};
+$('new-round').onclick=()=>{stop();live.beginRound();$('status').textContent='Yeni tur: tepki sayacı sıfırlandı.';};
+$('spam').onclick=()=>{stop();live.setMuted(false);live.beginRound();let accepted=0;for(let i=0;i<20;i++)accepted+=Number(live.speakVendor(i%2?'hmm':'hoppa',1,0));$('status').textContent=`20 hızlı çağrı: ${accepted} tepki, ${20-accepted} sessiz. Kuyruk yok.`;};
+$('blocked').onclick=async()=>{
+ stop();live.setMuted(false);live.beginRound();await live.ctx.suspend();
+ // Development-only browser-autoplay simulation: the real context stays
+ // suspended even when game events request resume, until the explicit button.
+ blockedResume=live.ctx.resume.bind(live.ctx);live.ctx.resume=()=>Promise.resolve();
+ live.startMusic();let accepted=0;
+ for(let i=0;i<20;i++){accepted+=Number(live.speakVendor('hmm',1,0));live.playConePop();live.playBellBurst();}
+ $('status').textContent=`Engelli 20 çağrı: ${accepted} tepki, ${live.activeSources.size} kaynak, ritim ${live.beatStep}. İzin açılınca eski çağrılar çalınmaz.`;
+};
+$('resume').onclick=async()=>{restoreResume();if(live.ctx)await live.ctx.resume();$('status').textContent='İzin açıldı. Yalnız güncel müzik vuruşu başlayacak; eski tepkiler sırada değil.';};
+
+function wav(buffer){const channels=buffer.numberOfChannels,length=buffer.length,data=new ArrayBuffer(44+length*channels*2),view=new DataView(data);let at=0;const text=s=>{for(const c of s)view.setUint8(at++,c.charCodeAt(0));};text('RIFF');view.setUint32(at,data.byteLength-8,true);at+=4;text('WAVEfmt ');view.setUint32(at,16,true);at+=4;view.setUint16(at,1,true);at+=2;view.setUint16(at,channels,true);at+=2;view.setUint32(at,buffer.sampleRate,true);at+=4;view.setUint32(at,buffer.sampleRate*channels*2,true);at+=4;view.setUint16(at,channels*2,true);at+=2;view.setUint16(at,16,true);at+=2;text('data');view.setUint32(at,length*channels*2,true);at+=4;for(let i=0;i<length;i++)for(let channel=0;channel<channels;channel++){view.setInt16(at,Math.round(Math.max(-1,Math.min(1,buffer.getChannelData(channel)[i]))*32767),true);at+=2;}return new Blob([data],{type:'audio/wav'});}
+$('export').onclick=()=>{if(!lastBuffer){$('status').textContent='Önce bir karşılaştırma üret.';return;}const url=URL.createObjectURL(wav(lastBuffer)),link=document.createElement('a');link.href=url;link.download='maras-audio-comparison.wav';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+function frame(){$('mouth').value=live.getVoiceMouthOpen();$('level').textContent=`Etkin kaynak: ${live.activeSources.size} · tepkiler: ${live.voiceCount} · ritim: ${live.beatStep} · ${live.ctx?.state||'hazır değil'}`;requestAnimationFrame(frame);}requestAnimationFrame(frame);
+</script></html>

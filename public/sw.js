@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maras-dondurma-v6';
+const CACHE_NAME = 'maras-dondurma-v43-stable-hands';
 const PRECACHE_URLS = [
   './',
   './index.html',

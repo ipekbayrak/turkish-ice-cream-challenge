@@ -1,0 +1,31 @@
+<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Servis ve temas kontrolü</title>
+<style>body{margin:0;background:#140805;color:#fff;font:12px system-ui}canvas{position:fixed;inset:0}aside{position:fixed;top:12px;left:12px;max-width:320px;padding:10px;background:#170e08ed;border:1px solid #ad854a;border-radius:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}button,select{padding:8px;font:inherit}output{width:100%;white-space:pre-wrap}</style>
+<canvas id="scene"></canvas><aside><select id="venue" aria-label="Mekân"></select><button id="offer">Peçeteli servis</button><button id="pinch">Peçeteyi tut</button><button id="discard">Peçeteyi bırak</button><button id="counter">Tezgâha temas</button><button id="large">Büyük sipariş</button><button id="play">Oynat</button><button id="pause">Durdur</button><output id="metrics"></output></aside>
+<script type="module">
+import * as THREE from 'three';import {GameWorld} from '/src/world.js';import {SoundEngine} from '/src/audio.js';import {TrickDirector} from '/src/tricks.js';import {VENUES,getVenueForStage,getStageOrderOptions} from '/src/venues.js';
+const V=(x=0,y=0,z=0)=>new THREE.Vector3(x,y,z),noop=()=>{};
+const world=new GameWorld(document.querySelector('canvas')),sound=new SoundEngine();sound.setMuted(true);
+const save={data:{unlockedStage:30,preferredScoopCount:4,preferredFlavors:[0,1,2,3,4,5,0,1],tutorialCompleted:true},hapticsEnabled:false,t:k=>k,discoverTrick:noop,setOrderPreferences:noop,recordStageResult:noop,getStageBestScore:()=>0,getUstaName:()=>'',getTrickInfo:id=>({name:id})};
+const d=new TrickDirector(world,sound,save,{onRoundEnd:noop});
+const input={isPointerDown:false,isMouseHover:false,isReaching:false,isMoving:false,normX:0,normY:-1,vx:0,vy:0,speed:0,pointerEpoch:0,cancelEpoch:0,intentWorldPos:V(.22,1.04,.64),handWorldPos:V(.22,1.04,.64)};
+let running=false,afk=false,time=0,last=performance.now();
+for(const venue of VENUES){const opt=document.createElement('option');opt.value=venue.lastStage;opt.textContent=venue.name.tr;document.getElementById('venue').append(opt);}
+function reset(trick='NAPKIN_CONE_FAKEOUT'){
+ running=false;afk=false;time=0;input.isPointerDown=input.isReaching=input.isMoving=false;input.pointerEpoch++;input.cancelEpoch++;input.intentWorldPos.set(.22,1.04,.64);input.handWorldPos.copy(input.intentWorldPos);
+ const stage=Number(document.getElementById('venue').value)||5;const count=getStageOrderOptions(stage).max;
+ world.resetTransientPresentation();world.setVenue(getVenueForStage(stage));d.setOrderConfig(count,[0,1,2,3,4,5,0,1],stage);d.resetRound(stage,false);d.routine=[trick,'FINAL_PISTACHIO_CATCH'];d.scoopCount=count;world.updateIceCreamScoops(count);d._enterRoutineStep(0);d.active=true;d.config={...d.config,speedMult:1};world.setVendorCharacter(1);
+}
+function step(dt){time+=dt;world.updateTouristHand(input.handWorldPos,(d.heldItem === 'NAPKIN' ? .98 : .2),0,dt);if(afk){d.presentationExact=false;d.presentationSurface=null;d.presentationStrikeTip=null;d._updateAfkShow(dt,time);d._applyKinematics(dt,time,input);}else{d.idleSeconds=0;d.update(dt,time,input);}world.updateEnvironmentAnimations(time,dt,0,0,null,0);}
+function advance(seconds){for(let t=0;t<seconds;t+=1/120)step(1/120);}
+function point(p){input.intentWorldPos.copy(p);input.handWorldPos.copy(p);input.normX=p.x/.54;input.normY=(p.y-1.22)/.36;}
+function offer(){reset();advance(.6);}
+document.getElementById('offer').onclick=offer;document.getElementById('venue').onchange=offer;
+document.getElementById('pinch').onclick=()=>{offer();world.scene.updateMatrixWorld(true);point(world.servingNapkin.getWorldPosition(V()));input.isPointerDown=input.isReaching=true;input.pointerEpoch++;advance(.50);running=false;};
+document.getElementById('discard').onclick=()=>{if(d.heldItem!=='NAPKIN')document.getElementById('pinch').click();advance(.2);for(let i=0;i<16;i++){point(input.intentWorldPos.clone().add(V(.015,0,0)));input.vx=2;step(1/60);}running=false;};
+document.getElementById('counter').onclick=()=>{reset('SHAFT_SPIN_360');afk=true;d.isAfkShowActive=true;d.afkScenario=0;d.afkTimer=0;d.lastAfkBeatTime=-1;advance(.245);};
+document.getElementById('large').onclick=()=>{reset('FINAL_PISTACHIO_CATCH');advance(.35);};
+document.getElementById('play').onclick=()=>running=true;document.getElementById('pause').onclick=()=>running=false;
+offer();
+function frame(now){requestAnimationFrame(frame);const dt=Math.max(0,Math.min(.04,(now-last)/1000));last=now;if(running)step(dt);world.render();const tip=world.getPaddleStrikePoint(V());const contact=afk&&d.afkScenario===0?world.getCounterStrikeTarget(Math.sin(Math.floor(d.afkTimer*2.6)*.92)*.24):d.presentationSurface?.point;document.getElementById('metrics').textContent=`${d.currentMechanic} · adım ${d.subStep} · ${d.stageTimer.toFixed(2)}s · ${d.scoopCount} top\nKülah: ${world.conePivot.parent===world.paddleGroup?'çubukta':world.conePivot.parent===world.heldSocket?'müşteride':'usta elinde'} · peçete: ${world.servingNapkin.parent===world.heldSocket?'müşteride':world.servingNapkin.parent===world.conePivot?'külahın altında':'havada'} · uç-temas mesafesi: ${contact?tip.distanceTo(contact).toFixed(4)+' m':'—'}`;}
+requestAnimationFrame(frame);
+</script></html>

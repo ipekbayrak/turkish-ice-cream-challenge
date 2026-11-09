@@ -1,19 +1,10 @@
-// Procedural Web Audio Synthesizer + Formant Vendor Voice Engine for Turkish Ice Cream Challenge
+// Existing music/effects with sparse, light game-character reactions.
 
-const VOWEL_FORMANTS = {
-  A: [750, 1220, 2550],
-  O: [480, 880, 2450],
-  U: [340, 720, 2350],
-  E: [540, 1820, 2580],
-  I: [310, 2150, 2750],
-  M: [250, 920, 2150], // Closed-lip nasal hum ("Hımmm")
-  R: [420, 1340, 1950], // Uvular/throat growl ("Hırrr")
-};
-
-// Base fundamental voice pitch (Hz) for each of the 4 Ustas:
-// 0: Çırak Kadir (Young tenor), 1: Pala Usta (Resonant baritone),
-// 2: Cezmi Dede (Deep raspy bass-baritone), 3: Başusta Haydar Baba (Commanding deep bass)
-const USTA_BASE_PITCH = [156, 118, 98, 88];
+import { USTA_BASE_PITCH, VENDOR_REACTIONS, synthesizeVendorVocal, musicStepEvents, musicStepSeconds, synthesizeMusicNote } from './sound-palette.js';
+import {MusicTransport} from './music-transport.js';
+export { synthesizeVendorVocal } from './sound-palette.js';
+export const VENDOR_VOICE_LIMITS = Object.freeze({ minGap: 3.2, repeatGap: 7, maxPerRound: 6 });
+const CUE_GROUPS = { hmm: 'curious', taunt: 'curious', hirr: 'effort', hoppa: 'effort', eeeh: 'amused', laugh: 'amused', cik: 'small', cheer: 'happy', shock: 'surprise' };
 
 export class SoundEngine {
   constructor() {
@@ -24,12 +15,29 @@ export class SoundEngine {
     this.beatStep = 0;
     this.tempoMultiplier = 1.0;
     this._iosUnlocked = false;
+    this._unlockTokenContext=null;this._resumePending=null;this._musicRequested=false;
+    this._observedContext = null;
+    this.masterGain = null;
+    this.musicGain = null;
+    this.voiceGain = null;
+    this.activeSources = new Set();
+    this.sourceNodes = new WeakMap();
+    this.pendingSounds = new Set();
+    this.voiceUntil = 0;
+    this.voiceVariation = 0;
+    this.vendorSources = new Set();
+    this.musicSources = new Map();
+    this.musicBuffers = new Map();
+    this.voiceCount = 0;
+    this.lastVoiceAt = -Infinity;
+    this.lastVoiceByGroup = new Map();
 
     // Live lip-sync envelope state for 3D vendor mouth, jaw, beard & mustache animation
     this.voiceSyllables = [];
   }
 
-  init() {
+  init({resume=true}={}) {
+    if(!this.enabled)return;
     if (typeof navigator !== 'undefined' && 'audioSession' in navigator) {
       try {
         navigator.audioSession.type = 'playback';
@@ -38,62 +46,175 @@ export class SoundEngine {
       }
     }
     if (!this.ctx) {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const AudioCtx = globalThis.window?.AudioContext || globalThis.window?.webkitAudioContext;
       if (AudioCtx) {
         this.ctx = new AudioCtx();
       }
     }
-    if (
-      this.ctx &&
-      (this.ctx.state === 'suspended' || this.ctx.state === 'interrupted')
-    ) {
-      this.ctx.resume().catch(() => {});
-    }
-    if (this.ctx && !this._iosUnlocked) {
-      try {
-        const silentBuf = this.ctx.createBuffer(1, 1, 22050);
-        const src = this.ctx.createBufferSource();
-        src.buffer = silentBuf;
-        src.connect(this.ctx.destination);
-        src.start(0);
-        this._iosUnlocked = true;
-      } catch {
-        // Ignore
+    if (this.ctx) {
+      this._setupMixer();
+      if (this._observedContext !== this.ctx) {
+        this._observedContext = this.ctx;
+        const context=this.ctx;
+        context.addEventListener?.('statechange',()=>{
+          if(context!==this.ctx)return;
+          if(!this._isOfflineContext()&&context.state!=='running'){this._iosUnlocked=false;this._unlockTokenContext=null;this._cancelScheduledSources();}
+          if(context.state==='running'){
+            // Suspension cancelled the lookahead sources. Requeue unheard beats
+            // at their original grid positions, without moving the song clock.
+            this.musicTransport?.resume();this._finishUnlock(context);
+          }
+          if(context.state==='closed'){const requested=this._musicRequested||this.musicPlaying;this.stopMusic();this._musicRequested=requested;}
+        });
       }
+    }
+    if(resume&&this.ctx&&!this._isOfflineContext()&&['suspended','interrupted'].includes(this.ctx.state)&&!this._resumePending){
+      const context=this.ctx;
+      try{this._resumePending=Promise.resolve(context.resume()).then(()=>this._finishUnlock(context),()=>false).finally(()=>{if(this.ctx===context)this._resumePending=null;});}catch{/* Retry from a real gesture. */}
+    }
+    if(this._canScheduleAudio()&&!this._isOfflineContext()&&!this._iosUnlocked){this._primeUnlock(this.ctx);this._finishUnlock(this.ctx);}
+  }
+
+  _primeUnlock(context){
+    if(this._unlockTokenContext===context)return;
+    try{
+      const token=this._trackSource(context.createBufferSource());token.buffer=context.createBuffer(1,1,22050);token.connect(context.destination);token.start(0);
+      this._unlockToken=token;this._unlockTokenContext=context;
+    }catch{this._unlockTokenContext=null;}
+  }
+  _discardUnlockToken(context){
+    if(context!==this.ctx||context.state==='running')return;
+    const token=this._unlockToken;
+    if(token&&this.activeSources.has(token)){try{token.stop();}catch{}this._releaseSource(token);}
+    this._unlockToken=null;this._unlockTokenContext=null;
+  }
+  _finishUnlock(context){
+    if(context!==this.ctx||context.state!=='running'||!this.enabled)return false;
+    this._iosUnlocked=this._unlockTokenContext===context;
+    this.masterGain?.gain.setValueAtTime(1,context.currentTime);
+    if(this._musicRequested&&!this.musicPlaying)this.startMusic();
+    return true;
+  }
+  /** Called synchronously by the browser's actual click/touch/key event. The
+   * silent activation token is the only source allowed before resume completes. */
+  unlockFromGesture(){
+    if(!this.enabled)return Promise.resolve(false);
+    if(this.ctx?.state==='closed'){
+      const elapsed=this.ctx.currentTime||0;this.lastVoiceAt-=elapsed;
+      for(const[group,at]of this.lastVoiceByGroup)this.lastVoiceByGroup.set(group,at-elapsed);
+      this._cancelScheduledSources();
+      for(const mixer of[this.masterGain,this.musicGain,this.voiceGain])mixer?.disconnect?.();
+      this.ctx=this.masterGain=this.musicGain=this.voiceGain=this._observedContext=null;
+      this._iosUnlocked=false;this._unlockTokenContext=null;this._resumePending=null;this.musicBuffers.clear();
+    }
+    this.init({resume:false});const context=this.ctx;
+    if(!context||this._isOfflineContext())return Promise.resolve(false);
+    if(context.state==='running'&&this._iosUnlocked)return Promise.resolve(true);
+    this._primeUnlock(context);
+    try{
+      // Resume is invoked now, not in a promise continuation after activation.
+      const result=context.state==='running'?null:context.resume();
+      return Promise.resolve(result).then(()=>this._finishUnlock(context),()=>{this._discardUnlockToken(context);return false;});
+    }catch{this._discardUnlockToken(context);return Promise.resolve(false);}
+  }
+
+  _isOfflineContext() {
+    return Boolean(this.ctx && typeof this.ctx.startRendering === 'function');
+  }
+
+  /** Suspended real contexts freeze currentTime; scheduling there would queue
+   * old cues at one timestamp and release a burst on the next user gesture. */
+  _canScheduleAudio() {
+    return Boolean(this.enabled && this.ctx && this.ctx.state !== 'closed' &&
+      (this.ctx.state === 'running' || this._isOfflineContext()));
+  }
+
+  _cancelScheduledSources() {
+    this.pendingSounds.forEach(clearTimeout); this.pendingSounds.clear();
+    for (const source of this.activeSources) {
+      try { source.stop(); } catch { /* Ended or closed context. */ }
+      this._releaseSource(source);
+    }
+    this.activeSources.clear(); this.vendorSources.clear(); this.musicSources.clear();
+    this.voiceSyllables.length = 0; this.voiceUntil = 0;
+  }
+
+  /** Independent music and restrained character-reaction buses. */
+  _setupMixer() {
+    if (!this.ctx || this.masterGain) return;
+    this.masterGain = this.ctx.createGain();
+    this.masterGain.gain.value = this.enabled ? 1 : 0;
+    this.masterGain.connect(this.ctx.destination);
+    this.musicGain = this.ctx.createGain();
+    this.musicGain.connect(this.masterGain);
+    this.voiceGain = this.ctx.createGain();
+    // Character and music levels are independent; reactions stay understated.
+    this.voiceGain.gain.value = 1.45;
+    this.voiceGain.connect(this.masterGain);
+  }
+
+  _trackSource(source) {
+    this.activeSources.add(source);
+    this.sourceNodes.set(source, []);
+    source.addEventListener('ended', () => this._releaseSource(source), { once: true });
+    return source;
+  }
+
+  _trackTransientNodes(source, ...nodes) {
+    const owned = this.sourceNodes.get(source);
+    if (!owned) return;
+    for (const node of nodes) {
+      if (node !== source && node !== this.masterGain && node !== this.musicGain && node !== this.voiceGain) owned.push(node);
     }
   }
 
-  _connectWithPan(node, panX = 0) {
+  _releaseSource(source) {
+    source.disconnect();
+    for (const node of this.sourceNodes.get(source) || []) node.disconnect();
+    this.sourceNodes.delete(source);
+    this.activeSources.delete(source);
+  }
+
+  _connectWithPan(node, panX = 0, bus = this.masterGain, source = node) {
     if (!this.ctx) return;
+    this._trackTransientNodes(source, node);
     if (typeof this.ctx.createStereoPanner === 'function') {
       const panner = this.ctx.createStereoPanner();
+      this._trackTransientNodes(source, panner);
       panner.pan.setValueAtTime(
         Math.max(-1, Math.min(1, panX * 1.4)),
         this.ctx.currentTime
       );
       node.connect(panner);
-      panner.connect(this.ctx.destination);
+      panner.connect(bus || this.ctx.destination);
     } else {
-      node.connect(this.ctx.destination);
+      node.connect(bus || this.ctx.destination);
     }
   }
 
-  toggle() {
-    this.enabled = !this.enabled;
-    if (!this.enabled) {
+  setMuted(muted) {
+    this.enabled = !muted;
+    if (muted) {
       this.stopMusic();
+      this._cancelScheduledSources();
     } else {
-      this.init();
-      this.startMusic();
+      this.unlockFromGesture();
     }
+    if (this.masterGain) this.masterGain.gain.setValueAtTime(this.enabled ? 1 : 0, this.ctx.currentTime);
     return this.enabled;
+  }
+
+  toggle() {
+    const enabled = this.setMuted(this.enabled);
+    if (enabled) this.startMusic();
+    return enabled;
   }
 
   /**
    * Returns 0..1 live jaw/mouth openness for 3D Vendor Lip-Sync animation
    */
   getVoiceMouthOpen() {
-    if (!this.ctx || this.voiceSyllables.length === 0) return 0;
+    if (!this._canScheduleAudio() || this.voiceSyllables.length === 0) return 0;
     const now = this.ctx.currentTime;
     let openness = 0;
     for (let i = this.voiceSyllables.length - 1; i >= 0; i--) {
@@ -112,358 +233,77 @@ export class SoundEngine {
     return Math.min(1, openness);
   }
 
-  /**
-   * Synthesizes a single vocal syllable through a 3-formant human vocal tract filter bank
-   * Supports optional throat-trill modulation (`trillHz > 0`) for realistic "Hırrrr!" grunts
-   */
-  _playVocalSyllable(
-    startTime,
-    duration,
-    f0Start,
-    f0End,
-    vowelKey = 'A',
-    volume = 0.24,
-    panX = 0,
-    breathy = true,
-    trillHz = 0
-  ) {
-    if (!this.ctx) return;
+  /** Start once per round/order, never once per trick. No reactions are queued. */
+  beginRound() {
+    this.vendorSources.forEach(source => {
+      try { source.stop(); } catch { /* Already finished. */ }
+      this._releaseSource(source);
+    });
+    this.vendorSources.clear();
+    this.voiceSyllables.length = 0;
+    this.voiceUntil = 0;
+    this.voiceCount = 0;
+    this.lastVoiceAt = -Infinity;
+    this.lastVoiceByGroup.clear();
+    if (this.musicGain) {
+      this.musicGain.gain.cancelScheduledValues(this.ctx.currentTime);
+      this.musicGain.gain.setValueAtTime(1, this.ctx.currentTime);
+    }
+  }
 
+  /** Play one short wordless hum/chuckle at the usta's position. */
+  _playVendorGesture(gesture, basePitch, panX, seed) {
+    if (!this._canScheduleAudio()) return false;
+    const now = this.ctx.currentTime + (gesture.offset || 0);
+    const samples = synthesizeVendorVocal(this.ctx.sampleRate, basePitch, gesture, seed);
+    const buffer = this.ctx.createBuffer(1, samples.length, this.ctx.sampleRate);
+    buffer.getChannelData(0).set(samples);
+    const source = this._trackSource(this.ctx.createBufferSource());
+    source.buffer = buffer;
+    this.vendorSources.add(source);
+    source.addEventListener('ended', () => this.vendorSources.delete(source), { once: true });
+    // The source already contains its short, soft attack/release envelope.
+    this._connectWithPan(source, panX, this.voiceGain);
+    source.start(now);
+    source.stop(now + gesture.duration + .01);
     this.voiceSyllables.push({
-      start: startTime,
-      end: startTime + duration,
-      intensity: Math.min(1, volume * 3.8),
-      trill: trillHz > 0,
+      start: now, end: now + gesture.duration,
+      intensity: gesture.mouth || .25,
+      trill: false,
     });
-
-    const formants = VOWEL_FORMANTS[vowelKey] || VOWEL_FORMANTS.A;
-
-    const glottal = this.ctx.createOscillator();
-    glottal.type = 'sawtooth';
-    glottal.frequency.setValueAtTime(f0Start, startTime);
-    glottal.frequency.exponentialRampToValueAtTime(
-      Math.max(50, f0End),
-      startTime + duration
-    );
-
-    const subOsc = this.ctx.createOscillator();
-    subOsc.type = 'triangle';
-    subOsc.frequency.setValueAtTime(f0Start * 0.5, startTime);
-    subOsc.frequency.exponentialRampToValueAtTime(
-      Math.max(28, f0End * 0.5),
-      startTime + duration
-    );
-
-    // Vocal vibrato or uvular throat trill ("Hırrr!")
-    const vib = this.ctx.createOscillator();
-    const vibGain = this.ctx.createGain();
-    vib.frequency.setValueAtTime(trillHz > 0 ? trillHz : 5.8, startTime);
-    vibGain.gain.setValueAtTime(trillHz > 0 ? 14.0 : 4.5, startTime);
-    vib.connect(vibGain);
-    vibGain.connect(glottal.frequency);
-
-    const sourceMix = this.ctx.createGain();
-    sourceMix.gain.setValueAtTime(0.72, startTime);
-    glottal.connect(sourceMix);
-    subOsc.connect(sourceMix);
-
-    // Optional amplitude trill for "Hırrr" throat rumble
-    let trillOsc = null;
-    if (trillHz > 0) {
-      trillOsc = this.ctx.createOscillator();
-      const trillAmp = this.ctx.createGain();
-      trillOsc.frequency.setValueAtTime(trillHz, startTime);
-      trillAmp.gain.setValueAtTime(0.32, startTime);
-      trillOsc.connect(trillAmp);
-      trillAmp.connect(sourceMix.gain);
-      trillOsc.start(startTime);
-      trillOsc.stop(startTime + duration + 0.01);
-    }
-
-    if (breathy) {
-      const bufLen = Math.floor(this.ctx.sampleRate * 0.055);
-      const buf = this.ctx.createBuffer(1, bufLen, this.ctx.sampleRate);
-      const data = buf.getChannelData(0);
-      for (let i = 0; i < bufLen; i++) {
-        data[i] = (Math.random() * 2 - 1) * (1 - i / bufLen);
-      }
-      const noise = this.ctx.createBufferSource();
-      noise.buffer = buf;
-      const nGain = this.ctx.createGain();
-      nGain.gain.setValueAtTime(volume * 0.55, startTime);
-      nGain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.055);
-      noise.connect(nGain);
-      nGain.connect(sourceMix);
-      noise.start(startTime);
-    }
-
-    const masterEnv = this.ctx.createGain();
-    masterEnv.gain.setValueAtTime(0.001, startTime);
-    masterEnv.gain.linearRampToValueAtTime(
-      volume,
-      startTime + Math.min(0.025, duration * 0.25)
-    );
-    masterEnv.gain.exponentialRampToValueAtTime(0.0008, startTime + duration);
-
-    const formantWeights = [1.0, 0.65, 0.28];
-    const formantQs = [6.5, 8.0, 10.0];
-
-    formants.forEach((freq, idx) => {
-      const bp = this.ctx.createBiquadFilter();
-      bp.type = 'bandpass';
-      bp.frequency.setValueAtTime(freq, startTime);
-      bp.Q.setValueAtTime(formantQs[idx], startTime);
-
-      const fGain = this.ctx.createGain();
-      fGain.gain.setValueAtTime(formantWeights[idx], startTime);
-
-      sourceMix.connect(bp);
-      bp.connect(fGain);
-      fGain.connect(masterEnv);
-    });
-
-    this._connectWithPan(masterEnv, panX);
-
-    glottal.start(startTime);
-    subOsc.start(startTime);
-    vib.start(startTime);
-
-    glottal.stop(startTime + duration + 0.01);
-    subOsc.stop(startTime + duration + 0.01);
-    vib.stop(startTime + duration + 0.01);
   }
 
   /**
-   * Expressive Turkish Ice Cream Vendor Voice Reactions:
-   * - 'hmm': Questioning / playful thinking hum "Hımmmm...?"
-   * - 'hirr': Playful growling throat trill "Hırrrrr!" when teasing or lifting giant block
-   * - 'eeeh': Teasing "Eeeeh-hehe!" when sliding inner cone out of double cone
-   * - 'cik': Rhythmic tongue click "Cık-cık-cık!" on customer mistake
-   * - 'hoppa': Energetic "Hop-paaa!" when twisting or spinning the cone
-   * - 'laugh': Hearty "Ha-ha-ha-haa!" belly laugh
-   * - 'taunt': Playful "Oooo-hop!"
-   * - 'cheer': Warm "He-laaal!"
-   * - 'shock': Surprised "Haaay-da!"
+   * Returns true only when a reaction was accepted. Most micro-events stay quiet:
+   * at least 3.2 s apart, 7 s per semantic group, and at most 6 per round.
    */
   speakVendor(type = 'hoppa', ustaIdx = 1, panX = 0) {
-    if (!this.enabled) return;
+    if (!this.enabled) return false;
     this.init();
-    if (!this.ctx) return;
-
+    if (!this._canScheduleAudio()) return false;
     const now = this.ctx.currentTime;
-    const baseF0 = USTA_BASE_PITCH[ustaIdx % USTA_BASE_PITCH.length] || 118;
-
-    if (type === 'hmm') {
-      // "HIMMMMM...?" (warm nasal hum with questioning upward inflection)
-      this._playVocalSyllable(
-        now,
-        0.14,
-        baseF0 * 0.92,
-        baseF0 * 0.88,
-        'I',
-        0.22,
-        panX,
-        true,
-        0
-      );
-      this._playVocalSyllable(
-        now + 0.11,
-        0.34,
-        baseF0 * 0.88,
-        baseF0 * 1.32,
-        'M',
-        0.26,
-        panX,
-        false,
-        0
-      );
-    } else if (type === 'hirr') {
-      // "HIRRRRR-HOP!" (signature throat growl trill + playful snap)
-      this._playVocalSyllable(
-        now,
-        0.32,
-        baseF0 * 0.86,
-        baseF0 * 1.18,
-        'R',
-        0.29,
-        panX,
-        true,
-        28
-      );
-      this._playVocalSyllable(
-        now + 0.34,
-        0.14,
-        baseF0 * 1.32,
-        baseF0 * 0.96,
-        'O',
-        0.25,
-        panX,
-        true,
-        0
-      );
-    } else if (type === 'eeeh') {
-      // "EEEEH - HI-HI!"
-      this._playVocalSyllable(
-        now,
-        0.24,
-        baseF0 * 1.12,
-        baseF0 * 1.42,
-        'E',
-        0.26,
-        panX,
-        true,
-        0
-      );
-      this._playVocalSyllable(
-        now + 0.26,
-        0.11,
-        baseF0 * 1.35,
-        baseF0 * 1.15,
-        'I',
-        0.22,
-        panX,
-        true,
-        0
-      );
-      this._playVocalSyllable(
-        now + 0.39,
-        0.14,
-        baseF0 * 1.28,
-        baseF0 * 1.02,
-        'A',
-        0.24,
-        panX,
-        true,
-        0
-      );
-    } else if (type === 'cik') {
-      // "CIK - CIK - CIK!" (3 dental tongue clicks + low chuckle)
-      [0, 0.12, 0.24].forEach((offset) => {
-        const osc = this.ctx.createOscillator();
-        const g = this.ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(1650, now + offset);
-        osc.frequency.exponentialRampToValueAtTime(420, now + offset + 0.035);
-        g.gain.setValueAtTime(0.22, now + offset);
-        g.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.04);
-        osc.connect(g);
-        this._connectWithPan(g, panX);
-        osc.start(now + offset);
-        osc.stop(now + offset + 0.045);
-      });
-      this._playVocalSyllable(
-        now + 0.36,
-        0.22,
-        baseF0 * 1.05,
-        baseF0 * 0.85,
-        'M',
-        0.22,
-        panX,
-        false,
-        0
-      );
-    } else if (type === 'hoppa') {
-      this._playVocalSyllable(
-        now,
-        0.11,
-        baseF0 * 1.05,
-        baseF0 * 1.25,
-        'O',
-        0.25,
-        panX,
-        true
-      );
-      this._playVocalSyllable(
-        now + 0.13,
-        0.24,
-        baseF0 * 1.38,
-        baseF0 * 0.92,
-        'A',
-        0.28,
-        panX,
-        true
-      );
-    } else if (type === 'laugh') {
-      const syllables = [0, 0.13, 0.26, 0.4];
-      syllables.forEach((offset, i) => {
-        const dur = i === 3 ? 0.24 : 0.1;
-        const pitchMult = 1.32 - i * 0.09;
-        const vowel = i % 2 === 0 ? 'A' : 'O';
-        this._playVocalSyllable(
-          now + offset,
-          dur,
-          baseF0 * pitchMult,
-          baseF0 * (pitchMult - 0.12),
-          vowel,
-          0.26,
-          panX,
-          true
-        );
-      });
-    } else if (type === 'taunt') {
-      this._playVocalSyllable(
-        now,
-        0.18,
-        baseF0 * 0.95,
-        baseF0 * 1.3,
-        'O',
-        0.24,
-        panX,
-        false
-      );
-      this._playVocalSyllable(
-        now + 0.2,
-        0.16,
-        baseF0 * 1.35,
-        baseF0 * 1.0,
-        'A',
-        0.26,
-        panX,
-        true
-      );
-    } else if (type === 'cheer') {
-      this._playVocalSyllable(
-        now,
-        0.12,
-        baseF0 * 1.15,
-        baseF0 * 1.25,
-        'E',
-        0.24,
-        panX,
-        true
-      );
-      this._playVocalSyllable(
-        now + 0.14,
-        0.3,
-        baseF0 * 1.45,
-        baseF0 * 1.1,
-        'A',
-        0.28,
-        panX,
-        false
-      );
-    } else if (type === 'shock') {
-      this._playVocalSyllable(
-        now,
-        0.2,
-        baseF0 * 1.45,
-        baseF0 * 0.95,
-        'A',
-        0.27,
-        panX,
-        true
-      );
-      this._playVocalSyllable(
-        now + 0.22,
-        0.18,
-        baseF0 * 0.95,
-        baseF0 * 0.78,
-        'O',
-        0.24,
-        panX,
-        true
-      );
-    }
+    const key = VENDOR_REACTIONS[type] ? type : 'hoppa';
+    const group = CUE_GROUPS[key];
+    if (this.voiceCount >= VENDOR_VOICE_LIMITS.maxPerRound ||
+        now - this.lastVoiceAt < VENDOR_VOICE_LIMITS.minGap ||
+        now - (this.lastVoiceByGroup.get(group) ?? -Infinity) < VENDOR_VOICE_LIMITS.repeatGap) return false;
+    const vendor = Math.abs(Math.round(ustaIdx)) % USTA_BASE_PITCH.length;
+    const variation = ++this.voiceVariation;
+    const gestures = VENDOR_REACTIONS[key];
+    gestures.forEach((gesture, index) => this._playVendorGesture(gesture, USTA_BASE_PITCH[vendor], panX, variation * 83 + index * 17 + vendor * 971));
+    const phraseEnd = now + Math.max(...gestures.map(gesture => (gesture.offset || 0) + gesture.duration));
+    this.voiceUntil = phraseEnd;
+    this.voiceCount++;
+    this.lastVoiceAt = now;
+    this.lastVoiceByGroup.set(group, now);
+    // A small dip, not a dramatic interruption of the original accompaniment.
+    const music = this.musicGain.gain;
+    music.cancelScheduledValues(now);
+    music.setValueAtTime(music.value, now);
+    music.linearRampToValueAtTime(.68, now + .025);
+    music.setValueAtTime(.68, phraseEnd);
+    music.linearRampToValueAtTime(1, phraseEnd + .12);
+    return true;
   }
 
   /**
@@ -472,7 +312,7 @@ export class SoundEngine {
   playCrowdReaction(kind = 'cheer') {
     if (!this.enabled) return;
     this.init();
-    if (!this.ctx) return;
+    if (!this._canScheduleAudio()) return;
     const now = this.ctx.currentTime;
 
     if (kind === 'cheer') {
@@ -485,7 +325,7 @@ export class SoundEngine {
         for (let k = 0; k < bufLen; k++) {
           data[k] = (Math.random() * 2 - 1) * Math.pow(1 - k / bufLen, 2);
         }
-        const src = this.ctx.createBufferSource();
+        const src = this._trackSource(this.ctx.createBufferSource());
         src.buffer = buf;
         const bp = this.ctx.createBiquadFilter();
         bp.type = 'bandpass';
@@ -496,15 +336,23 @@ export class SoundEngine {
         g.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.04);
         src.connect(bp);
         bp.connect(g);
-        this._connectWithPan(g, i % 2 === 0 ? -0.65 : 0.65);
+        this._connectWithPan(g, i % 2 === 0 ? -0.65 : 0.65, this.masterGain, src);
         src.start(now + offset);
       }
-    } else if (kind === 'gasp') {
-      this._playVocalSyllable(now, 0.22, 240, 390, 'O', 0.12, -0.55, true);
-      this._playVocalSyllable(now + 0.04, 0.24, 195, 310, 'A', 0.11, 0.55, true);
-    } else if (kind === 'chuckle') {
-      this._playVocalSyllable(now, 0.1, 260, 220, 'E', 0.11, 0.55, true);
-      this._playVocalSyllable(now + 0.11, 0.12, 245, 200, 'A', 0.11, -0.55, true);
+    } else if (kind === 'gasp' || kind === 'chuckle') {
+      // A discreet wooden/plucked response replaces the old ghostly crowd vowels.
+      const osc = this._trackSource(this.ctx.createOscillator());
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(kind === 'gasp' ? 370 : 440, now);
+      osc.frequency.exponentialRampToValueAtTime(320, now + .08);
+      gain.gain.setValueAtTime(.0001, now);
+      gain.gain.linearRampToValueAtTime(.022, now + .008);
+      gain.gain.exponentialRampToValueAtTime(.0001, now + .085);
+      osc.connect(gain);
+      this._connectWithPan(gain, kind === 'gasp' ? -.35 : .35, this.masterGain, osc);
+      osc.start(now);
+      osc.stop(now + .09);
     }
   }
 
@@ -512,10 +360,10 @@ export class SoundEngine {
   playWaferSlide(panX = 0) {
     if (!this.enabled) return;
     this.init();
-    if (!this.ctx) return;
+    if (!this._canScheduleAudio()) return;
 
     const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
+    const osc = this._trackSource(this.ctx.createOscillator());
     const g = this.ctx.createGain();
     osc.type = 'triangle';
     osc.frequency.setValueAtTime(310, now);
@@ -523,7 +371,7 @@ export class SoundEngine {
     g.gain.setValueAtTime(0.18, now);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
     osc.connect(g);
-    this._connectWithPan(g, panX);
+    this._connectWithPan(g, panX, this.masterGain, osc);
     osc.start(now);
     osc.stop(now + 0.13);
   }
@@ -532,10 +380,10 @@ export class SoundEngine {
   playGripTug(panX = 0) {
     if (!this.enabled) return;
     this.init();
-    if (!this.ctx) return;
+    if (!this._canScheduleAudio()) return;
 
     const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
+    const osc = this._trackSource(this.ctx.createOscillator());
     const gain = this.ctx.createGain();
     osc.type = 'triangle';
     osc.frequency.setValueAtTime(145, now);
@@ -543,7 +391,7 @@ export class SoundEngine {
     gain.gain.setValueAtTime(0.18, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
     osc.connect(gain);
-    this._connectWithPan(gain, panX);
+    this._connectWithPan(gain, panX, this.masterGain, osc);
     osc.start(now);
     osc.stop(now + 0.1);
   }
@@ -552,10 +400,10 @@ export class SoundEngine {
   playConePop(panX = 0) {
     if (!this.enabled) return;
     this.init();
-    if (!this.ctx) return;
+    if (!this._canScheduleAudio()) return;
 
     const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
+    const osc = this._trackSource(this.ctx.createOscillator());
     const gain = this.ctx.createGain();
     osc.type = 'sine';
     osc.frequency.setValueAtTime(190, now);
@@ -563,7 +411,7 @@ export class SoundEngine {
     gain.gain.setValueAtTime(0.24, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
     osc.connect(gain);
-    this._connectWithPan(gain, panX);
+    this._connectWithPan(gain, panX, this.masterGain, osc);
     osc.start(now);
     osc.stop(now + 0.09);
   }
@@ -573,18 +421,20 @@ export class SoundEngine {
   }
 
   playBellNote(bellIdx = 3, intensity = 1.0, panX = 0) {
+    this.syncMusicBeat();
     if (!this.enabled) return;
     this.init();
-    if (!this.ctx) return;
+    if (!this._canScheduleAudio()) return;
 
-    // 7 Tuned Hijaz Brass Bell pitches from left (largest/lowest) to right (smallest/highest)
+    // Same metallic bell voice in the intro, normal play and melody replies.
+    // Only the physical bell's size changes its pitch.
     const bellScale = [0.82, 0.9, 1.0, 1.12, 1.22, 1.35, 1.5];
     const pitchScale = bellScale[Math.abs(bellIdx) % bellScale.length] || 1.0;
 
     const now = this.ctx.currentTime;
-    const freqs = [1180, 1790, 2540, 3420];
+    const freqs=[1180,1790,2540,3420];
     freqs.forEach((f, idx) => {
-      const osc = this.ctx.createOscillator();
+      const osc = this._trackSource(this.ctx.createOscillator());
       const gain = this.ctx.createGain();
       osc.type = idx % 2 === 0 ? 'sine' : 'triangle';
       osc.frequency.setValueAtTime(
@@ -598,77 +448,56 @@ export class SoundEngine {
       gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.56 - idx * 0.08);
 
       osc.connect(gain);
-      this._connectWithPan(gain, panX);
+      this._connectWithPan(gain, panX, this.masterGain, osc);
       osc.start(now);
       osc.stop(now + 0.6);
     });
   }
 
-  // Crisp metallic + wooden counter table rap ("Tak! Tak-tak!") when vendor knocks the paddle on the table
-  playCounterRap(panX = 0, pitchMult = 1.0) {
+  // A short contact transient plus damped resonances, rather than a pitched swoop.
+  _playSurfaceImpact(panX = 0, pitchMult = 1, metal = false) {
     if (!this.enabled) return;
-    this.init();
-    if (!this.ctx) return;
-
-    const now = this.ctx.currentTime;
-    // 1. Low-mid wood/copper table thud
-    const bodyOsc = this.ctx.createOscillator();
-    const bodyGain = this.ctx.createGain();
-    bodyOsc.type = 'triangle';
-    bodyOsc.frequency.setValueAtTime(290 * pitchMult, now);
-    bodyOsc.frequency.exponentialRampToValueAtTime(95 * pitchMult, now + 0.065);
-    bodyGain.gain.setValueAtTime(0.24, now);
-    bodyGain.gain.exponentialRampToValueAtTime(0.001, now + 0.075);
-    bodyOsc.connect(bodyGain);
-    this._connectWithPan(bodyGain, panX);
-    bodyOsc.start(now);
-    bodyOsc.stop(now + 0.08);
-
-    // 2. High steel spatula impact click
-    const clickOsc = this.ctx.createOscillator();
-    const clickGain = this.ctx.createGain();
-    clickOsc.type = 'square';
-    clickOsc.frequency.setValueAtTime(1420 * pitchMult, now);
-    clickOsc.frequency.exponentialRampToValueAtTime(480 * pitchMult, now + 0.032);
-    clickGain.gain.setValueAtTime(0.14, now);
-    clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.038);
-    clickOsc.connect(clickGain);
-    this._connectWithPan(clickGain, panX);
-    clickOsc.start(now);
-    clickOsc.stop(now + 0.042);
+    this.init(); if (!this._canScheduleAudio()) return;
+    const now=this.ctx.currentTime;
+    if (!this.surfaceNoise || this.surfaceNoiseRate!==this.ctx.sampleRate) {
+      this.surfaceNoiseRate=this.ctx.sampleRate;
+      this.surfaceNoise=this.ctx.createBuffer(1,Math.ceil(this.ctx.sampleRate*.026),this.ctx.sampleRate);
+      const samples=this.surfaceNoise.getChannelData(0);
+      for(let i=0;i<samples.length;i++) samples[i]=(Math.random()*2-1)*Math.pow(1-i/samples.length,3);
+    }
+    const noise=this._trackSource(this.ctx.createBufferSource()); noise.buffer=this.surfaceNoise;
+    const filter=this.ctx.createBiquadFilter(); filter.type='bandpass'; filter.frequency.value=metal?3800:1900; filter.Q.value=.65;
+    const strike=this.ctx.createGain(); strike.gain.setValueAtTime(metal?.10:.085,now);strike.gain.exponentialRampToValueAtTime(.0001,now+.025);
+    noise.connect(filter);filter.connect(strike);this._connectWithPan(strike,panX,this.masterGain,noise);noise.start(now);noise.stop(now+.028);
+    const modes=metal?[[710,.055,.13],[1580,.028,.08],[2670,.013,.045]]:[[185,.075,.065],[427,.026,.040],[735,.012,.025]];
+    for(const [hz,level,decay] of modes){
+      const osc=this._trackSource(this.ctx.createOscillator()),gain=this.ctx.createGain();osc.type='sine';
+      osc.frequency.setValueAtTime(hz*pitchMult,now);gain.gain.setValueAtTime(level,now);gain.gain.exponentialRampToValueAtTime(.0001,now+decay);
+      osc.connect(gain);this._connectWithPan(gain,panX,this.masterGain,osc);osc.start(now);osc.stop(now+decay+.01);
+    }
   }
+
+  playCounterRap(panX = 0, pitchMult = 1) { this.syncMusicBeat();this._playSurfaceImpact(panX, pitchMult, false); }
 
   playBellBurst() {
-    this.playBell(1.0, -0.4);
-    setTimeout(() => this.playBell(0.95, 0.4), 110);
-    setTimeout(() => this.playBell(1.15, 0), 230);
-  }
-
-  playPaddleClank(panX = 0) {
     if (!this.enabled) return;
-    this.init();
-    if (!this.ctx) return;
-
-    const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(420, now);
-    osc.frequency.exponentialRampToValueAtTime(155, now + 0.09);
-
-    gain.gain.setValueAtTime(0.16, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
-
-    osc.connect(gain);
-    this._connectWithPan(gain, panX);
-    osc.start(now);
-    osc.stop(now + 0.12);
+    this.init(); if (!this._canScheduleAudio()) return;
+    this.playBell(1.0, -0.4);
+    [[110, 0.95, 0.4], [230, 1.15, 0]].forEach(([delay, intensity, pan]) => {
+      const timer = setTimeout(() => {
+        this.pendingSounds.delete(timer);
+        if (this.enabled) this.playBell(intensity, pan);
+      }, delay);
+      this.pendingSounds.add(timer);
+    });
   }
+
+  playPaddleClank(panX = 0) { this._playSurfaceImpact(panX, 1, true); }
 
   playWhoosh(pitch = 1.0, panX = 0) {
     if (!this.enabled) return;
     this.init();
-    if (!this.ctx) return;
+    if (!this._canScheduleAudio()) return;
 
     const now = this.ctx.currentTime;
     const bufferSize = Math.floor(this.ctx.sampleRate * 0.16);
@@ -678,7 +507,7 @@ export class SoundEngine {
       data[i] = (Math.random() * 2 - 1) * Math.sin((i / bufferSize) * Math.PI);
     }
 
-    const noise = this.ctx.createBufferSource();
+    const noise = this._trackSource(this.ctx.createBufferSource());
     noise.buffer = buffer;
 
     const filter = this.ctx.createBiquadFilter();
@@ -693,17 +522,17 @@ export class SoundEngine {
 
     noise.connect(filter);
     filter.connect(gain);
-    this._connectWithPan(gain, panX);
+    this._connectWithPan(gain, panX, this.masterGain, noise);
     noise.start(now);
   }
 
   playBoop(panX = 0) {
     if (!this.enabled) return;
     this.init();
-    if (!this.ctx) return;
+    if (!this._canScheduleAudio()) return;
 
     const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
+    const osc = this._trackSource(this.ctx.createOscillator());
     const gain = this.ctx.createGain();
     osc.type = 'sine';
     osc.frequency.setValueAtTime(280, now);
@@ -714,7 +543,7 @@ export class SoundEngine {
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
 
     osc.connect(gain);
-    this._connectWithPan(gain, panX);
+    this._connectWithPan(gain, panX, this.masterGain, osc);
     osc.start(now);
     osc.stop(now + 0.19);
   }
@@ -722,19 +551,19 @@ export class SoundEngine {
   playShowBoost(combo = 1, panX = 0) {
     if (!this.enabled) return;
     this.init();
-    if (!this.ctx) return;
+    if (!this._canScheduleAudio()) return;
 
     const now = this.ctx.currentTime;
     const base = 440 + Math.min(combo * 35, 350);
     [base, base * 1.25].forEach((freq, i) => {
-      const osc = this.ctx.createOscillator();
+      const osc = this._trackSource(this.ctx.createOscillator());
       const gain = this.ctx.createGain();
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(freq, now + i * 0.06);
       gain.gain.setValueAtTime(0.13, now + i * 0.06);
       gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.18);
       osc.connect(gain);
-      this._connectWithPan(gain, panX);
+      this._connectWithPan(gain, panX, this.masterGain, osc);
       osc.start(now + i * 0.06);
       osc.stop(now + i * 0.06 + 0.19);
     });
@@ -743,19 +572,20 @@ export class SoundEngine {
   playScoopAdded() {
     if (!this.enabled) return;
     this.init();
-    if (!this.ctx) return;
+    if (!this._canScheduleAudio()) return;
 
     const now = this.ctx.currentTime;
     const notes = [293.66, 311.13, 369.99, 392.0, 440.0];
     notes.forEach((freq, i) => {
-      const osc = this.ctx.createOscillator();
+      const osc = this._trackSource(this.ctx.createOscillator());
       const gain = this.ctx.createGain();
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(freq * 2, now + i * 0.055);
       gain.gain.setValueAtTime(0.14, now + i * 0.055);
       gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.055 + 0.22);
       osc.connect(gain);
-      gain.connect(this.ctx.destination);
+      gain.connect(this.masterGain);
+      this._trackTransientNodes(osc, gain);
       osc.start(now + i * 0.055);
       osc.stop(now + i * 0.055 + 0.24);
     });
@@ -764,18 +594,19 @@ export class SoundEngine {
   playPenalty() {
     if (!this.enabled) return;
     this.init();
-    if (!this.ctx) return;
+    if (!this._canScheduleAudio()) return;
 
     const now = this.ctx.currentTime;
     [235, 190].forEach((freq, i) => {
-      const osc = this.ctx.createOscillator();
+      const osc = this._trackSource(this.ctx.createOscillator());
       const gain = this.ctx.createGain();
       osc.type = 'sawtooth';
       osc.frequency.setValueAtTime(freq, now + i * 0.11);
       gain.gain.setValueAtTime(0.13, now + i * 0.11);
       gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.11 + 0.2);
       osc.connect(gain);
-      gain.connect(this.ctx.destination);
+      gain.connect(this.masterGain);
+      this._trackTransientNodes(osc, gain);
       osc.start(now + i * 0.11);
       osc.stop(now + i * 0.11 + 0.22);
     });
@@ -784,19 +615,20 @@ export class SoundEngine {
   playWinFanfare() {
     if (!this.enabled) return;
     this.init();
-    if (!this.ctx) return;
+    if (!this._canScheduleAudio()) return;
 
     const now = this.ctx.currentTime;
     const notes = [440, 466.16, 554.37, 587.33, 659.25, 880];
     notes.forEach((freq, i) => {
-      const osc = this.ctx.createOscillator();
+      const osc = this._trackSource(this.ctx.createOscillator());
       const gain = this.ctx.createGain();
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(freq, now + i * 0.08);
       gain.gain.setValueAtTime(0.16, now + i * 0.08);
       gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.35);
       osc.connect(gain);
-      gain.connect(this.ctx.destination);
+      gain.connect(this.masterGain);
+      this._trackTransientNodes(osc, gain);
       osc.start(now + i * 0.08);
       osc.stop(now + i * 0.08 + 0.36);
     });
@@ -804,75 +636,100 @@ export class SoundEngine {
     this.playCrowdReaction('cheer');
   }
 
+  _playMusicStep(step, at) {
+    if (!this._canScheduleAudio()) return false;
+    at ??= this.ctx.currentTime;
+    for (const event of musicStepEvents(step)) {
+      const key = `${this.ctx.sampleRate}:${event.kind}:${event.frequency}:${event.peak}`;
+      let buffer = this.musicBuffers.get(key);
+      if (!buffer) {
+        const pcm = synthesizeMusicNote(this.ctx.sampleRate, event);
+        buffer = this.ctx.createBuffer(1, pcm.length, this.ctx.sampleRate);
+        buffer.getChannelData(0).set(pcm);
+        this.musicBuffers.set(key, buffer);
+      }
+      const source = this._trackSource(this.ctx.createBufferSource());
+      const gain = this.ctx.createGain();
+      source.buffer = buffer; source.connect(gain);
+      this._connectWithPan(gain, event.pan, this.musicGain, source);
+      this.musicSources.set(source, gain);
+      source.addEventListener('ended', () => this.musicSources.delete(source), {once:true});
+      source.start(at); source.stop(at + event.duration + .01);
+    }
+  }
+
+  /** The song owns the grid; gameplay samples its audio transport. */
+  bindRhythmClock(clock) {
+    const resume=this.musicPlaying;this.stopMusic();
+    this.rhythmClock=clock;
+    this.musicTransport=this.ctx&&clock?.bindTimeSource?new MusicTransport(clock,()=>this.ctx):null;
+    if(resume)this.startMusic();
+  }
+
+  playRhythmNotes(notes=[]) {
+    if(this.musicTransport)return; // Already scheduled ahead on the audio clock.
+    if(!this.musicPlaying||!this.enabled||!this._canScheduleAudio())return;
+    for(const note of notes)this._playMusicStep(note.step);
+  }
+
+  syncMusicBeat() {
+    // Legacy effect hooks deliberately cannot rephase the accompaniment.
+  }
+
+  setBackgroundPaused(paused){
+    if(paused===this._backgroundPaused)return;
+    this._backgroundPaused=paused;this.musicTransport?.setPaused(paused);
+    if(paused){this._backgroundMusicRequested=this._musicRequested||this.musicPlaying;this.stopMusic();}
+    else if(this._backgroundMusicRequested){this._backgroundMusicRequested=false;this.startMusic();}
+  }
+
   startMusic() {
+    if(this.enabled)this._musicRequested=true;
     if (!this.enabled || this.musicPlaying) return;
+    this.musicPlaying=true;
     this.init();
-    if (!this.ctx) return;
-    this.musicPlaying = true;
+    if (!this.ctx) {this.musicPlaying=false;return;}
     this.beatStep = 0;
-
-    const hijaz = [293.66, 311.13, 369.99, 392.0, 440.0, 466.16, 523.25, 587.33];
-    const melodyPattern = [0, 2, 3, 4, 3, 2, 1, 0, 4, 5, 4, 3, 2, 3, 2, 0];
-
+    if(!this.musicTransport&&this.rhythmClock?.bindTimeSource)this.musicTransport=new MusicTransport(this.rhythmClock,()=>this.ctx);
+    if(this.musicTransport){
+      this.musicTransport.resume();
+      const tick=()=>{
+        if(!this.musicPlaying||!this.enabled)return;
+        if(this._canScheduleAudio())this.musicTransport.schedule((step,at)=>this._playMusicStep(step,at));
+        this.musicTimer=setTimeout(tick,25);
+      };
+      tick();return;
+    }
+    if(this.rhythmClock)return;
     const tick = () => {
       if (!this.musicPlaying || !this.enabled || !this.ctx) return;
-      const now = this.ctx.currentTime;
-      const step = this.beatStep % 8;
-
-      if (step === 0 || step === 4) {
-        const osc = this.ctx.createOscillator();
-        const g = this.ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(112, now);
-        osc.frequency.exponentialRampToValueAtTime(56, now + 0.11);
-        g.gain.setValueAtTime(0.075, now);
-        g.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
-        osc.connect(g);
-        g.connect(this.ctx.destination);
-        osc.start(now);
-        osc.stop(now + 0.14);
-      } else if (step === 2 || step === 6 || step === 7) {
-        const osc = this.ctx.createOscillator();
-        const g = this.ctx.createGain();
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(330, now);
-        osc.frequency.exponentialRampToValueAtTime(185, now + 0.05);
-        g.gain.setValueAtTime(0.04, now);
-        g.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
-        osc.connect(g);
-        g.connect(this.ctx.destination);
-        osc.start(now);
-        osc.stop(now + 0.07);
+      if (!this._canScheduleAudio()) {
+        if (this.ctx.state === 'closed') { this.stopMusic(); return; }
+        // Keep the music request, not missed notes. No source or beat advances.
+        this.musicTimer = setTimeout(tick, 200);
+        return;
       }
-
-      if (step % 2 === 0 || step === 5) {
-        const noteIdx = melodyPattern[this.beatStep % melodyPattern.length];
-        const freq = hijaz[noteIdx];
-        const osc = this.ctx.createOscillator();
-        const g = this.ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, now);
-        g.gain.setValueAtTime(0.028, now);
-        g.gain.exponentialRampToValueAtTime(0.0008, now + 0.19);
-        osc.connect(g);
-        g.connect(this.ctx.destination);
-        osc.start(now);
-        osc.stop(now + 0.2);
-      }
-
+      this._playMusicStep(this.beatStep);
+      const seconds = musicStepSeconds(this.beatStep, this.tempoMultiplier);
       this.beatStep++;
-      const intervalMs = Math.max(130, 220 / this.tempoMultiplier);
-      this.musicTimer = setTimeout(tick, intervalMs);
+      this.musicTimer = setTimeout(tick, seconds * 1000);
     };
-
     tick();
   }
 
   stopMusic() {
+    this._musicRequested=false;
     this.musicPlaying = false;
-    if (this.musicTimer) {
-      clearTimeout(this.musicTimer);
-      this.musicTimer = null;
+    if (this.musicTimer !== null) { clearTimeout(this.musicTimer); this.musicTimer = null; }
+    // Only accompaniment tails are stopped; gameplay cues and the vendor remain.
+    const now = this.ctx?.currentTime || 0;
+    for (const [source, gain] of this.musicSources) {
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.linearRampToValueAtTime(0, now + .018);
+      try { source.stop(now + .02); } catch { /* Already ended. */ }
     }
+    this.musicSources.clear();
   }
+
 }

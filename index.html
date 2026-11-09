@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-title" content="Maraş Dondurma" />
 
   <title>Maraş Dondurmacısı 3D Şov — Turkish Ice Cream Challenge</title>
-  <meta name="description" content="3B Birinci Şahıs (POV) Kahramanmaraş Dondurmacısı Şovu! 10 seviye, 15 gerçekçi Maraş dondurma hilesi, çift külah, kalıptan 5 kiloluk dev dondurma ve havada takla şovu!" />
+  <meta name="description" content="Maraş dondurmacısının gösterilerine el hareketleriyle karşılık ver. Altı mekânda numaraları öğren, tezgâhlardaki kültür ayrıntılarını keşfet." />
 
   <!-- Open Graph / WhatsApp / iMessage Rich Link Preview -->
   <meta property="og:type" content="website" />
@@ -28,18 +28,22 @@
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
   <link rel="stylesheet" href="/src/style.css" />
+  <link rel="stylesheet" href="/src/interface.css" />
 </head>
 <body>
   <div id="game-container" class="gesture-surface" aria-label="3D Game View">
     <canvas id="game-canvas"></canvas>
     <canvas id="trail-canvas" aria-hidden="true"></canvas>
+<button type="button" id="btn-lang" class="lang-mini-btn" title="Language &amp; Settings">
+          🇹🇷 TR ⚙️
+        </button>
 
     <!-- Sleek Top Pill with Integrated Routine Progress, Patience Hearts & Dynamic Scoops -->
     <header class="hud-top">
       <div class="top-minimal-pill">
-        <button type="button" id="btn-switch-usta" class="usta-badge-btn" title="Stage &amp; Master">
-          👨‍🍳 <span id="hud-level">1 • Çırak Kadir</span> ↻
-        </button>
+        <div id="btn-switch-usta" class="usta-badge-btn" aria-label="Mekân ve usta">
+          <span id="hud-level">İstiklal · Çırak Kadir</span>
+        </div>
 
         <div class="hearts-strip" id="hud-hearts" aria-label="Patience Hearts">
           <span class="h-icon active">❤️</span>
@@ -52,15 +56,21 @@
           <span class="s-dot" id="dot-2" title="2"></span>
           <span class="s-dot" id="dot-3" title="3"></span>
           <span class="s-dot" id="dot-4" title="4"></span>
+          <span class="s-dot" id="dot-5" title="5"></span>
+          <span class="s-dot" id="dot-6" title="6"></span>
+          <span class="s-dot" id="dot-7" title="7"></span>
+          <span class="s-dot" id="dot-8" title="8"></span>
+          <span class="s-dot" id="dot-9" title="9"></span>
+          <span class="s-dot" id="dot-10" title="10"></span>
+          <span class="s-dot" id="dot-11" title="11"></span>
+          <span class="s-dot" id="dot-12" title="12"></span>
           <span class="s-dot dot-crown" id="dot-crown" title="Pistachio">★</span>
         </div>
 
+        <span id="hud-scoop-count" class="scoop-summary"></span>
         <div class="score-minimal" id="hud-score">0</div>
 
-        <button type="button" id="btn-tricks-top" class="mini-audio-btn" title="15 Tricks">🎪</button>
-        <button type="button" id="btn-lang" class="lang-mini-btn" title="Language &amp; Settings">
-          🇹🇷 TR ⚙️
-        </button>
+
         <button type="button" id="btn-audio" class="mini-audio-btn" aria-label="Sound">🔊</button>
         <button type="button" id="btn-fullscreen-top" class="mini-audio-btn" aria-label="Fullscreen" title="Fullscreen">⛶</button>
 
@@ -86,93 +96,35 @@
       </div>
     </footer>
 
-    <!-- Visual Start Card with Non-Textual Order Picker (Scoop Count + 6 Flavors) & 10-Stage Selector -->
-    <div id="start-overlay" class="start-sheet-backdrop">
-      <div class="start-sheet-card">
-        <div class="sheet-header-row">
-          <h1 class="sheet-title" id="start-title">🍦 Maraş Dondurma</h1>
-          <div class="rank-pill" id="player-rank-badge">🏅 Acemi Turist • ⭐ 0/30</div>
-        </div>
-
-        <!-- Non-Textual Visual Order Picker: How Many Scoops (2/3/4) & Which Flavors? -->
-        <div class="visual-order-bar" aria-label="Visual Ice Cream Order">
-          <!-- Scoop Count Icons (No Text Needed) -->
-          <div class="scoop-count-picker" role="group" aria-label="Scoop Count">
-            <button type="button" class="scoop-cnt-btn" data-scoops="2" title="2 Scoops">
-              <span class="sc-cones">🍦</span>
-              <span class="sc-dots"><i class="d"></i><i class="d"></i></span>
-              <strong class="sc-num">2</strong>
-            </button>
-            <button type="button" class="scoop-cnt-btn active" data-scoops="3" title="3 Scoops">
-              <span class="sc-cones">🍦</span>
-              <span class="sc-dots"><i class="d"></i><i class="d"></i><i class="d"></i></span>
-              <strong class="sc-num">3</strong>
-            </button>
-            <button type="button" class="scoop-cnt-btn" data-scoops="4" title="4 Scoops">
-              <span class="sc-cones">🍦</span>
-              <span class="sc-dots"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i></span>
-              <strong class="sc-num">4</strong>
-            </button>
-          </div>
-
-          <!-- Selected Cone Stack Visual Preview -->
-          <div class="selected-cone-preview" id="selected-cone-preview" title="Selected Flavors">
-            <div class="preview-scoops" id="preview-scoops-stack"></div>
-            <span class="preview-wafer">🔻</span>
-          </div>
-
-          <!-- 6 Copper Tub Flavor Color Orbs + Random Dice -->
-          <div class="flavor-orb-picker" id="flavor-orb-picker" role="group" aria-label="Flavor Colors">
-            <button type="button" class="flavor-orb-btn" data-flavor="0" style="--orb-bg:#fff8e7; --orb-border:#f5b942;" title="Vanilla">🍦</button>
-            <button type="button" class="flavor-orb-btn" data-flavor="1" style="--orb-bg:#76c84d; --orb-border:#4ade80;" title="Pistachio">💚</button>
-            <button type="button" class="flavor-orb-btn" data-flavor="2" style="--orb-bg:#7f4224; --orb-border:#d97706;" title="Chocolate">🍫</button>
-            <button type="button" class="flavor-orb-btn" data-flavor="3" style="--orb-bg:#e63973; --orb-border:#fb7185;" title="Mulberry">🫐</button>
-            <button type="button" class="flavor-orb-btn" data-flavor="4" style="--orb-bg:#f4a236; --orb-border:#fde047;" title="Honey Almond">🍯</button>
-            <button type="button" class="flavor-orb-btn" data-flavor="5" style="--orb-bg:#56cfe1; --orb-border:#67e8f9;" title="Mastic">💎</button>
-            <button type="button" class="flavor-orb-btn dice-orb" id="btn-random-flavors" title="Randomize">🎲</button>
-          </div>
-        </div>
-
-        <!-- 10-Stage Campaign Progression Grid -->
-        <div class="stage-grid" id="stage-selector" role="group" aria-label="10 Stages"></div>
-
-        <div class="legend-pills" aria-hidden="true">
-          <span class="leg-pill leg-green" id="leg-reach">🟢 🤚⬆️ Uzat</span>
-          <span class="leg-pill leg-red" id="leg-pull">🔴 🤚⬇️ Çek</span>
-          <span class="leg-pill leg-amber" id="leg-flick">✂️ 🤚↔️ Kes / Savur</span>
-        </div>
-
-        <div class="start-actions-row">
-          <button type="button" id="btn-start-tutorial" class="secondary-pill-btn compact-btn">
-            🎓 10sn Eğitim
-          </button>
-          <button type="button" id="btn-open-tricks" class="secondary-pill-btn compact-btn">
-            🎪 15 Hile
-          </button>
-          <button type="button" id="btn-start-game" class="play-giant-btn">
-            ▶ ŞOVA BAŞLA
-          </button>
-        </div>
-      </div>
+    <div id="start-overlay" class="start-sheet-backdrop" aria-hidden="true">
+      <h1 id="start-title" hidden>🍦 Maraş Dondurma</h1>
+      <span id="home-venue-label" hidden></span><p id="home-story-line" hidden></p>
+      <span id="leg-reach" hidden></span><span id="leg-pull" hidden></span><span id="leg-flick" hidden></span>
     </div>
   </div>
 
-  <!-- 15 Tricks Catalog Modal (<dialog>) -->
-  <dialog id="dialog-tricks" closedby="any" aria-labelledby="tricks-modal-title">
-    <div class="modal-card tricks-modal-card">
-      <div class="result-badge" id="tricks-count-badge">🎪 2 / 15</div>
-      <h2 id="tricks-modal-title" class="result-title">🎪 Maraş Dondurmacısı Hile Listesi (15 Hile)</h2>
-      <div class="tricks-catalog-list" id="tricks-catalog-list"></div>
-      <button type="button" id="btn-close-tricks" class="play-giant-btn">
-        Tamam
-      </button>
-    </div>
-  </dialog>
+  <section id="discovery-ui" class="discovery-ui" hidden aria-label="Tezgâhı keşfet">
+    <header class="discovery-toolbar"><div><strong id="discovery-place"></strong></div><button id="discovery-exit" class="panel-dismiss" type="button" aria-label="Tezgâha dön">×</button></header>
+    <nav class="discovery-navigation" aria-label="Raflar"><button id="discovery-previous" type="button" aria-label="Önceki raf">‹</button><span id="discovery-section"></span><button id="discovery-next" type="button" aria-label="Sonraki raf">›</button></nav>
+    <div id="discovery-hotspots" class="discovery-hotspots"></div>
+    <p id="discovery-hint" class="discovery-hint"></p>
+    <article id="discovery-card" class="discovery-card" hidden aria-labelledby="discovery-name">
+      <div class="discovery-card-top"><span id="discovery-status"></span><button id="discovery-back" type="button">Rafa bırak</button></div>
+      <h2 id="discovery-name" tabindex="-1"></h2>
+      <small id="discovery-fact-label"></small><p id="discovery-fact"></p>
+      <small id="discovery-memory-label"></small><p id="discovery-memory"></p>
+      <footer id="discovery-sources"></footer>
+    </article>
+  </section>
 
   <!-- Language & Settings Modal (<dialog>) -->
   <dialog id="dialog-settings" closedby="any" aria-labelledby="settings-title">
     <div class="modal-card settings-modal-card">
       <h2 id="settings-title" class="result-title">Dil ve Ayarlar</h2>
+      <div class="menu-options-row settings-shortcuts">
+        <button type="button" id="btn-stages-panel" class="menu-option-button" aria-haspopup="dialog"><span class="menu-symbol" aria-hidden="true">◇</span><span data-ui-label="stages">Mekânlar</span><span aria-hidden="true">›</span></button>
+        <button type="button" id="btn-discover" class="menu-option-button"><span class="menu-symbol" aria-hidden="true">⌕</span><span id="discovery-home-label">Etrafa bak</span></button>
+      </div>
 
       <div class="lang-grid" id="lang-grid" role="group" aria-label="Languages">
         <button type="button" class="lang-card-btn active" data-lang="tr">
@@ -225,6 +177,7 @@
           🔒 Privacy Policy • v2.0.0
         </a>
       </div>
+      <div class="start-actions-row options-start-action"><button type="button" id="btn-start-game" class="play-giant-btn">▶ ŞOVA BAŞLA</button></div>
     </div>
   </dialog>
 
@@ -260,6 +213,7 @@
       <h2 id="result-title" class="result-title">DONDURMAYI KAPTIN!</h2>
       <p id="result-desc" class="result-desc">Bol fıstıklı Maraş dondurması senin!</p>
 
+      <p id="result-story" class="result-story"></p>
       <div class="stars-row" id="result-stars">⭐⭐⭐</div>
 
       <div class="stats-row-clean">
@@ -282,6 +236,21 @@
     </div>
   </dialog>
 
+  <!-- Presentation-only panels; existing order and progression IDs stay intact. -->
+  <dialog id="dialog-stages" aria-labelledby="stages-panel-title">
+    <div class="modal-card interface-panel">
+      <div class="panel-heading"><h2 id="stages-panel-title" data-ui-label="stages">Mekânlar</h2><button type="button" class="panel-dismiss" data-dismiss="dialog-stages" aria-label="Kapat">×</button></div>
+          <div class="rank-pill" id="player-rank-badge">🏅 Acemi Turist • ⭐ 0/30</div>
+        <!-- 10-Stage Campaign Progression Grid -->
+        <div class="venue-grid" id="stage-selector" role="group" aria-label="Mekânlar"></div>
+        <div class="stage-story"><strong id="stage-story-title"></strong><p id="stage-story-entry"></p><div><small id="story-progress"></small><button type="button" id="btn-open-story" aria-haspopup="dialog">Defteri aç</button></div></div>
+
+      <button type="button" class="play-giant-btn" data-dismiss="dialog-stages" data-ui-label="done">Tamam</button>
+    </div>
+  </dialog>
+
+  <dialog id="dialog-story" aria-labelledby="story-dialog-title"><div class="modal-card interface-panel"><div class="panel-heading"><h2 id="story-dialog-title">Kartpostalın hikâyesi</h2><button type="button" class="panel-dismiss" data-dismiss="dialog-story" aria-label="Kapat">×</button></div><div id="story-book"></div></div></dialog>
   <script type="module" src="/src/main.js"></script>
+  <script type="module" src="/src/interface.js"></script>
 </body>
 </html>

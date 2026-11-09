@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {createDeformingTube,updateDeformingTube} from './deforming-tube.js';
 
 /**
  * 2nd-Order Underdamped Spring-Damper Solver for 3D Vectors
@@ -59,6 +60,11 @@ export class StretchyDondurmaStrand {
     this.active = false;
     this.multiStrandMode = false;
     this.twistPhase = 0;
+    this.handPressure = null;
+    this.pressureOffset = new THREE.Vector3();
+    this.pressureZero = new THREE.Vector3();
+    this.pressureAt = .5;
+    this.appliedPressure = Array.from({ length: nodeCount }, () => new THREE.Vector3());
 
     for (let i = 0; i < nodeCount; i++) {
       this.nodes.push(new THREE.Vector3(0, 1.1, 0));
@@ -73,7 +79,7 @@ export class StretchyDondurmaStrand {
 
     this.curve = new THREE.CatmullRomCurve3(this.nodes);
     this.mesh = new THREE.Mesh(
-      new THREE.TubeGeometry(this.curve, 24, 0.038, 10, false),
+      createDeformingTube(this.curve, 24, 0.038, 10),
       this.material
     );
     this.mesh.castShadow = true;
@@ -82,9 +88,11 @@ export class StretchyDondurmaStrand {
 
     // Secondary satellite strands for Giant 5-Kilo Block extraction
     this.subMeshes = [];
+    this.subNodes=Array.from({length:2},()=>this.nodes.map(node=>node.clone()));
+    this.subCurves=this.subNodes.map(nodes=>new THREE.CatmullRomCurve3(nodes));
     for (let s = 0; s < 2; s++) {
       const sm = new THREE.Mesh(
-        new THREE.TubeGeometry(this.curve, 16, 0.018, 6, false),
+        createDeformingTube(this.subCurves[s], 16, 0.018, 6),
         this.material
       );
       sm.visible = false;
@@ -123,6 +131,18 @@ export class StretchyDondurmaStrand {
     this.subMeshes.forEach((sm) => {
       sm.visible = false;
     });
+    this.handPressure = null;
+    this.pressureOffset.set(0, 0, 0);
+    this.appliedPressure.forEach(offset => offset.set(0, 0, 0));
+  }
+
+  /** A hand bows the same visible rope; endpoints stay in their real sockets. */
+  setHandPressure(contact) {
+    if (contact) this.pressureAt = THREE.MathUtils.clamp(contact.t ?? .5, .12, .88);
+    this.handPressure = contact ? {
+      t: THREE.MathUtils.clamp(contact.t ?? .5, .12, .88),
+      offset: contact.offset.clone().clampLength(0, .14),
+    } : null;
   }
 
   update(dt, startAnchor, endAnchor, thicknessScale = 1.0, swirlAmount = 0) {
@@ -133,6 +153,14 @@ export class StretchyDondurmaStrand {
     const gravity = -5.8;
     const totalDist = startAnchor.distanceTo(endAnchor);
     const segLen = Math.max(0.018, (totalDist * 0.88) / (this.nodeCount - 1));
+
+    // Remove last frame's authored pressure before integrating, so holding a
+    // finger still cannot add energy or inflate the strand indefinitely.
+    for (let i = 1; i < this.nodeCount - 1; i++) {
+      this.nodes[i].sub(this.appliedPressure[i]);
+      this.prevNodes[i].sub(this.appliedPressure[i]);
+      this.appliedPressure[i].set(0, 0, 0);
+    }
 
     // Verlet integration for interior nodes with elastic whip & swirl
     for (let i = 1; i < this.nodeCount - 1; i++) {
@@ -185,36 +213,38 @@ export class StretchyDondurmaStrand {
       }
     }
 
+    const pressureTarget = this.handPressure?.offset || this.pressureZero;
+    this.pressureOffset.lerp(pressureTarget, 1 - Math.exp(-dt * 18));
+    const pressureAt = this.pressureAt;
+    for (let i = 1; i < this.nodeCount - 1; i++) {
+      const t = i / (this.nodeCount - 1);
+      const weight = Math.exp(-(((t - pressureAt) / .19) ** 2)) * Math.sin(t * Math.PI);
+      this.appliedPressure[i].copy(this.pressureOffset).multiplyScalar(weight);
+      this.nodes[i].add(this.appliedPressure[i]);
+      this.prevNodes[i].add(this.appliedPressure[i]);
+    }
+    let bowedLength = 0;
+    for (let i = 1; i < this.nodeCount; i++) bowedLength += this.nodes[i].distanceTo(this.nodes[i - 1]);
     const radius = Math.max(
       0.015,
-      (0.044 * thicknessScale) / Math.max(1, totalDist * 1.15)
+      (0.044 * thicknessScale) / (Math.max(1, bowedLength * 1.15) * (1 + this.pressureOffset.length() * 3))
     );
-    this.mesh.geometry.dispose();
-    this.curve = new THREE.CatmullRomCurve3(this.nodes);
-    this.mesh.geometry = new THREE.TubeGeometry(this.curve, 24, radius, 10, false);
+    updateDeformingTube(this.mesh.geometry,this.curve,radius);
 
     if (this.multiStrandMode) {
       this.subMeshes.forEach((sm, idx) => {
         sm.visible = true;
         const sign = idx === 0 ? -1 : 1;
-        const subPoints = this.nodes.map((pt, ni) => {
+        this.nodes.forEach((pt, ni) => {
           const env = Math.sin((ni / (this.nodeCount - 1)) * Math.PI);
           const angle = this.twistPhase * 1.3 + ni * 0.45 + idx * Math.PI;
-          return new THREE.Vector3(
+          this.subNodes[idx][ni].set(
             pt.x + (sign * 0.055 + Math.cos(angle) * 0.025) * env,
             pt.y - 0.025 * env,
             pt.z + Math.sin(angle) * 0.025 * env
           );
         });
-        sm.geometry.dispose();
-        const subCurve = new THREE.CatmullRomCurve3(subPoints);
-        sm.geometry = new THREE.TubeGeometry(
-          subCurve,
-          16,
-          radius * 0.52,
-          6,
-          false
-        );
+        updateDeformingTube(sm.geometry,this.subCurves[idx],radius*.52);
       });
     } else {
       this.subMeshes.forEach((sm) => {
@@ -282,7 +312,10 @@ export class RigidBodyManager {
         if (b.t >= 1) {
           this.scene.remove(b.mesh);
           this.bodies.splice(i, 1);
-          if (b.onLandCallback) b.onLandCallback();
+          // This temporary scoop owns its buffers; thrown prop clones do not.
+          b.mesh.geometry.dispose();b.mesh.material.dispose();
+          const onLand=b.onLandCallback;b.onLandCallback=null;b.getTargetPosFn=null;
+          if (onLand) onLand();
           continue;
         }
         const target = b.getTargetPosFn();

@@ -1,0 +1,68 @@
+<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sekiz ve havada servis — geliştirme</title>
+<style>body{margin:0;background:#180d08;color:#ffe9c3;font:12px system-ui}canvas{position:fixed;inset:0;touch-action:none}#guide{pointer-events:none}aside{position:fixed;bottom:8px;left:8px;right:8px;padding:8px;background:#21170ff0;border:1px solid #b18e52;border-radius:12px;display:flex;gap:5px;flex-wrap:wrap;align-items:center}select,button,input{font:inherit;padding:6px}input[type=number]{width:42px}output{width:100%;white-space:pre-wrap}</style>
+<canvas id="scene"></canvas><canvas id="guide"></canvas><aside><select id="show" aria-label="Gösteri"><option value="FIGURE_EIGHT_WEAVE">Sekizi tamamla</option><option value="EMPTY_WAFER_TOSS">Havadaki boş külah</option><option value="SCOOP_AIR_CATCH">Topları külahla yakala</option></select><label>Top <input id="count" aria-label="Top" type="number" min="1" max="8" value="2"></label><select id="mode" aria-label="Girdi"><option value="auto">Tam hareket</option><option value="manual">Elle oyna</option><option value="half">Tek halka</option><option value="still">Sabit el</option><option value="jitter">Küçük titreşim</option></select><label><input id="touch" type="checkbox" checked>Dokunmatik</label><button id="reset">Başa al</button><button id="play">Oynat</button><button id="pause">Durdur</button><button id="next">Sonraki adım</button><button id="all">Tamamla</button><output id="metrics"></output></aside>
+<script type="module">
+import * as THREE from 'three';import{GameWorld}from'/src/world.js';import{TrickDirector}from'/src/tricks.js';import{SoundEngine}from'/src/audio.js';import{RoutinePreviewDriver}from'/tests/routines-driver.js';import{RESEARCHED_SERVICE_IDS,researchedServiceCue}from'/src/researched-service.js';import{TouchArmView,drawPointerTip}from'/src/touch-arm-view.js';import{poleGripRenderTarget}from'/src/cone-grip.js';import{getVenueForStage}from'/src/venues.js';import{drawFigureEightGuide}from'/src/gesture-guide-view.js';import{TouchReach}from'/src/touch-reach.js';import{figureEightWorldPoint}from'/src/figure-eight.js';
+const $=id=>document.getElementById(id),V=(x=0,y=0,z=0)=>new THREE.Vector3(x,y,z),noop=()=>{};
+const world=new GameWorld($('scene')),arm=new TouchArmView(world),sound=new SoundEngine();sound.setMuted(true);
+const save={lang:'tr',data:{unlockedStage:30,preferredScoopCount:2,preferredFlavors:[0,2,1,3,4,5,0,2],tutorialCompleted:true},hapticsEnabled:false,t:k=>k,discoverTrick:noop,setOrderPreferences:noop,recordStageResult:noop,getStageBestScore:()=>0,getUstaName:()=>'',getTrickInfo:id=>({name:id})};
+let running=false,time=0,previous=performance.now(),result='';
+const d=new TrickDirector(world,sound,save,{onRoundEnd:data=>{result=data.outcomeType;running=false;}});
+class Driver extends RoutinePreviewDriver{
+ update(dt){
+  const d=this.director,mode=$('mode').value;
+  if(mode==='manual')return this.input;
+  if(mode==='auto'&&d.currentMechanic==='FIGURE_EIGHT_WEAVE')return super.update(dt);
+  this.time+=dt;if(!d.active||d.roundEnded){this.release();return this.input;}
+  if(mode==='still'||mode==='jitter'){
+   this.begin('held-static');this.move(V(mode==='jitter'?Math.sin(this.time*80)*.003:0,1.22,.26),dt);this.mode=mode;return this.input;
+  }
+  const key=`${d.currentMechanic}:${d.subStep}:${d.researchedService?.attempt||0}`;
+  if(d.currentMechanic==='FIGURE_EIGHT_WEAVE'){
+   this.begin(key);const p=Math.min(.5,(this.time-this.actionStart)/1.8),f=d.figureEight.frame;
+   this.move(figureEightWorldPoint(f,p),dt);this.input.aimNormX=(f.center.x+Math.sin(p*Math.PI*2)*f.rx)/f.viewport.width*2-1;this.input.aimNormY=1-(f.center.y-Math.sin(p*Math.PI*4)*f.ry)/f.viewport.height*2;return this.input;
+  }
+  if(d.currentMechanic==='FINAL_PISTACHIO_CATCH'){
+   if(d.subStep===0)this.reach(key,d.coneWorldPos,dt);
+   else{this.begin(key);this.move(V(.04,this.time-this.actionStart<.10?1.24:1.04,.26),dt);this.mode='pull';}
+  }else if(RESEARCHED_SERVICE_IDS.includes(d.currentMechanic)){
+   const cue=researchedServiceCue(d);
+   if(cue.kind!=='reach')this.release();
+   else if(cue.screen&&this.touchEnabled)this.reachScreen(key,cue.screen,cue.viewport,dt);
+   else{this.reach(key,cue.target,dt);if(cue.screen){this.input.aimNormX=cue.screen.x/cue.viewport.width*2-1;this.input.aimNormY=1-cue.screen.y/cue.viewport.height*2;}}
+  }
+  return this.input;
+ }
+}
+const driver=new Driver(d,world),manualReach=new TouchReach(world),ctx=$('guide').getContext('2d');
+function reset(){arm.setActive(false);manualReach.end();running=false;result='';time=0;const count=Math.max(1,Math.min(8,+$('count').value||2)),stage=Math.max(9,count>4?(count-3)*5+1:9);
+ world.resetTransientPresentation();world.setVenue(getVenueForStage(stage));d.setOrderConfig(count,[0,2,1,3,4,5,0,2],stage);d.resetRound(stage,false);d.config={...d.config,speedMult:1};d.routine=[$('show').value,'FINAL_PISTACHIO_CATCH'];d.scoopCount=count;world.updateIceCreamScoops(count,false);driver.setTouchMode($('touch').checked);d.startRound();metrics();}
+function step(){if(d.roundEnded)return;const dt=1/60,s=driver.update(dt);time+=dt;const carrying=d.heldItem||world.conePivot.parent===world.heldSocket;
+ const target=s.isReaching?s.intentWorldPos.clone():carrying?s.handWorldPos.clone():V(.22,1.04,.64);
+ if(d.isGraspingPaddleCone)target.copy(d.coneWorldPos).add(V(0,-.03,.04));
+ const direct=(s.isPointerDown||s.isMouseHover)&&!d.isGraspingPaddleCone;if(direct)s.handWorldPos.copy(target);else s.handWorldPos.lerp(target,.3);
+ s.grabCurl=(carrying||d.isGraspingPaddleCone)?.98:.25;world.setPlayerConeGrip(d.isGraspingPaddleCone);
+ const rendered=d.isGraspingPaddleCone&&world.conePivot.parent===world.paddleGroup?poleGripRenderTarget(world,s.handWorldPos,d.coneWorldPos):s.handWorldPos;
+ world.updateTouristHand(rendered,s.grabCurl,0,dt,direct);d.update(dt,time,s);world.updateEnvironmentAnimations(time,dt,0,0,null,0);arm.update(direct,s.pointerX,s.pointerY,innerWidth,innerHeight);if(d.roundEnded)running=false;}
+function manual(event){if($('mode').value!=='manual')return;event.preventDefault();const s=driver.input,rect=$('scene').getBoundingClientRect();
+ if(!manualReach.camera||manualReach.width!==rect.width||manualReach.height!==rect.height)manualReach.begin(world.camera,rect.width,rect.height);
+ if(event.type==='pointerdown'){s.pointerEpoch++;$('scene').setPointerCapture(event.pointerId);}s.pointerType=$('touch').checked?'touch':'mouse';
+ s.isPointerDown=event.type==='pointerdown'||Boolean(event.buttons);s.isMouseHover=s.pointerType==='mouse';s.isReaching=s.isPointerDown||s.isMouseHover;
+ const ox=s.normX,oy=s.normY;s.pointerX=event.clientX;s.pointerY=event.clientY;s.normX=event.clientX/rect.width*2-1;s.normY=1-event.clientY/rect.height*2;
+ s.intentWorldPos.copy(manualReach.update(event.clientX,event.clientY));s.aimNormX=manualReach.aimX;s.aimNormY=manualReach.aimY;s.isMoving=Math.hypot(s.normX-ox,s.normY-oy)>.001;s.vx=(s.normX-ox)*60;s.speed=Math.abs(s.vx);running=true;
+ if(event.type==='pointerup'||event.type==='pointercancel'){s.isPointerDown=false;s.isReaching=s.isMouseHover;if(event.type==='pointercancel')s.cancelEpoch++;manualReach.end();}
+}
+for(const kind of['pointerdown','pointermove','pointerup','pointercancel'])$('scene').addEventListener(kind,manual,{passive:false});
+const parent=o=>o.parent===world.heldSocket?'müşteri':o.parent===world.lArmRig.handGroup?'usta eli':o.parent===world.conePivot?'külah':o.parent===world.paddleGroup?'çubuk':o.parent===world.scene?'havada':'diğer';
+function metrics(){$('metrics').textContent=`${d.currentMechanic} · adım ${d.subStep} · ${time.toFixed(2)}sn · ${d.scoopCount}/${d.targetScoopCount} top\nSekiz: ${Math.round((d.figureEight?.progress||0)*100)}% · Puan ${d.score} · Hak ${d.hearts}\nKülah: ${parent(world.conePivot)} · dış: ${parent(world.outerConeGroup)} · toplar: ${parent(world.scoopStackGroup)}\n${result||(d.roundEnded?'Sonuç bekleniyor':'Kontrol hazır')}`;}
+function guides(){const g=d.getGestureGuide();$('guide').width=innerWidth;$('guide').height=innerHeight;ctx.clearRect(0,0,innerWidth,innerHeight);drawFigureEightGuide(ctx,g.figureEight);
+ for(const ring of g.rings){ctx.beginPath();ctx.arc(ring.x,ring.y,ring.radius,0,Math.PI*2);ctx.strokeStyle='#76efb8';ctx.lineWidth=2;ctx.stroke();}
+ if(g.badgeText){ctx.fillStyle='#21170fe8';ctx.fillRect(innerWidth*.5-115,72,230,30);ctx.fillStyle='#fff0cd';ctx.font='bold 12px system-ui';ctx.textAlign='center';ctx.fillText(g.badgeText,innerWidth*.5,92);}
+ drawPointerTip(ctx,arm);
+}
+$('reset').onclick=reset;$('show').onchange=reset;$('count').onchange=reset;$('touch').onchange=reset;$('mode').onchange=reset;$('play').onclick=()=>running=true;$('pause').onclick=()=>running=false;
+$('next').onclick=()=>{running=false;const key=`${d.currentMechanic}:${d.subStep}`;for(let i=0;i<900&&!d.roundEnded&&key===`${d.currentMechanic}:${d.subStep}`;i++)step();metrics();};$('all').onclick=()=>{running=false;for(let i=0;i<2400&&!d.roundEnded;i++)step();metrics();};
+window.addEventListener('resize',()=>{driver.input.cancelEpoch++;manualReach.end();});
+const params=new URLSearchParams(location.search);if(params.has('show'))$('show').value=params.get('show');if(params.has('scoops'))$('count').value=params.get('scoops');reset();
+function frame(now){requestAnimationFrame(frame);if(running){const count=Math.min(6,Math.max(1,Math.round((now-previous)/1000*60)));for(let i=0;i<count;i++)step();}previous=now;world.render();guides();metrics();}requestAnimationFrame(frame);
+</script></html>

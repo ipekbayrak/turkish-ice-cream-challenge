@@ -1,0 +1,31 @@
+<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ortak el ve doğal bilek — geliştirme</title>
+<style>body{margin:0;background:#160c07;color:#ffe8bd;font:12px system-ui}canvas{position:fixed;inset:0;touch-action:none}#ui{pointer-events:none}aside{position:fixed;bottom:8px;left:8px;right:8px;padding:9px;background:#21160fee;border:1px solid #9b7951;border-radius:12px;display:flex;gap:7px;flex-wrap:wrap;align-items:center}label{display:flex;align-items:center;gap:4px}select,input,button{font:inherit;padding:6px}input[type=range]{width:75px}output{width:100%;white-space:pre-wrap}</style>
+<canvas id="scene"></canvas><canvas id="ui"></canvas><aside><select id="pose" aria-label="El pozu"><option value="cone">Külah tutuşu</option><option value="point">Parmakla göster</option><option value="open">Açık avuç</option><option value="grip">Gerçek çubuk tutuşu</option><option value="vendor">Ustanın külah tutuşu</option><option value="vendor-pole">Ustanın çubuk tutuşu</option></select><select id="input" aria-label="Girdi"><option value="touch">Dokunma</option><option value="mouse">Fare</option></select><label>X<input id="x" aria-label="X" type="range" min="10" max="90" value="50"></label><label>Y<input id="y" aria-label="Y" type="range" min="35" max="88" value="70"></label><label><input id="raw" type="checkbox">Ham teması göster</label><output id="metrics"></output></aside>
+<script type="module">
+import * as THREE from 'three';import{GameWorld}from'/src/world.js';import{TouchReach}from'/src/touch-reach.js';import{PointerTipView,drawPointerTip}from'/src/touch-arm-view.js';
+const $=id=>document.getElementById(id),V=(x=0,y=0,z=0)=>new THREE.Vector3(x,y,z),w=new GameWorld($('scene')),reach=new TouchReach(w),tip=new PointerTipView(w),ctx=$('ui').getContext('2d');
+let mode='',time=0,last=performance.now();
+function reset(){mode=$('pose').value;w.resetTransientPresentation();w.setPlayerConeGrip(false);w.touristHand.visible=!['vendor','vendor-pole'].includes(mode);w.prepareEmptyConeOffer();
+ if(mode==='cone'){w.handoffCone('player');w.updateIceCreamScoops(2,false);}
+ if(mode==='grip'||mode==='vendor-pole'){w.handoffCone('paddle');w.updateIceCreamScoops(2,false);w.setPlayerConeGrip(mode==='grip');}
+ reach.begin(w.camera,innerWidth,innerHeight);}
+$('pose').onchange=reset;$('input').onchange=reset;window.addEventListener('resize',reset);
+function manual(event){if(event.target!==$('scene'))return;if(event.type==='pointermove'&&!event.buttons&&event.pointerType!=='mouse')return;$('x').value=event.clientX/innerWidth*100;$('y').value=event.clientY/innerHeight*100;if(event.type==='pointerdown')$('scene').setPointerCapture(event.pointerId);}
+$('scene').addEventListener('pointerdown',manual);$('scene').addEventListener('pointermove',manual);reset();
+function frame(now){requestAnimationFrame(frame);const dt=Math.min(.04,(now-last)/1000);last=now;time+=dt;
+ const x=+$('x').value/100*innerWidth,y=+$('y').value/100*innerHeight;
+ w.paddleGroup.position.set(-.22,1.15,-.16);
+ if(mode==='vendor')w.updateEmptyConeOffer(time,dt,{reach:1});else w.orientPaddleAndHands(0,['grip','vendor-pole'].includes(mode)?null:V(.22,1.2,-.2),dt,0,0);
+ let target=reach.update(x,y,.26,$('input').value);
+ if(mode==='grip')target=w.getPlayerConeGripTarget(w.conePivot.getWorldPosition(V()));
+ w.updateTouristHand(target,mode==='cone'||mode==='grip'?.98:.15,0,dt,true);
+ if(mode==='open')w.playerHandRig.setPose('open',1);
+ w.updateEnvironmentAnimations(time,dt,0,0,null,0);tip.update(!['vendor','vendor-pole'].includes(mode),x,y,innerWidth,innerHeight,$('input').value);w.render();
+ $('ui').width=innerWidth;$('ui').height=innerHeight;drawPointerTip(ctx,tip);
+ if($('raw').checked){ctx.strokeStyle='#9caac2';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x-8,y);ctx.lineTo(x+8,y);ctx.moveTo(x,y-8);ctx.lineTo(x,y+8);ctx.stroke();}
+ const wrist=w.touristWrist.getWorldPosition(V()),end=w.touristForearm.localToWorld(V(0,w.touristForearm.geometry.parameters.height/2,0));
+ const normal=V(0,1,0).transformDirection(w.playerHandRig.matrixWorld),axis=V(0,1,0).transformDirection(w.touristForearm.matrixWorld);
+ const bend=rig=>{if(!rig.armPose)return 0;const fore=rig.wristAnchor.getWorldPosition(V()).sub(rig.armPose.elbow).normalize(),hand=V(0,1,0).transformDirection(rig.handRig.matrixWorld);return Math.round(Math.acos(THREE.MathUtils.clamp(fore.dot(hand),-1,1))*180/Math.PI);};
+ $('metrics').textContent=`${mode} · hedef parmak ucunda · temas farkı ${Math.round(y-tip.y)}px\nBilek birleşimi ${(wrist.distanceTo(end)*1000).toFixed(1)}mm örtüşme · bilek açısı ${Math.round(Math.acos(THREE.MathUtils.clamp(normal.dot(axis),-1,1))*180/Math.PI)}°\nEl yönü: oyuncu ${w.playerHandRig.handedness} · usta ${w.rArmRig.handRig.handedness}/${w.lArmRig.handRig.handedness}\nUsta bilekleri: sağ ${bend(w.rArmRig)}° · sol ${bend(w.lArmRig)}°\nKülah: ${w.conePivot.parent===w.heldSocket?'müşteri':w.conePivot.parent===w.lArmRig.handGroup?'usta':'çubuk'} · Kavrayış farkı: ${(w.mainConeMesh.getWorldPosition(V()).distanceTo(w.playerHandRig.gripAnchor.getWorldPosition(V()))*1000).toFixed(1)}mm`;
+}requestAnimationFrame(frame);
+</script></html>

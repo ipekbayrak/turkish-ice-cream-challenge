@@ -1,0 +1,38 @@
+<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Kovadan sipariş — kontrol</title>
+<style>html,body{margin:0;overflow:hidden;background:#1e120b;color:#fff0d6;font:12px system-ui}canvas{position:fixed;inset:0;touch-action:none}#ui{pointer-events:none}aside{position:fixed;top:6px;left:6px;right:6px;display:flex;gap:5px;flex-wrap:wrap;align-items:center}button{font:inherit;color:inherit;background:#291c13dc;border:1px solid #97754d;border-radius:7px;padding:6px}output{width:100%;padding:4px;background:#21160bd9;white-space:pre-line}#ack{position:fixed;top:44%;left:10%;right:10%;text-align:center;color:#fff4d8;text-shadow:0 2px 3px #1b110b;pointer-events:none}</style>
+<canvas id="scene"></canvas><canvas id="ui"></canvas><aside><button id="reset">Başa al</button><button data-flavor="0">Sade üzerinde bekle</button><button data-flavor="1">Fıstıklı üzerinde bekle</button><button data-flavor="2">Kakaolu üzerinde bekle</button><button data-flavor="3">Dutlu üzerinde bekle</button><button id="pair">İki top seç</button><button id="release">Bırak</button><output id="status"></output></aside><p id="ack"></p>
+<script type="module">
+import * as THREE from 'three';import {GameWorld}from'/src/world.js';import {OrderFlow}from'/src/order-flow.js';import {TubOrderView,orderAcknowledgement}from'/src/order-view.js';import {TouchReach}from'/src/touch-reach.js';import {TouchArmView,drawPointerTip}from'/src/touch-arm-view.js';import {OrderReach}from'/src/order-reach.js';
+const $=id=>document.getElementById(id),w=new GameWorld($('scene')),view=new TubOrderView(w),reach=new TouchReach(w),arm=new TouchArmView(w),ctx=$('ui').getContext('2d');
+let active=false,x=0,y=0,epoch=0,time=0,last=performance.now(),result=null,lastFlavor=0,ackAge=0,preset=null,pair=false,maxReach=0,choiceTime=0,confirmDelay=0;
+const orderReach=new OrderReach(),shown=new THREE.Vector3();
+const flow=new OrderFlow({onChoice(choice){orderReach.acknowledge();choiceTime=time;view.acknowledge(choice.value);lastFlavor=choice.value;$('ack').textContent=orderAcknowledgement(choice,'tr');ackAge=1.1;},onPhase(state){if(state.phase==='confirm'){confirmDelay=time-choiceTime;$('ack').textContent=`Tamam, ${state.count} top.`;ackAge=1;}},onComplete(order){result=order;view.end();active=false;}});
+function size(){$('ui').width=innerWidth;$('ui').height=innerHeight;}
+function reset(){arm.setActive(false);orderReach.reset();flow.cancel();view.end();w.resetTransientPresentation();w.updateIceCreamScoops(0);w.handoffCone('player');w.updateTouristHand(new THREE.Vector3(.04,1.20,.26),.98,0,.016,true);view.begin();view.settleCamera();reach.begin(w.camera,innerWidth,innerHeight);flow.start({greetingSeconds:0,maxScoops:8});active=false;result=null;preset=null;pair=false;maxReach=0;confirmDelay=0;$('ack').textContent='';size();}
+function setPoint(px,py){active=true;x=px;y=py;epoch++;reach.begin(w.camera,innerWidth,innerHeight);}
+function pointAtTub(index){
+ const p=view.projectedTub(index,innerWidth,innerHeight),ray=new THREE.Vector3(p.x/innerWidth*2-1,1-p.y/innerHeight*2,.5).unproject(reach.camera).sub(reach.camera.position).normalize();
+ const palm=reach.camera.position.clone().addScaledVector(ray,(.26-reach.camera.position.z)/ray.z);
+ setPoint(p.x,reach.contactAt(palm).y);preset=index;
+}
+for(const b of document.querySelectorAll('[data-flavor]'))b.onclick=()=>pointAtTub(+b.dataset.flavor);
+$('pair').onclick=()=>{reset();pair=true;pointAtTub(0);};
+$('release').onclick=()=>{active=false;preset=null;};$('reset').onclick=reset;
+const canvas=$('scene');canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);setPoint(e.clientX,e.clientY);preset=null;});
+canvas.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'||active){if(!active)epoch++;active=true;x=e.clientX;y=e.clientY;preset=null;}});
+canvas.addEventListener('pointerup',e=>{if(e.pointerType!=='mouse')active=false;});canvas.addEventListener('pointercancel',()=>active=false);canvas.addEventListener('pointerleave',e=>{if(!e.buttons)active=false;});
+addEventListener('resize',()=>{active=false;size();if(view.active){view.end();view.begin();view.settleCamera();reach.begin(w.camera,innerWidth,innerHeight);}});
+reset();
+function frame(now){requestAnimationFrame(frame);const dt=Math.min(.04,(now-last)/1000);last=now;time+=dt;
+ if(pair&&flow.count===1&&time-choiceTime>.22){pair=false;pointAtTub(2);}
+ const target=active&&flow.active?reach.update(x,y):new THREE.Vector3(.04,1.20,.26);
+ orderReach.apply(target,dt,flow.active&&flow.phase==='order',shown);maxReach=Math.max(maxReach,target.z-shown.z);w.updateTouristHand(shown,.98,0,dt,true);
+ const flavor=active?view.pick((reach.aimX+1)*.5,(1-reach.aimY)*.5):null;
+ flow.update(dt,{active,flavor,epoch,pointerX:x,pointerY:y});
+ if(flow.active){w.updateOrderPresentation({...flow.snapshot,phase:flow.phase==='order'?'flavor':flow.phase,flavorIndex:flow.hover>=0?flow.hover:lastFlavor},dt,time);view.update(flow.snapshot,dt);}
+ w.updateEnvironmentAnimations(time,dt,0,0,null,0);if(view.active)view.updateCamera(dt);arm.update(active,x,y,innerWidth,innerHeight);w.render();ctx.clearRect(0,0,innerWidth,innerHeight);view.draw(ctx,flow.snapshot,innerWidth,innerHeight,'tr');
+ drawPointerTip(ctx,arm);
+ if(ackAge>0){ackAge-=dt;if(ackAge<=0)$('ack').textContent='';}
+ $('status').textContent=(result?`Onaylandı · ${result.count} top · ${result.flavors.join(', ')}`:`${flow.phase} · ${flow.count} top · ${flow.flavors.join(', ')}\nKova: ${flavor??'yok'} · Onay: ${Math.round((flow.snapshot.idleProgress||0)*100)}% · Süre: ${flow.snapshot.finishDelay}s`)+`\nUzanma: ${Math.round(maxReach*100)}cm · Son seçimden onaya: ${confirmDelay.toFixed(2)}s`;
+}requestAnimationFrame(frame);
+</script></html>

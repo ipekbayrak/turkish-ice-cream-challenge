@@ -1,0 +1,22 @@
+<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>El ve tezgâh etkileşimleri</title>
+<style>body{margin:0;font:12px system-ui;background:#21170f;color:white}iframe{display:block;width:100%;height:100dvh;border:0}aside{position:fixed;bottom:0;left:0;right:0;padding:8px;background:#21170ff5;z-index:5}button{padding:8px;margin:2px}output{display:block;max-height:100px;overflow:auto;white-space:pre-wrap}</style>
+<iframe id="game" src="/?flow-check=1" title="Gerçek oyun"></iframe><aside><button id="bells">Çanları çal</button><button id="face">Burnuna dokun</button><button id="item">Eşyayı incele</button><button id="order">Siparişte bekle</button><button id="choose">Sade seç</button><button id="resume">Tezgâha dön</button><button id="reset">Sıfırla</button><button id="hide">Bilgiyi gizle</button><output id="result">Hazır</output></aside>
+<script type="module">
+import {TOUCH_GAIN} from "../src/relative-touch.js";
+const frame=document.querySelector('iframe'),out=document.querySelector('output');
+const pause=ms=>new Promise(r=>setTimeout(r,ms));
+const read=()=>JSON.parse(frame.contentDocument.querySelector('output[aria-label="Kontrol durumu"]').textContent);
+let raw=[0,0];
+function send(type,x=raw[0],y=raw[1]){raw=[x,y];const w=frame.contentWindow;w.focus();frame.contentDocument.querySelector('canvas').dispatchEvent(new w.PointerEvent(type,{bubbles:true,pointerType:'touch',isPrimary:true,pointerId:974,button:0,buttons:type==='pointerup'?0:1,clientX:x,clientY:y}));}
+async function begin(){const w=frame.contentWindow;send('pointerdown',w.innerWidth*.80,w.innerHeight*.90);await pause(150);}
+function to(point){const s=read();send('pointermove',raw[0]+(point[0]-s.cursor.x)/TOUCH_GAIN,raw[1]+(point[1]-s.cursor.y)/TOUCH_GAIN);}
+const done=value=>out.textContent=JSON.stringify(value,null,1);
+document.querySelector('#bells').onclick=async()=>{await begin();const before=read().interactions.bellHits;for(const b of read().bells){to(b);await pause(180);}done({before,after:read().interactions.bellHits,passed:read().interactions.bellHits>before});send('pointerup');};
+document.querySelector('#face').onclick=async()=>{await begin();const before=read().interactions.faceTouches;to(read().face);await pause(180);done({before,after:read().interactions.faceTouches,passed:read().interactions.faceTouches>before});};
+document.querySelector('#item').onclick=async()=>{await begin();const target=read().details[0];if(!target){done({error:'Görünür eşya bulunamadı'});return;}to([target.x,target.y]);await pause(750);const midway=read().interactions;await pause(1000);const focused=read().discovery;send('pointerup');await pause(150);done({target,midway,focused,afterRelease:read().discovery,passed:midway.progress>0&&midway.progress<1&&focused.selected===target.id&&read().discovery.selected===target.id});};
+document.querySelector('#order').onclick=async()=>{await begin();to(read().cone);await pause(1800);send('pointerup');out.textContent='Usta bekliyor…';await pause(11500);done({order:read().order,owner:read().owner,patience:read().patience,passed:read().order==='order'&&read().owner==='player'&&read().patience.hits>=4});};
+document.querySelector('#choose').onclick=async()=>{await begin();to(read().tubs[0]);await pause(2200);const s=read();done({order:s.order,playing:s.playing,patience:s.patience,held:s.down,passed:s.playing&&s.order==='inactive'&&!s.patience.active&&s.down});};
+document.querySelector('#resume').onclick=()=>{frame.contentDocument.querySelector('#discovery-exit').click();done(read());};
+document.querySelector('#reset').onclick=()=>{frame.contentWindow.location.reload();out.textContent='Hazır';};
+document.querySelector('#hide').onclick=()=>{frame.contentDocument.querySelector('output[aria-label="Kontrol durumu"]').hidden=true;document.querySelector('aside').hidden=true;};
+</script></html>

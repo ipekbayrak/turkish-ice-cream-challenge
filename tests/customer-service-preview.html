@@ -1,0 +1,48 @@
+<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Eldeki külahla servis — geliştirme</title>
+<style>body{margin:0;background:#160d08;color:#fff0d1;font:12px system-ui}canvas{position:fixed;inset:0}aside{position:fixed;bottom:10px;left:10px;right:10px;background:#20150ff0;padding:10px;border:1px solid #b99c69;border-radius:12px;display:flex;gap:7px;align-items:center;flex-wrap:wrap}button,select,input{font:inherit;padding:7px}input[type=number]{width:45px}output{width:100%;white-space:pre-wrap}</style>
+<canvas id="scene"></canvas><aside><select id="show" aria-label="Gösteri"><option value="CUSTOMER_MOLD_MOUNT">Kalıp senin külahında</option><option value="CUSTOMER_SCOOP_SHOW">Tık tık ve elden servis</option><option value="HAND_INVERTED_OFFER">Elden ters teklif</option><option value="HAND_NAPKIN_OFFER">Elden peçete</option><option value="opening">Başlangıçtaki iki gösteri</option></select><label>Top <input id="scoops" aria-label="Top" type="number" min="1" max="8" value="2"></label><label><input id="touch" type="checkbox" checked>Dokunmatik</label><button id="reset">Başa al</button><button id="play">Oynat</button><button id="pause">Durdur</button><button id="next">Sonraki adım</button><button id="all">Tamamla</button><button id="scrape">Kazıma anı</button><output id="metrics"></output></aside>
+<script type="module">
+import {paperReturnHandTarget} from '/src/napkin-return.js';import * as THREE from 'three';import {poleGripRenderTarget} from '/src/cone-grip.js';import{GameWorld}from'/src/world.js';import{TrickDirector}from'/src/tricks.js';import{SoundEngine}from'/src/audio.js';import{RoutinePreviewDriver}from'/tests/routines-driver.js';import{CUSTOMER_MOLD,CUSTOMER_SCOOP,CUSTOMER_SERVICE_IDS,customerServiceCue}from'/src/customer-service.js';import{TouchArmView}from'/src/touch-arm-view.js';import{getVenueForStage}from'/src/venues.js';
+const $=id=>document.getElementById(id),V=(x=0,y=0,z=0)=>new THREE.Vector3(x,y,z),noop=()=>{};
+const w=new GameWorld($('scene')),arm=new TouchArmView(w),sound=new SoundEngine();sound.setMuted(true);let taps=0;const rap=sound.playCounterRap.bind(sound);sound.playCounterRap=(...args)=>{taps++;rap(...args);};
+const save={lang:'tr',data:{unlockedStage:30,preferredScoopCount:2,preferredFlavors:[0,2,1,3,4,5,0,2],tutorialCompleted:true},hapticsEnabled:false,t:k=>k,discoverTrick:noop,setOrderPreferences:noop,recordStageResult:noop,getStageBestScore:()=>0,getUstaName:()=>'',getTrickInfo:id=>({name:id})};
+let running=false,time=0,previous=performance.now(),result='';const d=new TrickDirector(w,sound,save,{onRoundEnd:data=>{result=data.outcomeType;running=false;}});
+class Driver extends RoutinePreviewDriver {
+ update(dt){
+  const d=this.director;if(!CUSTOMER_SERVICE_IDS.includes(d.currentMechanic)&&d.currentMechanic!=='FINAL_PISTACHIO_CATCH')return super.update(dt);
+  this.time+=dt;const key=`${d.currentMechanic}:${d.subStep}`;
+  if(!d.active||d.roundEnded||d.trickTransition||d.pendingTrickEntry||d.servingHandoff||d.entryPaperPreparation||d.pendingEntryPaper){this.release();return this.input;}
+  if(d.currentMechanic==='FINAL_PISTACHIO_CATCH'){
+   if(d.subStep===0)this.reach(key,d.coneWorldPos,dt);
+   else {this.begin(key);this.move(V(.04,this.time-this.actionStart<.10?1.24:1.04,.26),dt);this.mode='pull';}
+  }else {
+   const cue=customerServiceCue(d);
+   if(cue.kind==='wait')this.release();
+   else if(cue.kind==='pull'){this.begin(key+':pull');this.mode='pull';this.move(new THREE.Vector3(.04,1.30-Math.min(1,Math.max(0,(this.time-this.actionStart-.08)/.18))*.30,.26),dt);}
+   else if(cue.screen&&this.touchEnabled)this.reachScreen(key,cue.screen,cue.viewport,dt);
+   else if(cue.screen){const nx=cue.screen.x/cue.viewport.width*2-1,ny=1-cue.screen.y/cue.viewport.height*2;this.reach(key,V(nx*.54,1.22+ny*.36,.26),dt);}
+   else this.reach(key,cue.target,dt,cue.kind);
+  }
+  return this.input;
+ }
+}
+const driver=new Driver(d,w);
+function reset(){arm.setActive(false);running=false;time=0;taps=0;result='';const count=Math.max(1,Math.min(8,+$('scoops').value||2)),stage=Math.max(6,count>4?(count-3)*5+1:6),id=$('show').value;
+ w.resetTransientPresentation();w.setVenue(getVenueForStage(stage));d.setOrderConfig(count,[0,2,1,3,4,5,0,2],stage);d.resetRound(stage,false);d.config={...d.config,speedMult:1};
+ const opening=id==='opening',customer=opening||[CUSTOMER_MOLD,CUSTOMER_SCOOP].includes(id);d.routine=opening?Array.from({length:count},()=> 'SCRAPE_FLAVOR_SCOOP').concat(['FINAL_PISTACHIO_CATCH']):[id,'FINAL_PISTACHIO_CATCH'];d.scoopCount=customer?0:count;w.updateIceCreamScoops(d.scoopCount,false);
+ driver.setTouchMode($('touch').checked);driver.input.handWorldPos.set(0,1.2,.26);w.updateTouristHand(driver.input.handWorldPos,.92,0,1/60,true);
+ if(customer){w.handoffCone('player');w.stallEffects.update(.5);}
+ d.startRound({customerCone:opening});metrics();}
+function step(){if(d.roundEnded)return;const dt=1/60,s=driver.update(dt);time+=dt;const carrying=d.heldItem||w.conePivot.parent===w.heldSocket;
+ const target=s.isReaching?s.intentWorldPos.clone():carrying?s.handWorldPos.clone():V(.22,1.04,.64);if(d.isGraspingPaddleCone)target.copy(d.coneWorldPos).add(V(0,-.03,.04));
+ const direct=driver.touchEnabled&&s.isPointerDown&&!d.isGraspingPaddleCone;if(direct)s.handWorldPos.copy(target);else s.handWorldPos.lerp(target,.3);
+ s.grabCurl=carrying?.98:.25;w.setPlayerConeGrip(d.isGraspingPaddleCone);const rendered=d.isGraspingPaddleCone&&w.conePivot.parent===w.paddleGroup?poleGripRenderTarget(w,s.handWorldPos,d.coneWorldPos):s.handWorldPos;w.updateTouristHand(paperReturnHandTarget(d,rendered),s.grabCurl,0,dt,direct);d.update(dt,time,s);w.updateEnvironmentAnimations(time,dt,0,0,null,0);arm.update(driver.touchEnabled&&s.isPointerDown,s.pointerX,s.pointerY,innerWidth,innerHeight,'touch',!d.paperReturnPose);if(d.roundEnded)running=false;}
+const owner=()=>w.conePivot.parent===w.heldSocket?'müşteri':w.conePivot.parent===w.lArmRig.handGroup?'usta eli':'çubuk';
+function metrics(){const c=customerServiceCue(d),point=c?.target||d.coneWorldPos;
+ $('metrics').textContent=`${d.currentMechanic} · adım ${d.subStep} · ${time.toFixed(2)}sn · ${d.scoopCount}/${d.targetScoopCount} top\nKülah: ${owner()} · aynı nesne ${w.conePivot.uuid.slice(0,6)} · tık sayısı ${taps}\nPeçete: ${w.servingNapkin.visible?(w.servingNapkin.parent===w.heldSocket?'müşteride':w.servingNapkin.parent===w.conePivot?'külaha sarılı':'usta elinde'):'gizli'} · kalıp: ${w.stallEffects.mode||'kovada'}\nHedef: ${point.toArray().map(n=>n.toFixed(2)).join(', ')} · girdi: ${driver.mode}\n${result||(d.roundEnded?'Sonuç bekleniyor':'Kontrol hazır')}`;}
+$('reset').onclick=reset;$('show').onchange=reset;$('scoops').onchange=reset;$('touch').onchange=reset;$('play').onclick=()=>running=true;$('pause').onclick=()=>running=false;
+$('next').onclick=()=>{running=false;const key=`${d.currentMechanic}:${d.subStep}`;for(let i=0;i<900&&!d.roundEnded&&key===`${d.currentMechanic}:${d.subStep}`;i++)step();metrics();};$('all').onclick=()=>{running=false;for(let i=0;i<3600&&!d.roundEnded;i++)step();metrics();};
+$('scrape').onclick=()=>{$('show').value='CUSTOMER_SCOOP_SHOW';reset();running=false;for(let i=0;i<900&&(d.subStep<1||d.stageTimer<.40);i++)step();metrics();};
+const params=new URLSearchParams(location.search);if(params.has('show'))$('show').value=params.get('show');if(params.has('scoops'))$('scoops').value=params.get('scoops');reset();
+function frame(now){requestAnimationFrame(frame);if(running){const count=Math.min(6,Math.max(1,Math.round((now-previous)/1000*60)));for(let i=0;i<count;i++)step();}previous=now;w.render();metrics();}requestAnimationFrame(frame);
+</script></html>

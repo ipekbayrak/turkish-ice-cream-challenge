@@ -1,0 +1,10 @@
+<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Haznede biriken külahlar</title><style>body{margin:0;background:#180c07;color:#fff1d0;font:12px system-ui}canvas{position:fixed;inset:0;width:100%;height:100%}aside{position:fixed;bottom:8px;left:8px;right:8px;padding:8px;background:#281a12ee;border-radius:9px}button{padding:9px;margin:3px}output{display:block}</style><canvas></canvas><aside><button id="add">Hazneye ekle</button><button id="take">Hazneden al</button><output></output></aside>
+<script type="module">
+import {Vector3} from 'three';import{GameWorld}from'/src/world.js';import{EncounterCamera}from'/src/encounter-camera.js';
+const w=new GameWorld(document.querySelector('canvas')),cam=new EncounterCamera(w);w.encounterCamera=cam;cam.setPhase('play',true);w.updateIceCreamScoops(0);w.touristHand.visible=false;w.paddleGroup.position.set(-.2,1.25,-.10);let n=0,last=performance.now();
+function held(){w.handoffOuterCone('vendor',true);w.stallEffects.update(1);w.orientPaddleAndHands(0,new Vector3(.18,1.22,-.15),.016);w.scene.updateMatrixWorld(true);}
+function add(){if(w.collectedCones?.reusing)return;held();w.collectEmptyCone(w.outerConeGroup,`preview:${n++}`);w.handoffOuterCone('nested',false);}
+function take(){if(!w.collectedCones?.count||w.collectedCones.reusing)return;held();w.reuseEmptyCone(w.outerConeGroup);}
+document.querySelector('#add').onclick=add;document.querySelector('#take').onclick=take;for(let i=0;i<3;i++)add();
+function frame(now){requestAnimationFrame(frame);const dt=Math.min(.033,(now-last)/1000);last=now;w.orientPaddleAndHands(0,w.outerConeGroup.visible?new Vector3(.18,1.22,-.15):null,dt);w.updateEnvironmentAnimations(now/1000,dt);cam.update(dt);w.render();document.querySelector('output').textContent=JSON.stringify({stock:w.collectedCones.count,moving:Boolean(w.collectedCones.reusing),support:w.collectedCones.root.parent.name});}requestAnimationFrame(frame);
+</script></html>

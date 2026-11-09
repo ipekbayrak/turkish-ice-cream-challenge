@@ -1,0 +1,50 @@
+<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ustanın sırttan uzatışı — kontrol</title>
+<style>body{margin:0;background:#1b100a;color:#f9e6c3;font:12px system-ui}canvas{position:fixed;inset:0}aside{position:fixed;bottom:8px;left:8px;right:8px;background:#21170fee;border:1px solid #9a7540;border-radius:12px;padding:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}button,input,select{font:inherit;padding:6px}input{width:72px}output{white-space:pre-wrap;width:100%}</style>
+<canvas id="scene"></canvas><canvas id="guide" style="pointer-events:none"></canvas><aside><select id="vendor" aria-label="Usta"><option value="0">Kadir</option><option value="1" selected>Pala</option><option value="2">Aksakal</option><option value="3">Cihan</option></select><label>Top <input id="count" aria-label="Top" type="number" min="1" max="8" value="2"></label><label>An <input id="at" aria-label="An" type="number" min="0" max="4" step=".1" value="0"></label><button id="reset">Başa al</button><button id="back">Arka duruş</button><button id="play">Oynat</button><button id="pause">Durdur</button><button id="interrupt">Hareketle dön</button><button id="view">Yandan bak</button><output id="status"></output></aside>
+<script type="module">
+import * as THREE from 'three';import {GameWorld}from'/src/world.js';import{TrickDirector}from'/src/tricks.js';import{SoundEngine}from'/src/audio.js';import{inspectVendorArmSurfaces}from'/tests/vendor-arm-geometry.js';
+const $=id=>document.getElementById(id),V=(x=0,y=0,z=0)=>new THREE.Vector3(x,y,z),noop=()=>{};
+const w=new GameWorld($('scene')),sound=new SoundEngine();sound.setMuted(true);
+const save={lang:'tr',data:{unlockedStage:30,preferredScoopCount:2,preferredFlavors:[0,2,1,3,4,5,0,2]},hapticsEnabled:false,t:k=>k,discoverTrick:noop,setOrderPreferences:noop,recordStageResult:noop,getStageBestScore:()=>0,getUstaName:()=>'',getTrickInfo:id=>({name:id})};
+const d=new TrickDirector(w,sound,save,{onRoundEnd:noop});
+const input={isPointerDown:false,isReaching:false,isMoving:false,normX:0,normY:-1,vx:0,vy:0,speed:0,handWorldPos:V(.22,1.04,.64),intentWorldPos:V(.22,1.04,.64),pointerEpoch:0,cancelEpoch:0};
+const guideCanvas=$('guide'),guideContext=guideCanvas.getContext('2d');
+let running=false,interrupted=false,side=false,time=0,last=performance.now(),maxPenetration=0,maxSurfaceHits=0,hitAt='',maxFrame='';
+function reset(){running=false;interrupted=false;time=0;maxPenetration=0;maxSurfaceHits=0;hitAt='';maxFrame='';input.isMoving=input.isPointerDown=false;
+ d.setOrderConfig(Math.max(1,Math.min(8,+$('count').value||2)),[0,2,1,3,4,5,0,2],30);d.resetRound(30,false);d.routine=['SHAFT_SPIN_360','FINAL_PISTACHIO_CATCH'];d._enterRoutineStep(0);
+ d.scoopCount=d.targetScoopCount;w.updateIceCreamScoops(d.scoopCount);w.setVendorCharacter(+$('vendor').value);
+ w.resetPaddleOrientation();w.paddleGroup.position.copy(d.coneWorldPos);w.paddleGroup.quaternion.identity();
+ w.prevConePos.copy(d.coneWorldPos);w.scoopJiggleSpring.pos.set(0,0,0);w.scoopJiggleSpring.vel.set(0,0,0);w.scoopJiggleSpring.target.set(0,0,0);
+ w.updateServingLayout(1);w.vendorTorso.position.set(0,.94,0);w.vendorTorso.rotation.set(0,0,0);
+ d.active=true;d.isAfkShowActive=true;d.afkScenario=4;d.afkTimer=0;d.idleSeconds=3;d.passiveLimitSec=99;
+ for(let frame=0;frame<45;frame++)w.orientPaddleAndHands(0,null,1/60,0,0);
+ $('at').value='0';metrics();}
+function step(dt){time+=dt;
+ if(interrupted)d.update(dt,time,input);
+ else {d.presentationExact=false;d.presentationStrikeTip=null;d.presentationSurface=null;d.presentationBell=null;d._updateAfkShow(dt,time);d._applyKinematics(dt,time,input);}
+ w.updateEnvironmentAnimations(time,dt);
+ for(const [name,rig]of[['sağ',w.rArmRig],['sol',w.lArmRig]]){
+  const penetration=rig.armPose?.penetration||0;
+  if(penetration>maxPenetration){maxPenetration=penetration;maxFrame=`${time.toFixed(2)}s ${name}`;}
+  if(penetration>.003){w.scene.updateMatrixWorld(true);const probe=inspectVendorArmSurfaces(w,rig);if(probe.hits>maxSurfaceHits){maxSurfaceHits=probe.hits;hitAt=`${time.toFixed(2)}s ${name}`;}}
+ }
+ if((!interrupted&&d.vendorFlourish?.done)||(interrupted&&!d.vendorFlourish&&!d.afkRejoin&&!d.isAfkShowActive&&!d.idleGuideSettle))running=false;
+}
+function seek(value){reset();const end=Math.max(0,Math.min(4,value));for(let elapsed=0;elapsed<end&&!d.vendorFlourish?.done;elapsed+=1/120)step(Math.min(1/120,end-elapsed));$('at').value=time.toFixed(2);metrics();}
+function drawGuide(){
+ const g=d.getGestureGuide();guideCanvas.width=innerWidth;guideCanvas.height=innerHeight;
+ if(g.quiet)return;
+ guideContext.strokeStyle='#8cd998';guideContext.lineWidth=3;
+ for(const comet of g.comets){guideContext.beginPath();comet.points.forEach((p,i)=>i?guideContext.lineTo(p.x,p.y):guideContext.moveTo(p.x,p.y));guideContext.stroke();}
+ for(const ring of g.rings){guideContext.beginPath();guideContext.arc(ring.x,ring.y,ring.radius,0,Math.PI*2);guideContext.stroke();}
+}
+function metrics(){const rear=w.paddleRearGripAnchor.getWorldPosition(V()),hand=w.rArmRig.handGroup.getWorldPosition(V());
+ $('status').textContent=`${time.toFixed(2)}s · ${w.vendorArmMode||'front'} · Gövde ${Math.round(w.vendorTorso.rotation.y*180/Math.PI)}°\nKol ihlali: ${(maxPenetration*1000).toFixed(2)} mm (${maxFrame||'yok'}) · Kavrayış: ${(rear.distanceTo(hand)*1000).toFixed(2)} mm\nGövdeye giren yüzey: ${maxSurfaceHits}${hitAt?' ('+hitAt+')':''}\nKülah: ${w.conePivot.parent===w.lArmRig.handGroup?'usta eli':w.conePivot.parent===w.paddleGroup?'çubuk':'diğer'} · Puan ${d.score} · Hak ${d.hearts} · Rehber ${d.getGestureGuide().quiet?'sessiz':'oyuncu hamlesi'}${interrupted&&!d.vendorFlourish&&!d.afkRejoin&&!d.isAfkShowActive?' · Güvenli dönüş tamam':''}`;
+}
+$('reset').onclick=reset;$('vendor').onchange=reset;$('count').onchange=reset;$('at').onchange=()=>seek(+$('at').value);$('back').onclick=()=>seek(2.25);
+$('play').onclick=()=>running=true;$('pause').onclick=()=>running=false;$('interrupt').onclick=()=>{input.isMoving=input.isPointerDown=true;input.pointerEpoch++;interrupted=true;running=true;};
+$('view').onclick=()=>{side=!side;$('view').textContent=side?'Önden bak':'Yandan bak';};reset();
+function frame(now){requestAnimationFrame(frame);const dt=Math.min(.04,(now-last)/1000);last=now;if(running)step(dt);
+ if(side){w.camera.position.set(-1.65,1.65,.42);w.camera.lookAt(0,1.27,-.82);}else{w.camera.position.copy(w.baseCamPos);w.camera.lookAt(w.baseCamTarget);}
+ w.camera.updateMatrixWorld(true);w.render();drawGuide();metrics();}requestAnimationFrame(frame);
+</script></html>

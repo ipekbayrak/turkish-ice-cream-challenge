@@ -1,3 +1,10 @@
+import { researchedIdsForStage } from './researched-service.js';
+import { ROUTINE_CATALOG, routineIdsForStage, getChoreographedRoutine, compoundLimitForStage } from './trick-routines.js';
+import { EXTRA_TRICK_CATALOG } from './trick-extensions.js';
+import { getStageOrderOptions } from './venues.js';
+import {normalizeStage,tempoForStage,BASE_GAME_SPEED,BASE_MUSIC_TEMPO} from './progression.js';
+export { MAX_SCOOPS, VENUES, getVenueForStage, getVenueProgress, getStageOrderOptions } from './venues.js';
+
 /**
  * Turkish Ice Cream Challenge — Unified Singleplayer & Future 2-Player (Vendor vs. Customer) Protocol
  *
@@ -20,116 +27,10 @@ export const PLAYER_ROLES = {
   SPECTATOR: 'SPECTATOR',
 };
 
-/**
- * 6 Authentic Kahramanmaraş Ice Cream Tubs in the Copper Cart
- */
-export const ICE_CREAM_FLAVORS = [
-  {
-    id: 'vanilla',
-    index: 0,
-    colorHex: 0xfff8e7,
-    cssColor: '#fff8e7',
-    borderColor: '#f5b942',
-    emoji: '🍦',
-    xOffset: -0.62,
-    names: {
-      tr: 'Sade Keçi Sütlü',
-      en: 'Goat Milk Vanilla',
-      ar: 'حليب الماعز',
-      ru: 'Козье молоко',
-      de: 'Ziegenmilch',
-      ja: 'ヤギミルク',
-    },
-  },
-  {
-    id: 'pistachio',
-    index: 1,
-    colorHex: 0x76c84d,
-    cssColor: '#76c84d',
-    borderColor: '#4ade80',
-    emoji: '💚',
-    xOffset: -0.37,
-    names: {
-      tr: 'Antep Fıstıklı',
-      en: 'Antep Pistachio',
-      ar: 'فستق عنتاب',
-      ru: 'Фисташковое',
-      de: 'Pistazie',
-      ja: 'ピスタチオ',
-    },
-  },
-  {
-    id: 'chocolate',
-    index: 2,
-    colorHex: 0x5c2c16,
-    cssColor: '#7f4224',
-    borderColor: '#d97706',
-    emoji: '🍫',
-    xOffset: -0.12,
-    names: {
-      tr: 'Maraş Kakaolu',
-      en: 'Dark Chocolate',
-      ar: 'شوكولاتة مرعش',
-      ru: 'Шоколадное',
-      de: 'Schokolade',
-      ja: 'チョコレート',
-    },
-  },
-  {
-    id: 'berry',
-    index: 3,
-    colorHex: 0xd92662,
-    cssColor: '#e63973',
-    borderColor: '#fb7185',
-    emoji: '🫐',
-    xOffset: 0.12,
-    names: {
-      tr: 'Karadut & Vişne',
-      en: 'Mulberry & Cherry',
-      ar: 'توت أسود وكرز',
-      ru: 'Шелковица',
-      de: 'Maulbeere',
-      ja: 'マルベリー',
-    },
-  },
-  {
-    id: 'caramel',
-    index: 4,
-    colorHex: 0xf4a236,
-    cssColor: '#f4a236',
-    borderColor: '#fde047',
-    emoji: '🍯',
-    xOffset: 0.37,
-    names: {
-      tr: 'Bal & Badem',
-      en: 'Honey Almond',
-      ar: 'عسل ولوز',
-      ru: 'Мед и миндаль',
-      de: 'Honig-Mandel',
-      ja: 'ハニーアーモンド',
-    },
-  },
-  {
-    id: 'mastic',
-    index: 5,
-    colorHex: 0x56cfe1,
-    cssColor: '#56cfe1',
-    borderColor: '#67e8f9',
-    emoji: '💎',
-    xOffset: 0.62,
-    names: {
-      tr: 'Damla Sakızlı',
-      en: 'Aegean Mastic',
-      ar: 'المستكة',
-      ru: 'Мастика',
-      de: 'Mastix-Eis',
-      ja: 'マスティック',
-    },
-  },
-];
+export { ICE_CREAM_FLAVORS } from './flavors.js';
 
 /**
- * 15 Authentic Turkish Ice Cream Vendor Tricks (Maraş Dondurmacısı Hile Listesi)
+ * Existing vendor repertoire plus explicitly recreated/combined service variations.
  */
 export const TRICK_CATALOG = [
   {
@@ -462,6 +363,8 @@ export const TRICK_CATALOG = [
       ja: '緑のラインの中央で手を止めて職人と目を合わせ、左右に動くラインのリズムに合わせて指を追従させろ！遅れると「ホップ・ホップ！」と棒の向きをランダムに変えられるぞ！',
     },
   },
+  ...EXTRA_TRICK_CATALOG,
+  ...ROUTINE_CATALOG,
   {
     id: 'FINAL_PISTACHIO_CATCH',
     icon: '🏆🥜',
@@ -487,9 +390,9 @@ export const TRICK_CATALOG = [
 ];
 
 /**
- * 10-Stage Progressive Campaign across 4 Master Vendors
+ * Preserve the original ten encounter timings before extending the journey.
  */
-export const CAMPAIGN_LEVELS = [
+const ORIGINAL_CAMPAIGN_LEVELS = [
   {
     stage: 1,
     vendorIdx: 0,
@@ -498,13 +401,14 @@ export const CAMPAIGN_LEVELS = [
     speedMult: 0.78,
     defaultScoops: 2,
     hearts: 3,
-    tutorialEnabled: true,
+    tutorialEnabled: false,
     trickCount: 4,
     trickPool: [
       'EYE_LOCK_RHYTHM_CHASE',
       'DOUBLE_CONE_SLIDE',
       'SHAFT_SPIN_360',
       'MEGA_TAFFY_SLICE',
+      'WHOLE_MOLD_ON_CONE',
     ],
     finalWindowSec: 3.6,
   },
@@ -524,6 +428,7 @@ export const CAMPAIGN_LEVELS = [
       'GIANT_BLOCK_TEASE',
       'SHAFT_SPIN_360',
       'VERTICAL_WINDMILL',
+      'WHOLE_MOLD_ON_CONE',
     ],
     finalWindowSec: 3.3,
   },
@@ -545,6 +450,8 @@ export const CAMPAIGN_LEVELS = [
       'VERTICAL_WINDMILL',
       'MEGA_TAFFY_SLICE',
       'NAPKIN_CONE_FAKEOUT',
+      'WHOLE_MOLD_ON_CONE',
+      'SCOOP_LIFT_BACK',
     ],
     finalWindowSec: 3.0,
   },
@@ -566,6 +473,8 @@ export const CAMPAIGN_LEVELS = [
       'FAKE_DROP_PANIC',
       'FIGURE_EIGHT_WEAVE',
       'NAPKIN_CONE_FAKEOUT',
+      'WHOLE_MOLD_ON_CONE',
+      'SCOOP_LIFT_BACK',
     ],
     finalWindowSec: 2.8,
   },
@@ -587,6 +496,9 @@ export const CAMPAIGN_LEVELS = [
       'UPSIDE_DOWN_GRAVITY',
       'MEGA_TAFFY_SLICE',
       'BELL_RHYTHM_FEINT',
+      'WHOLE_MOLD_ON_CONE',
+      'SCOOP_LIFT_BACK',
+      'BONUS_SCOOP_TAKEBACK',
     ],
     finalWindowSec: 2.6,
   },
@@ -609,6 +521,9 @@ export const CAMPAIGN_LEVELS = [
       'OVERHEAD_CROWN_DANGLE',
       'FAKE_DROP_PANIC',
       'NAPKIN_CONE_FAKEOUT',
+      'WHOLE_MOLD_ON_CONE',
+      'SCOOP_LIFT_BACK',
+      'BONUS_SCOOP_TAKEBACK',
     ],
     finalWindowSec: 2.5,
   },
@@ -632,6 +547,9 @@ export const CAMPAIGN_LEVELS = [
       'UPSIDE_DOWN_GRAVITY',
       'FIGURE_EIGHT_WEAVE',
       'MEGA_TAFFY_SLICE',
+      'WHOLE_MOLD_ON_CONE',
+      'SCOOP_LIFT_BACK',
+      'BONUS_SCOOP_TAKEBACK',
     ],
     finalWindowSec: 2.35,
   },
@@ -655,6 +573,9 @@ export const CAMPAIGN_LEVELS = [
       'FAKE_DROP_PANIC',
       'NAPKIN_CONE_FAKEOUT',
       'BELL_RHYTHM_FEINT',
+      'WHOLE_MOLD_ON_CONE',
+      'SCOOP_LIFT_BACK',
+      'BONUS_SCOOP_TAKEBACK',
     ],
     finalWindowSec: 2.2,
   },
@@ -679,6 +600,9 @@ export const CAMPAIGN_LEVELS = [
       'OVERHEAD_CROWN_DANGLE',
       'UPSIDE_DOWN_GRAVITY',
       'MEGA_TAFFY_SLICE',
+      'WHOLE_MOLD_ON_CONE',
+      'SCOOP_LIFT_BACK',
+      'BONUS_SCOOP_TAKEBACK',
     ],
     finalWindowSec: 2.05,
   },
@@ -696,6 +620,76 @@ export const CAMPAIGN_LEVELS = [
     finalWindowSec: 1.9,
   },
 ];
+
+/**
+ * Later encounters gain variety and larger orders rather than an endless speed
+ * increase. Each venue revisits all four existing masters with a different focus.
+ */
+const EXTENDED_TRICK_POOLS = [
+  ['EYE_LOCK_RHYTHM_CHASE', 'FIGURE_EIGHT_WEAVE', 'SHAFT_SPIN_360', 'VERTICAL_WINDMILL', 'MEGA_TAFFY_SLICE', 'SCOOP_LIFT_BACK', 'WHOLE_MOLD_ON_CONE'],
+  ['DOUBLE_CONE_SLIDE', 'SHELL_SWAP_DUEL', 'NAPKIN_CONE_FAKEOUT', 'FAKE_DROP_PANIC', 'COMBO_DOUBLE_PUMP', 'BONUS_SCOOP_TAKEBACK', 'MEGA_TAFFY_SLICE', 'EYE_LOCK_RHYTHM_CHASE'],
+  ['WHOLE_MOLD_ON_CONE', 'GIANT_BLOCK_TEASE', 'MIDAIR_BLOCK_SOMERSAULT', 'UPSIDE_DOWN_GRAVITY', 'OVERHEAD_CROWN_DANGLE', 'MEGA_TAFFY_SLICE', 'BELL_RHYTHM_FEINT', 'SCOOP_LIFT_BACK'],
+  ['BELL_RHYTHM_FEINT', 'EYE_LOCK_RHYTHM_CHASE', 'FIGURE_EIGHT_WEAVE', 'COMBO_DOUBLE_PUMP', 'SHAFT_SPIN_360', 'BONUS_SCOOP_TAKEBACK', 'DOUBLE_CONE_SLIDE', 'MEGA_TAFFY_SLICE'],
+];
+const EXTENDED_SPEEDS = [
+  [1.12, 1.18, 1.16, 1.24, 1.28],
+  [1.18, 1.22, 1.20, 1.28, 1.32],
+  [1.22, 1.28, 1.25, 1.32, 1.36],
+  [1.26, 1.32, 1.28, 1.36, 1.38],
+];
+const EXTENDED_TRICK_COUNTS = [[6, 7, 7, 8, 8], [7, 7, 8, 8, 9], [7, 8, 8, 9, 9], [8, 8, 9, 9, 10]];
+const ENCOUNTER_NAMES = [
+  [{ tr: 'Rıhtımda ilk teklif', en: 'The harbor offer' }, { tr: 'İki külah, bir numara', en: 'Two cones, one trick' }, { tr: 'Kalıp gösterisi', en: 'The whole-mold show' }, { tr: 'İskele ritmi', en: 'Harbor rhythm' }, { tr: 'Karaköy ustalığı', en: 'Karakoy mastery' }],
+  [{ tr: 'Çarşıya hoş geldin', en: 'Welcome to the market' }, { tr: 'Peçetenin sırrı', en: 'The napkin secret' }, { tr: 'Altı top dengesi', en: 'Six-scoop balance' }, { tr: 'Pazarın temposu', en: 'Market tempo' }, { tr: 'Kadıköy gösterisi', en: 'The Kadikoy show' }],
+  [{ tr: 'Vapur molası', en: 'Ferry break' }, { tr: 'Biraz sabır', en: 'A little patience' }, { tr: 'Yedi top şakası', en: 'The seven-scoop trick' }, { tr: 'İskelede son vuruş', en: 'The final pier beat' }, { tr: 'Üsküdar ustalığı', en: 'Uskudar mastery' }],
+  [{ tr: 'Avluda buluşma', en: 'Meet in the courtyard' }, { tr: 'Dört ustanın oyunu', en: 'The four masters’ game' }, { tr: 'Sekiz top meydanı', en: 'Eight-scoop challenge' }, { tr: 'Son bir gösteri', en: 'One last show' }, { tr: 'Ustaların konuğu', en: 'Guest of the masters' }],
+];
+const EXTENDED_CAMPAIGN_LEVELS = Array.from({ length: 20 }, (_, index) => {
+  const venueIndex = Math.floor(index / 5), encounter = index % 5, stage = index + 11;
+  const vendorIdx = (venueIndex + encounter) % 4;
+  const core = EXTENDED_TRICK_POOLS[encounter % EXTENDED_TRICK_POOLS.length];
+  const pool = encounter === 4
+    ? TRICK_CATALOG.filter(trick => trick.id !== 'FINAL_PISTACHIO_CATCH').map(trick => trick.id)
+    : [...new Set([...core, ...EXTENDED_TRICK_POOLS[(encounter + venueIndex + 1) % EXTENDED_TRICK_POOLS.length].slice(0, 3)])];
+  // Keep enough distinct choices even when a venue's accent overlaps its core.
+  for (const trickId of EXTENDED_TRICK_POOLS[(encounter + 1) % EXTENDED_TRICK_POOLS.length]) {
+    if (pool.length >= EXTENDED_TRICK_COUNTS[venueIndex][encounter] + 1) break;
+    if (!pool.includes(trickId)) pool.push(trickId);
+  }
+  return {
+    stage, vendorIdx, vendorKey: `usta_${vendorIdx}`, titleKey: `stage_${stage}_title`,
+    name: ENCOUNTER_NAMES[venueIndex][encounter],
+    speedMult: EXTENDED_SPEEDS[venueIndex][encounter],
+    hearts: 3, tutorialEnabled: false,
+    trickCount: EXTENDED_TRICK_COUNTS[venueIndex][encounter], trickPool: pool,
+    finalWindowSec: Math.max(2.1, 2.7 - venueIndex * .12 - encounter * .08),
+  };
+});
+
+export const CAMPAIGN_LEVELS = [...ORIGINAL_CAMPAIGN_LEVELS, ...EXTENDED_CAMPAIGN_LEVELS].map(level => {
+  const order = getStageOrderOptions(level.stage);
+  return {
+    ...level, venueId: order.venueId, minScoops: order.min, maxScoops: order.max,
+    orderChoices: order.choices, defaultScoops: order.default, scoopScale: order.scoopScale,
+    compoundLimit: compoundLimitForStage(level.stage),
+    trickPool: [...new Set([
+      ...level.trickPool.filter(id => !getChoreographedRoutine(id) || getChoreographedRoutine(id).unlockStage <= level.stage),
+      ...routineIdsForStage(level.stage),
+      ...researchedIdsForStage(level.stage),
+      ...(level.stage >= 6 ? ['LAYERED_SERVICE_TEASE', 'HAND_INVERTED_OFFER', 'HAND_NAPKIN_OFFER'] : []),
+    ])],
+  };
+});
+
+/** Campaign encounters lead into repeatable master rounds, without a stage cap. */
+export function getStageConfig(value){
+  const stage=normalizeStage(value),template=CAMPAIGN_LEVELS[Math.min(stage,CAMPAIGN_LEVELS.length)-1];
+  const tempoFactor=tempoForStage(stage),order=getStageOrderOptions(stage);
+  return {...template,stage,tempoFactor,speedMult:BASE_GAME_SPEED*tempoFactor,musicTempo:BASE_MUSIC_TEMPO*tempoFactor,
+    minScoops:order.min,maxScoops:order.max,orderChoices:order.choices,defaultScoops:order.default,scoopScale:order.scoopScale,
+    ...(stage>CAMPAIGN_LEVELS.length?{vendorIdx:(stage-31)%4,vendorKey:`usta_${(stage-31)%4}`}:{}),
+  };
+}
 
 /**
  * Multiplayer & Dual-Role Command Bus Architecture
@@ -737,7 +731,9 @@ export class GameSessionProtocol {
     return {
       mode: this.mode,
       stage: director.currentStage,
-      trickId: director.currentMechanic,
+      trickId: director.currentShowId || director.currentMechanic,
+      componentId: director.currentMechanic,
+      componentIndex: director.choreography?.index ?? 0,
       subStep: director.subStep,
       scoopCount: director.scoopCount,
       selectedFlavors: director.selectedFlavors,

@@ -1,0 +1,20 @@
+<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tezgâhın Emaneti — hikâye kontrolü</title>
+<style>html,body{margin:0;height:100%;background:#1b100b;color:#f8e7cd;font:12px system-ui}canvas{position:fixed;inset:0}aside{position:fixed;bottom:12px;left:12px;right:12px;max-width:560px;padding:12px;background:#25180fed;border:1px solid #a88651;border-radius:14px;display:flex;gap:7px;flex-wrap:wrap}button,select{padding:8px;font:inherit}p,output{width:100%;margin:0;line-height:1.6}output{white-space:pre-wrap;color:#c9bba8}#line{font-size:15px;color:#ffe2a6}</style>
+<canvas id="scene"></canvas><aside><select id="memory" aria-label="Anı"></select><select id="state" aria-label="Durum"><option value="locked">Henüz keşfedilmedi</option><option value="clue">Nesne bulundu</option><option value="earned">Nesne ve galibiyet</option><option value="replay">Anlatılmış anıya dönüş</option></select><button id="inspect">Eşyayı incele</button><button id="beat">Hazırlık anı</button><button id="win">Galibiyet simüle et</button><p id="card"></p><p id="line"></p><output id="metrics"></output></aside>
+<script type="module">
+import{GameWorld}from'/src/world.js';import{VendorRelationships}from'/src/vendor-relationships.js';import{STALL_MEMORIES}from'/src/stall-memories.js';import{getVenueForStage}from'/src/venues.js';
+const $=id=>document.getElementById(id),world=new GameWorld($('scene'));let relationship,save,director,selected,lines=0,last=performance.now();
+for(const item of STALL_MEMORIES){const o=document.createElement('option');o.value=item.id;o.textContent=item.tr.title;$('memory').append(o);}
+function refresh(){const card=relationship.discoveryMemory(selected.objects[0],selected.venueId);$('card').textContent=card?`Kurgu · ${card}`:'Nesneye bakılmadan gizli hatıra gösterilmez.';$('metrics').textContent=`Açılan anılar: ${relationship.memories.earnedIds.join(', ')||'yok'}\nCanlı not: ${lines} · Oyun puanı: ${director.score}\nYalnız kontrol verisi; kullanıcı kaydına erişmez.`;}
+function reset(){selected=STALL_MEMORIES.find(m=>m.id===$('memory').value);const index=STALL_MEMORIES.indexOf(selected),state=$('state').value,earned=state==='earned'||state==='replay';
+ const storage={getItem(){return null;},setItem(){}};save={lang:'tr',data:{unlockedStage:earned?selected.winStage:selected.unlockStage,completedStages:earned?STALL_MEMORIES.slice(0,index+1).map(m=>m.winStage):[]}};
+ lines=0;$('line').textContent='';director={score:777,levelIndex:2,speechClock:0,captionLockUntil:0,sayLine(text){lines++;$('line').textContent=text;}};
+ relationship=new VendorRelationships({save,lore:{completed:[1,2,3,4,5,6,7,8,9,10]},world,director,storage});
+ relationship.setDiscoveredObjects(state==='locked'?[]:earned?STALL_MEMORIES.slice(0,index+1).map(m=>m.objects[0]):[selected.objects[0]]);
+ for(const old of STALL_MEMORIES.slice(0,index))relationship.memories.markHeard(`reveal:${old.id}`);
+ if(state==='replay')for(const kind of ['hint','clue','reveal'])relationship.memories.markHeard(`${kind}:${selected.id}`);
+ relationship.begin(earned?selected.winStage:selected.unlockStage,2);world.setVenue(getVenueForStage(selected.unlockStage));refresh();
+}
+$('memory').onchange=reset;$('state').onchange=reset;$('inspect').onclick=()=>{relationship.discoverObject({id:selected.objects[0],venueId:selected.venueId});refresh();};$('beat').onclick=()=>{relationship.update(8);relationship.onTrickStart({trickId:'CUSTOMER_MOLD_MOUNT',index:0});refresh();};$('win').onclick=()=>{save.data.unlockedStage=selected.winStage;save.data.completedStages.push(selected.winStage);const line=relationship.finish(true);$('line').textContent=line||'Başka bir bağlı iz henüz eksik.';refresh();};
+reset();function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last)/1000);last=now;relationship.update(dt);world.updateEnvironmentAnimations(now/1000,dt,0,0,null,0);world.camera.position.set(.72,1.64,-.91);world.camera.fov=60;world.camera.lookAt(.68,1.49,-1.91);world.camera.updateProjectionMatrix();world.render();}requestAnimationFrame(frame);
+</script></html>

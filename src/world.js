@@ -1,3 +1,8 @@
+import {PLAYER_UPPER_ARM_LENGTH,PLAYER_FOREARM_LENGTH,constrainPlayerArmDepth} from './player-arm.js';
+import {VendorHandBlend} from './vendor-hand-blend.js';
+import {CollectedCones} from './collected-cones.js';
+import {poleHasFood} from './pole-hygiene.js';
+import { createIceBumpTexture } from './ice-surface.js';
 import * as THREE from 'three';
 import {
   SpringVec3,
@@ -5,6 +10,30 @@ import {
   RigidBodyManager,
 } from './physics.js';
 import { ICE_CREAM_FLAVORS } from './protocol.js';
+import { distanceToSegment } from './grip.js';
+import { AngularMotion } from './angular-motion.js';
+import { buildStallDecor } from './stall-decor.js';
+import { StallEffects } from './stall-effects.js';
+import { MAX_SCOOPS, VENUES } from './venues.js';
+import { CulturalScene } from './cultural-scene.js';
+import { CULTURAL_DETAILS } from './cultural-details.js';
+import { StretchCutView } from './stretch-cut-view.js';
+import { buildConeRack } from './cone-rack.js';
+import { HandRig, HAND_GRIP_CENTER, handGripCenter, fitPlayerForearm } from './hand-rig.js';
+import { canonicalPoleHandRotation, poleContactRotation, restHandRotation, playerFreeHandRotation } from './hand-orientation.js';
+import { applyPlayerConeGrip, playerOwnsCone, playerConeGripTarget, applyVendorConeGrip, applyVendorPaperGrip, captureVendorHandPose, applyVendorReceivingGrip, orientVendorHeldCone } from './cone-grip.js';
+import { VendorArmSolver } from './vendor-arm-solver.js';
+import { VendorSupportReach } from './vendor-support-reach.js';
+import { PoleContact } from './pole-contact.js';
+import { buildOpenCounterBase, buildShopInterior, shopCameraProfile } from './shop-interior.js';
+import { VendorBody } from './vendor-body.js';
+import { resizeRenderer } from './render-size.js';
+import { batchIceCreamCart } from './static-batch.js';
+import { ServingClearance } from './serving-clearance.js';
+import { ServingOrientation } from './serving-orientation.js';
+import { TubMoldTransfer, tubMoldSeat, createBucketDeckGeometry } from './tub-mold.js';
+
+import { CLASSIC_SCOOP_LAYOUT, LARGE_SCOOP_LAYOUT } from './scoop-layout.js';
 
 // Polyfill CanvasRenderingContext2D.prototype.roundRect for older iOS Safari (< 16.0)
 if (
@@ -44,17 +73,18 @@ export class GameWorld {
       0.05,
       40
     );
-    this.baseCamPos = new THREE.Vector3(0, 1.52, 1.05);
+    const framing=shopCameraProfile(window.innerWidth,window.innerHeight);
+    this.baseCamPos = new THREE.Vector3(...framing.position);
+    this.baseCamTarget = new THREE.Vector3(...framing.target);
     this.camera.position.copy(this.baseCamPos);
-    this.camera.lookAt(0, 1.28, -0.55);
+    this.camera.lookAt(this.baseCamTarget);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
       antialias: true,
       powerPreference: 'high-performance',
     });
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this._renderSize=resizeRenderer(this.renderer,window.innerWidth,window.innerHeight,Math.min(window.devicePixelRatio||1,2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -92,6 +122,11 @@ export class GameWorld {
 
     this.stretchyStrand = new StretchyDondurmaStrand(this.scene, 14);
     this.rigidBodies = new RigidBodyManager(this.scene, onPhysicsBounce);
+    this.stallDecor = buildStallDecor(this.scene);
+    this.stallEffects = new StallEffects(this);
+    this.culturalScene = new CulturalScene(this, CULTURAL_DETAILS);
+    this.setNarrativeState({});
+    this.setVenue(VENUES[0]);
 
     window.addEventListener('resize', () => this.onResize());
     window.addEventListener('orientationchange', () => {
@@ -249,6 +284,11 @@ export class GameWorld {
     const cyanLight = new THREE.PointLight(0x2ec4b6, 1.5, 7);
     cyanLight.position.set(1.7, 2.2, -1.5);
     this.scene.add(cyanLight);
+
+    // A small warm fill below the canopy keeps eyes readable without changing the stall palette.
+    const faceFill = new THREE.PointLight(0xffe2c6, 0.42, 2.8);
+    faceFill.position.set(0, 1.72, 0.65);
+    this.scene.add(faceFill);
   }
 
   _buildBazaarEnvironment() {
@@ -263,6 +303,8 @@ export class GameWorld {
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     this.scene.add(floor);
+    this.shopInterior=buildShopInterior();
+    this.scene.add(this.shopInterior);
 
     // Traditional Anatolian Carpet Runner in front of the Ice Cream Cart (spaced & polygonOffset to prevent Z-fighting)
     const rugGroup = new THREE.Group();
@@ -366,7 +408,7 @@ export class GameWorld {
     });
   }
 
-  _buildIceCreamCart() {
+  _buildIceCreamCart({batchGeometry=true}={}) {
     this.cartGroup = new THREE.Group();
     this.cartGroup.position.set(0, 0, -0.38);
     this.scene.add(this.cartGroup);
@@ -386,57 +428,31 @@ export class GameWorld {
       roughness: 0.7,
     });
 
-    const baseMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(1.76, 0.78, 0.68),
-      copperMat
-    );
-    baseMesh.position.y = 0.39;
-    baseMesh.castShadow = true;
-    baseMesh.receiveShadow = true;
-    this.cartGroup.add(baseMesh);
-
-    // Perimeter upper copper cabinet skirts around the recessed cooling basin
-    // (Leaves the interior hollow at y = 0.78..0.96 so the tilted basin & 6 steel buckets never Z-fight with baseMesh!)
-    const frontUpperSkirt = new THREE.Mesh(
-      new THREE.BoxGeometry(1.76, 0.11, 0.05),
-      copperMat
-    );
-    frontUpperSkirt.position.set(0, 0.835, 0.315);
-    this.cartGroup.add(frontUpperSkirt);
+    // Open service frame exposes the grounded legs and the shop floor.
+    // The upper basin and every scoop/contact anchor keep their original pose.
+    this.counterBase=buildOpenCounterBase(copperMat,brassMat,darkWoodMat);
+    this.cartGroup.add(this.counterBase);
 
     const backUpperSkirt = new THREE.Mesh(
-      new THREE.BoxGeometry(1.76, 0.22, 0.05),
+      new THREE.BoxGeometry(1.08, 0.155, 0.05),
       copperMat
     );
-    backUpperSkirt.position.set(0, 0.89, -0.315);
+    backUpperSkirt.position.set(0, 0.8625, -0.14);
+    backUpperSkirt.name='counter-rear-skirt';
     this.cartGroup.add(backUpperSkirt);
 
-    [-0.855, 0.855].forEach((sx) => {
+    [-0.54, 0.54].forEach((sx) => {
       const sideUpperSkirt = new THREE.Mesh(
-        new THREE.BoxGeometry(0.05, 0.16, 0.68),
+        new THREE.BoxGeometry(0.05, 0.16, 0.48),
         copperMat
       );
-      sideUpperSkirt.position.set(sx, 0.86, 0);
+      sideUpperSkirt.position.set(sx, 0.86, 0.10);
       this.cartGroup.add(sideUpperSkirt);
     });
 
-    const signPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.58, 0.68),
-      new THREE.MeshStandardMaterial({
-        map: this.cartSignTexture,
-        roughness: 0.35,
-        metalness: 0.3,
-        polygonOffset: true,
-        polygonOffsetFactor: -1,
-        polygonOffsetUnits: -1,
-      })
-    );
-    signPlane.position.set(0, 0.4, 0.348);
-    this.cartGroup.add(signPlane);
-
     // =========================================================================
     // RECESSED COOLING BASIN ("Masanın İçindeki Soğutmalı Hazne") &
-    // 6 SHINY STAINLESS-STEEL ICE CREAM BUCKETS ("Parlak Çelik Dondurma Kovaları")
+    // 4 SHINY STAINLESS-STEEL ICE CREAM BUCKETS ("Parlak Çelik Dondurma Kovaları")
     // =========================================================================
     const chromeSteelMat = new THREE.MeshStandardMaterial({
       color: 0xf1f5f9,
@@ -476,56 +492,59 @@ export class GameWorld {
 
     // Outer hammered brass/copper counter frame around the recessed basin
     const frontRail = new THREE.Mesh(
-      new THREE.BoxGeometry(1.9, 0.055, 0.09),
+      new THREE.BoxGeometry(1.18, 0.055, 0.09),
       brassMat
     );
     frontRail.position.set(0, 0.01, 0.34);
     this.basinDeckGroup.add(frontRail);
 
     const backRail = new THREE.Mesh(
-      new THREE.BoxGeometry(1.9, 0.065, 0.1),
+      new THREE.BoxGeometry(1.18, 0.025, 0.06),
       brassMat
     );
-    backRail.position.set(0, 0.015, -0.34);
+    backRail.position.set(0, 0.015, -0.175);
+    backRail.name='counter-rear-rail';
     this.basinDeckGroup.add(backRail);
 
-    [-0.91, 0.91].forEach((sx) => {
+    [-0.55, 0.55].forEach((sx) => {
       const sideRail = new THREE.Mesh(
-        new THREE.BoxGeometry(0.08, 0.06, 0.76),
+        new THREE.BoxGeometry(0.08, 0.06, 0.56),
         brassMat
       );
-      sideRail.position.set(sx, 0.012, 0);
+      sideRail.position.set(sx, 0.012, 0.07);
       this.basinDeckGroup.add(sideRail);
     });
 
     // Deep dark chilled freezer well ("Hazne Çukuru") beneath the steel deck
     const freezerWellFloor = new THREE.Mesh(
-      new THREE.BoxGeometry(1.74, 0.03, 0.6),
+      new THREE.BoxGeometry(1.08, 0.03, 0.45),
       darkBasinWellMat
     );
-    freezerWellFloor.position.set(0, -0.135, 0);
+    freezerWellFloor.position.set(0, -0.31, 0.075);
     this.basinDeckGroup.add(freezerWellFloor);
 
     // Brushed Stainless-Steel Recessed Basin Deck Plate ("Çelik Hazne Tezgahı")
     const steelDeckPlate = new THREE.Mesh(
-      new THREE.BoxGeometry(1.74, 0.018, 0.6),
+      createBucketDeckGeometry(),
       brushedSteelMat
     );
-    steelDeckPlate.position.set(0, -0.022, 0);
+    steelDeckPlate.rotation.x=-Math.PI/2;
+    steelDeckPlate.position.set(0, -0.031, 0.075);
+    steelDeckPlate.name='counter-steel-deck';
     steelDeckPlate.receiveShadow = true;
     this.basinDeckGroup.add(steelDeckPlate);
 
     // Frosted cooling rails running cleanly above the steel basin deck
-    [-0.22, 0.22].forEach((fz) => {
+    [-0.135, 0.22].forEach((fz) => {
       const frostStrip = new THREE.Mesh(
-        new THREE.BoxGeometry(1.62, 0.01, 0.028),
+        new THREE.BoxGeometry(1.02, 0.01, 0.028),
         frostRimMat
       );
       frostStrip.position.set(0, 0.002, fz);
       this.basinDeckGroup.add(frostStrip);
     });
 
-    // 6 Authentic Kahramanmaraş Shiny Stainless-Steel Ice Cream Buckets ("Parlak Çelik Kovalar")
+    // 4 Authentic Kahramanmaraş Shiny Stainless-Steel Ice Cream Buckets ("Parlak Çelik Kovalar")
     this.tubPositions = ICE_CREAM_FLAVORS.map((flav) => ({
       index: flav.index,
       id: flav.id,
@@ -561,11 +580,14 @@ export class GameWorld {
 
       // 3. Tall Shiny Stainless-Steel Bucket Cylinder Wall ("Parlak Çelik Kova Gövdesi")
       const steelBucketWall = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.105, 0.095, 0.135, 26, 1, true),
+        new THREE.CylinderGeometry(0.105, 0.095, 0.33, 26, 1, true),
         chromeSteelMat
       );
-      steelBucketWall.position.y = -0.015;
+      steelBucketWall.position.y = 0.052 - 0.165;
       bucketGroup.add(steelBucketWall);
+      const bucketFloor=new THREE.Mesh(new THREE.CircleGeometry(.095,26),brushedSteelMat);
+      bucketFloor.name='empty-bucket-steel-bottom';bucketFloor.rotation.x=-Math.PI/2;
+      bucketFloor.position.y=-.276;bucketGroup.add(bucketFloor);
 
       // 4. Mirror-Polished Rolled Steel Lip Flange ("Parlak Çelik Kova Ağzı Çemberi")
       const steelRimFlange = new THREE.Mesh(
@@ -676,53 +698,21 @@ export class GameWorld {
       this.tubIceGroups.push({
         group: iceGroup,
         baseY: 0.018,
+        surfaceY: .01 + .089 * .72,
+        fill: 1,
         churnEnergy: 0,
         phase: idx * 1.1,
       });
     });
 
-    // Cold Frost Mist Particles rising from the recessed steel buckets
-    const mistMat = new THREE.MeshBasicMaterial({
-      color: 0xe0f2fe,
-      transparent: true,
-      opacity: 0.22,
-      depthWrite: false,
-    });
-    for (let m = 0; m < 16; m++) {
-      const mote = new THREE.Mesh(
-        new THREE.SphereGeometry(0.028, 8, 8),
-        mistMat
-      );
-      mote.position.set(
-        (Math.random() - 0.5) * 1.35,
-        0.98 + Math.random() * 0.2,
-        -0.33
-      );
-      this.scene.add(mote);
-      this.frostMotes.push({
-        mesh: mote,
-        baseX: mote.position.x,
-        phase: Math.random() * Math.PI * 2,
-      });
-    }
+    // Keep the ice surfaces readable: no floating sphere mist.
 
-    // Waffle Cone Dispenser Stack on Left Corner of Cart
-    this.coneStackWorldPos = new THREE.Vector3(-0.79, 1.14, -0.22);
-    const coneStackGroup = new THREE.Group();
-    coneStackGroup.position.set(-0.81, 0.98, 0.22);
-    for (let c = 0; c < 6; c++) {
-      const stackCone = new THREE.Mesh(
-        new THREE.ConeGeometry(0.05, 0.155, 16),
-        new THREE.MeshStandardMaterial({
-          map: this.waffleTexture,
-          roughness: 0.65,
-        })
-      );
-      stackCone.rotation.x = Math.PI;
-      stackCone.position.y = 0.08 + c * 0.042;
-      coneStackGroup.add(stackCone);
-    }
-    this.cartGroup.add(coneStackGroup);
+    // Recessed side hopper: eight wells, seven nested hollow wafers per well.
+    // It sits behind the left tub, leaving the scoop surfaces and vendor clear.
+    this.coneRack = buildConeRack(this.waffleTexture);
+    this.coneRack.position.set(-.55, .90, -.55);
+    this.cartGroup.add(this.coneRack);
+    this.coneStackWorldPos = new THREE.Vector3(-.475, 1.198, -.72);
 
     // =========================================================================
     // DETAILED OVERHEAD ARCH & 7 MULTI-PART MARAŞ BRASS BELLS ("Detaylı Çanlar")
@@ -733,33 +723,33 @@ export class GameWorld {
       new THREE.CylinderGeometry(0.028, 0.034, 1.15, 14),
       brassMat
     );
-    leftPost.position.set(-0.86, 1.48, 0.12);
+    leftPost.position.set(-0.54, 1.48, 0.12);
     this.cartGroup.add(leftPost);
 
     const rightPost = new THREE.Mesh(
       new THREE.CylinderGeometry(0.028, 0.034, 1.15, 14),
       brassMat
     );
-    rightPost.position.set(0.86, 1.48, 0.12);
+    rightPost.position.set(0.54, 1.48, 0.12);
     this.cartGroup.add(rightPost);
 
     const canopy = new THREE.Mesh(
-      new THREE.BoxGeometry(1.94, 0.1, 0.68),
+      new THREE.BoxGeometry(1.20, 0.1, 0.50),
       new THREE.MeshStandardMaterial({ color: 0x8c141b, roughness: 0.48 })
     );
-    canopy.position.set(0, 2.02, 0.06);
+    canopy.position.set(0, 2.02, -0.07);
     this.cartGroup.add(canopy);
 
     const canopyTrim = new THREE.Mesh(
-      new THREE.BoxGeometry(1.98, 0.038, 0.72),
+      new THREE.BoxGeometry(1.24, 0.038, 0.54),
       brassMat
     );
-    canopyTrim.position.set(0, 1.96, 0.06);
+    canopyTrim.position.set(0, 1.96, -0.07);
     this.cartGroup.add(canopyTrim);
 
     // Ornate Horizontal Brass Bell Crossbar ("Pirinç Çan Askı Borusu")
     const bellCrossbar = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.016, 0.016, 1.72, 16),
+      new THREE.CylinderGeometry(0.016, 0.016, 1.08, 16),
       brassMat
     );
     bellCrossbar.rotation.z = Math.PI / 2;
@@ -788,10 +778,10 @@ export class GameWorld {
 
     const bellCount = 7;
     for (let b = 0; b < bellCount; b++) {
-      const bx = -0.66 + b * 0.22;
+      const bx = -0.45 + b * 0.15;
       // Center bell (b=3) is largest; graduated sizes outward
       const distFromCenter = Math.abs(b - 3);
-      const bellScale = 1.16 - distFromCenter * 0.08;
+      const bellScale = (1.16 - distFromCenter * 0.08) * 0.5;
 
       const bellPivot = new THREE.Group();
       bellPivot.position.set(bx, 1.91, 0.25);
@@ -914,7 +904,10 @@ export class GameWorld {
         shimmerRing,
         shimmerMat,
         shimmerTimer: 0,
-        worldPos: new THREE.Vector3(bx, 1.79, -0.13),
+        worldPos: new THREE.Vector3(bx, 1.91 - 0.122 * bellScale, -0.13),
+        strikeCooldown: 0,
+        paddleInContact: false,
+        handInContact: false,
         velZ: 0,
         velX: 0,
         angleZ: 0,
@@ -925,6 +918,7 @@ export class GameWorld {
         clapperVelX: 0,
       });
     }
+    if(batchGeometry)batchIceCreamCart(this);
   }
 
   _buildPaddleAndCones() {
@@ -933,6 +927,7 @@ export class GameWorld {
 
     this.paddleRollGroup = new THREE.Group();
     this.paddleGroup.add(this.paddleRollGroup);
+    this.paddleContact = new PoleContact();
 
     const steelMat = new THREE.MeshStandardMaterial({
       color: 0xe2e8f0,
@@ -986,6 +981,9 @@ export class GameWorld {
     );
     spatulaTip.position.set(0, 0, -0.04);
     this.paddleRollGroup.add(spatulaTip);
+    this.paddleStrikeAnchor = new THREE.Object3D();
+    this.paddleStrikeAnchor.position.set(0, 0, 0.035);
+    this.paddleRollGroup.add(this.paddleStrikeAnchor);
 
     this.conePivot = new THREE.Group();
     this.conePivot.position.set(0, 0.02, 0);
@@ -993,7 +991,7 @@ export class GameWorld {
 
     // INNER (Real) Waffle Cone
     this.mainConeMesh = new THREE.Mesh(
-      new THREE.ConeGeometry(0.056, 0.19, 20),
+      new THREE.ConeGeometry(0.056, 0.19, 20, 1, true),
       new THREE.MeshStandardMaterial({
         map: this.waffleTexture,
         roughness: 0.62,
@@ -1003,6 +1001,21 @@ export class GameWorld {
     this.mainConeMesh.position.y = -0.06;
     this.mainConeMesh.castShadow = true;
     this.conePivot.add(this.mainConeMesh);
+    // An empty offered cone has a visible cavity, rather than a solid waffle cap.
+    const coneLining = new THREE.Mesh(
+      new THREE.ConeGeometry(0.052, 0.184, 20, 1, true),
+      new THREE.MeshStandardMaterial({ map: this.waffleTexture, color: 0x9a673c, roughness: .8, side: THREE.BackSide })
+    );
+    coneLining.position.y = -0.001;
+    this.mainConeMesh.add(coneLining);
+    const coneLip = new THREE.Mesh(
+      new THREE.TorusGeometry(0.054, .003, 6, 24),
+      new THREE.MeshStandardMaterial({ color: 0xc28b4f, roughness: .65 })
+    );
+    coneLip.rotation.x = Math.PI / 2;
+    coneLip.position.y = -.095;
+    this.mainConeMesh.add(coneLip);
+
 
     // OUTER (Nested Double-Cone / Çift Külah) Group — visibly nested with a golden separation rim!
     this.outerConeGroup = new THREE.Group();
@@ -1025,12 +1038,10 @@ export class GameWorld {
 
     // Visible bright golden wafer rim around the top of the outer cone so double-cone is unmistakable
     this.outerConeRim = new THREE.Mesh(
-      new THREE.TorusGeometry(0.063, 0.006, 10, 24),
+      new THREE.TorusGeometry(0.063, 0.004, 10, 24),
       new THREE.MeshStandardMaterial({
-        color: 0xffd166,
-        emissive: 0xf59e0b,
-        emissiveIntensity: 0.45,
-        roughness: 0.3,
+        color: 0xe1ad68,
+        roughness: 0.65,
       })
     );
     this.outerConeRim.rotation.x = Math.PI / 2;
@@ -1040,7 +1051,7 @@ export class GameWorld {
     // Legacy compatibility alias
     this.decoyConeOnPaddle = this.outerConeGroup;
 
-    // 4 Dynamic Scoops Stack (Colored per Player's Flavor Selection!)
+    // Eight dynamic scoops, with legacy aliases retained for existing tricks.
     this.scoopStackGroup = new THREE.Group();
     this.conePivot.add(this.scoopStackGroup);
 
@@ -1050,6 +1061,12 @@ export class GameWorld {
     );
     this.scoop1.position.y = 0.045;
     this.scoopStackGroup.add(this.scoop1);
+
+    // A real scoop in transit from the tub to the cone; the director owns its path.
+    this.carryScoop = this.scoop1.clone();
+    this.carryScoop.material = this.scoop1.material.clone();
+    this.carryScoop.visible = false;
+    this.scene.add(this.carryScoop);
 
     this.scoop2 = new THREE.Mesh(
       new THREE.SphereGeometry(0.062, 20, 16),
@@ -1076,6 +1093,14 @@ export class GameWorld {
     this.scoopStackGroup.add(this.scoop4);
 
     this.scoopMeshes = [this.scoop1, this.scoop2, this.scoop3, this.scoop4];
+    for (let i = 4; i < MAX_SCOOPS; i++) {
+      const scoop = new THREE.Mesh(new THREE.SphereGeometry(.056, 20, 16), new THREE.MeshStandardMaterial({ color: ICE_CREAM_FLAVORS[i % ICE_CREAM_FLAVORS.length].colorHex, roughness: .38 }));
+      scoop.position.set(...LARGE_SCOOP_LAYOUT[i].slice(0, 3)); scoop.visible = false;
+      this.scoopMeshes.push(scoop); this.scoopStackGroup.add(scoop); this[`scoop${i + 1}`] = scoop;
+    }
+    this.scoopLayoutTargets = this.scoopMeshes.map((mesh) => mesh.position.clone());
+    this.scoopScaleTargets = this.scoopMeshes.map(() => new THREE.Vector3(1, 1, 1));
+    this.servingScale = 1;
 
     this.toppingGroup = new THREE.Group();
     this.toppingGroup.position.set(0, 0.21, 0);
@@ -1107,34 +1132,53 @@ export class GameWorld {
     waferStick.position.set(0.025, 0.03, 0);
     waferStick.rotation.z = -0.35;
     this.toppingGroup.add(waferStick);
+    this.waferStick = waferStick;
 
     // GIANT 5-KILO MARAŞ ICE CREAM BLOCK ("Kalıptan Kocaman Dondurma Kütlesi" + Mid-Air Somersault)
     this.giantBlockGroup = new THREE.Group();
     this.giantBlockGroup.visible = false;
     this.scene.add(this.giantBlockGroup);
+    this.giantBlockHeight = 0.32;
+    this.giantBlockRadius = 0.09;
 
     this.giantBlockMat = new THREE.MeshStandardMaterial({
       color: 0xfff8e7,
-      roughness: 0.3,
-      metalness: 0.05,
+      roughness: 0.78,
+      metalness: 0,
+      bumpMap: createIceBumpTexture(),
+      bumpScale: .0022,
     });
-
-    const mainLog = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.115, 0.19, 14, 24),
-      this.giantBlockMat
-    );
-    mainLog.rotation.z = Math.PI * 0.5;
+    // Slight churn ridges distinguish the dense ice mold from a plastic cylinder.
+    const moldGeometry = new THREE.CylinderGeometry(0.086, 0.081, this.giantBlockHeight, 32, 12);
+    const moldVertices = moldGeometry.attributes.position;
+    for (let i = 0; i < moldVertices.count; i++) {
+      const x = moldVertices.getX(i), y = moldVertices.getY(i), z = moldVertices.getZ(i);
+      const radius = Math.hypot(x, z);
+      if (radius > .07) {
+        const grain = 1 + .012 * Math.sin(Math.atan2(z, x) * 9 + y * 32);
+        moldVertices.setXYZ(i, x * grain, y, z * grain);
+      }
+    }
+    moldGeometry.computeVertexNormals();
+    const mainLog = new THREE.Mesh(moldGeometry, this.giantBlockMat);
+    mainLog.rotation.z = 0;
     mainLog.castShadow = true;
     this.giantBlockGroup.add(mainLog);
+    const moldTop = new THREE.Mesh(new THREE.SphereGeometry(.085, 24, 12, 0, Math.PI * 2, 0, Math.PI * .5), this.giantBlockMat);
+    moldTop.scale.y = .22;
+    moldTop.position.y = this.giantBlockHeight * .5;
+    moldTop.castShadow = true;
+    this.giantBlockGroup.add(moldTop);
+
 
     // Organic sculpted ridges & stretchy lobes on the 5-kilo ice cream mass
     [-0.09, 0, 0.09].forEach((bx, idx) => {
       const lobe = new THREE.Mesh(
-        new THREE.SphereGeometry(0.125 - idx * 0.008, 18, 14),
+        new THREE.SphereGeometry(0.087 - idx * 0.002, 18, 14),
         this.giantBlockMat
       );
-      lobe.position.set(bx, (idx % 2 === 0 ? 1 : -1) * 0.018, 0);
-      lobe.scale.set(1.0, 0.92, 1.08);
+      lobe.position.set(0, bx * 1.40, 0);
+      lobe.scale.set(1.0, 0.35, 1.0);
       this.giantBlockGroup.add(lobe);
     });
   }
@@ -1143,6 +1187,209 @@ export class GameWorld {
     if (this.giantBlockMat && hexColor !== undefined) {
       this.giantBlockMat.color.setHex(hexColor);
     }
+  }
+
+  setNarrativeState(state) {
+    this.narrativeState = this.stallDecor?.setState(state);
+    return this.narrativeState;
+  }
+
+  setVenue(config = VENUES[0]) {
+    this.venueConfig = config;
+    this.stallDecor?.setVenue?.(config);
+    this.culturalScene?.setVenue(config);
+    this.setServingScale(config.scoopScale ?? 1);
+  }
+
+  setServingScale(scale = 1) {
+    this.servingScale = THREE.MathUtils.clamp(Number(scale) || 1, 1, 1.18);
+    this.conePivot.scale.setScalar(this.servingScale);
+    return this.servingScale;
+  }
+
+  setExplorationMode(enabled) { this.culturalScene?.setExplorationMode(enabled); }
+  setExplorationSection(index) { return this.culturalScene?.setSection(index); }
+  getDiscoveryTargets() { return this.culturalScene?.getDiscoveryTargets() || []; }
+  getDiscoverableAtScreen(x, y) { return this.culturalScene?.pick(x, y) || null; }
+  pickCulturalDetail(x, y) { return this.getDiscoverableAtScreen(x, y); }
+  focusDiscovery(id) { return this.culturalScene?.focusDiscovery(id); }
+  clearDiscoveryFocus() { this.culturalScene?.clearFocus(); }
+  setDiscovered(ids) { this.culturalScene?.setDiscovered(ids); }
+  resetExploration() { this.culturalScene?.reset(); }
+
+  playVendorReaction(kind = 'greeting') {
+    this._vendorReaction = { kind, age: 0, duration: kind === 'photo' ? 1.5 : kind==='refusal'?1.35:1.15 };
+    this.setVendorMood(kind === 'recognition' ? 'mischief' : kind==='refusal'?'shock':'smile');
+    if (kind === 'photo') this.stallDecor?.focus?.((this.narrativeState?.vendorIndex ?? 0) < 2 ? 'photo' : this.narrativeState.vendorIndex === 2 ? 'ledger' : 'card');
+  }
+
+  playFaceTouch(part='face') { this._faceTouch={part,age:0}; }
+
+  cancelVendorReaction() {
+    this._vendorReaction = null;
+    this.vendorHead.rotation.set(0, 0, 0);
+    if (this.lArmRig.openFingers) this.lArmRig.openFingers.visible = false;
+    this.lArmRig.fingerWraps.visible = true;
+    this.lArmRig.fingerWraps.children.forEach((finger) => { finger.visible = true; });
+  }
+
+  handoffCone(owner) { this.stallEffects?.handoffCone(owner); }
+  handoffOuterCone(owner, visible = true) { this.stallEffects?.handoffOuterCone(owner, visible); }
+  clearSlicePresentation() { this.stallEffects?.clearSlice(); this.stretchCutView?.reset(); this.stretchyStrand?.setHandPressure?.(null); }
+  triggerSlice(worldPoint, color, direction = 1) { this.stallEffects?.triggerSlice(worldPoint, color, direction); }
+  setStretchCutPresentation(state) {
+    if (!this.stretchCutView) this.stretchCutView = new StretchCutView(this);
+    this.stretchCutView.set(state);
+  }
+  setMoldPresentation(options) { this.stallEffects?.setMold(options); }
+  getTubMoldSeat(index,out=new THREE.Vector3()) { return tubMoldSeat(this,index,out); }
+  beginTubMold(index) {
+    const tub=this.tubIceGroups?.[index];if(!tub)return;
+    if(!tub.group){tub.fill=0;return;}
+    (this.tubMoldTransfer ||= new TubMoldTransfer(this)).begin(index);
+  }
+  returnTubMold(index) {
+    this.tubMoldTransfer?.dock();
+    if(this.tubIceGroups?.[index])this.tubIceGroups[index].fill=1;
+  }
+  clearMoldPresentation() { this.stallEffects?.clearMold(); }
+  setScoopPresentation(mode, worldPosition) { this.stallEffects?.setScoop(mode, worldPosition); }
+  showSleevePresentation(options) { this.stallEffects?.showSleeve(options); }
+  reuseEmptyCone(target) {return this.collectedCones?.take(target)||false;}
+  collectEmptyCone(source,key) {
+    this.collectedCones ||= new CollectedCones(this);
+    return this.collectedCones.collect(source,key);
+  }
+  setServingNapkin(options) { this.stallEffects?.setServingNapkin(options); }
+  clearServingNapkin(options) { this.stallEffects?.clearServingNapkin(options); }
+  triggerCounterImpact(point, power = 1) { this.stallEffects?.triggerCounterImpact(point, power); }
+  clearTrickPresentations() { this.stallEffects?.clear(); this.stretchCutView?.reset(); }
+
+  /** Full round reset only: old debris cannot land or play a bounce in the next order. */
+  resetTransientPresentation() {
+    this.collectedCones?.reset();
+    this.setConeOfferGlow(0);
+    this.playerConeGripRequested = false;
+    this.presentationAxialSpin = false;
+    this.coneHandTiltZ = 0;
+    this.resetExploration();
+    this.stretchyStrand?.detach();
+    this.stallEffects?.resetTransient();
+    if (this.carryScoop) this.carryScoop.visible = false;
+    if (this.sliceCueGroup) this.sliceCueGroup.visible = false;
+    const geometries = new Set(), materials = new Set();
+    for (const particle of this.particles || []) {
+      this.scene.remove(particle.mesh);
+      geometries.add(particle.mesh.geometry); materials.add(particle.mesh.material);
+    }
+    if (this.particles) this.particles.length = 0;
+    for (const body of this.rigidBodies?.bodies || []) {
+      this.scene.remove(body.mesh);
+      body.onLandCallback = null; body.getTargetPosFn = null;
+      if (body.type === 'scoop_arc') { geometries.add(body.mesh.geometry); materials.add(body.mesh.material); }
+    }
+    if (this.rigidBodies) this.rigidBodies.bodies.length = 0;
+    geometries.forEach((geometry) => geometry?.dispose());
+    materials.forEach((material) => material?.dispose());
+    for (const bell of this.bells || []) {
+      bell.velZ = bell.velX = bell.angleZ = bell.angleX = 0;
+      bell.clapperVelZ = bell.clapperVelX = bell.clapperAngleZ = bell.clapperAngleX = 0;
+      bell.shimmerTimer = 0; bell.strikeCooldown = 0; bell.paddleInContact = bell.handInContact = false;
+      bell.pivot.rotation.set(0, 0, 0); bell.clapperPivot.rotation.set(0, 0, 0); bell.shimmerRing.visible = false; bell.shimmerMat.opacity = 0;
+    }
+    this.previousPaddleStrikePoint = null;
+    this._faceTouch=null;
+    if(this.vendorHead)this.vendorHead.position.z=.02;
+    this._orderPolePosition = null; this._orderPhase = null;
+  }
+
+  /** Order-only presentation override; call after idle director and never during active input. */
+  updateOrderPresentation(order = {}, dt = .016, time = 0) {
+    this.beginPoseFrame();
+    const phase = order.phase || 'greeting';
+    if (this._orderPhase !== phase) {
+      this.playVendorReaction(phase === 'confirm' ? 'recognition' : phase === 'greeting' ? (order.recognized ? 'recognition' : 'greeting') : 'thanks');
+      this._orderPhase = phase;
+      this._orderCountStarted = time;
+    }
+    this.setConeInVendorHand(false);
+    this.updateIceCreamScoops(0);
+    this.carryScoop.visible = false;
+    if (!this._orderPolePosition) this._orderPolePosition = this.paddleGroup.position.clone();
+    const tub = this.tubPositions[Math.max(0, Math.min(this.tubPositions.length - 1, Number(order.flavorIndex) || 0))];
+    const desired = phase === 'flavor' ? tub.worldPos.clone().add(new THREE.Vector3(0, .18, .07)) : new THREE.Vector3(-.12, 1.24 + Math.sin(time * 1.6) * .012, .12);
+    this._orderPolePosition.lerp(desired, 1 - Math.exp(-Math.max(0, dt) * 7));
+    this.paddleGroup.position.copy(this._orderPolePosition);
+    this.coneSpring.pos.copy(this._orderPolePosition);
+    const hand = phase === 'flavor' ? new THREE.Vector3(tub.x * .45, 1.29, -.34) : new THREE.Vector3(.27, 1.43, -.30);
+    this.orientPaddleAndHands(0, hand, dt, 0, 0);
+    const requestedCount = THREE.MathUtils.clamp(Number(order.count) || (phase === 'count' && order.hover > 0 ? order.hover : order.choices?.at(-1)) || 2, 1, MAX_SCOOPS);
+    const countPart = requestedCount > 4 && Math.floor((time - (this._orderCountStarted || 0)) / .8) % 2 === 1 ? requestedCount - 4 : Math.min(4, requestedCount);
+    this._setVendorOpenHand(this.lArmRig, phase === 'count' ? countPart : phase === 'flavor' ? 1 : 4);
+    if (phase === 'flavor') {
+      const direction = tub.worldPos.clone().sub(this.lArmRig.handGroup.position).normalize();
+      this.lArmRig.handGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+    } else this.lArmRig.handGroup.rotation.set(-.18, -.15, -.12);
+  }
+
+  /** Change only the existing cone's owner; preserve its world pose at handoff. */
+  setConeInVendorHand(enabled) {
+    // The customer owns a caught cone until the round is explicitly reset.
+    if (this.conePivot.parent === this.heldSocket) return;
+    const destination = enabled ? this.lArmRig.handGroup : this.paddleGroup;
+    this.coneHeldByVendor = Boolean(enabled);
+    if (this.conePivot.parent !== destination) {
+      this.scene.updateMatrixWorld(true);
+      destination.attach(this.conePivot);
+    }
+  }
+
+  /** Current visible lower lip, including reduced scale and pendulum rotation. */
+  getBellStrikeTarget(bellIndex, out = new THREE.Vector3()) {
+    const b = this.bells[Math.abs(Math.round(bellIndex)) % this.bells.length];
+    if (!b) return out.set(0, 1.8, -0.13);
+    b.pivot.updateWorldMatrix(true, false);
+    return b.pivot.localToWorld(out.set(0, -0.145, 0.073));
+  }
+
+  getBellBodyCenter(bellIndex, out = new THREE.Vector3()) {
+    const b = this.bells[Math.abs(Math.round(bellIndex)) % this.bells.length];
+    if (!b) return out.set(0, 1.8, -0.13);
+    b.pivot.updateWorldMatrix(true, false);
+    return b.pivot.localToWorld(out.set(0, -0.122, 0));
+  }
+
+  getPaddleStrikePoint(out = new THREE.Vector3()) {
+    this.paddleStrikeAnchor.updateWorldMatrix(true, false);
+    return this.paddleStrikeAnchor.getWorldPosition(out);
+  }
+
+  /** Physical top of the existing brass front rail, including basin tilt. */
+  getCounterStrikeTarget(x = 0, out = new THREE.Vector3()) {
+    this.basinDeckGroup.updateWorldMatrix(true, false);
+    return this.basinDeckGroup.localToWorld(out.set(THREE.MathUtils.clamp(x, -.48, .48), .0375, .34));
+  }
+
+  /** Front rolled steel lip rather than the ice mass or an approximate table height. */
+  getTubRimStrikeTarget(index = 0, out = new THREE.Vector3()) {
+    const tub = this.tubPositions[Math.abs(Math.floor(index)) % this.tubPositions.length];
+    this.basinDeckGroup.updateWorldMatrix(true, false);
+    return this.basinDeckGroup.localToWorld(out.set(tub.x, .061, .117));
+  }
+
+  /** Zero-based actual scoop center in world space, usable as a deposition anchor. */
+  getScoopAnchor(index = 0, out = new THREE.Vector3()) {
+    const scoop = this.scoopMeshes[THREE.MathUtils.clamp(Math.floor(index), 0, this.scoopMeshes.length - 1)];
+    scoop.updateWorldMatrix(true, false);
+    return scoop.getWorldPosition(out);
+  }
+
+  getScoopTopHeight(count) {
+    const n = THREE.MathUtils.clamp(Math.ceil(Number(count) || 0), 0, MAX_SCOOPS);
+    const layout = n > 4 ? LARGE_SCOOP_LAYOUT : CLASSIC_SCOOP_LAYOUT;
+    let top = .035;
+    for (let i = 0; i < n; i++) top = Math.max(top, layout[i][1] + layout[i][3]);
+    return top;
   }
 
   applySelectedFlavorColors(flavorIndices = [0, 1, 2, 3]) {
@@ -1464,6 +1711,7 @@ export class GameWorld {
       color: 0xdbeafe,
       transparent: true,
       opacity: 0.22,
+      depthWrite: false,
       roughness: 0.08,
       metalness: 0.2,
     });
@@ -1555,18 +1803,18 @@ export class GameWorld {
 
     // Shoulder Anchors on Torso
     this.rightShoulderAnchor = new THREE.Object3D();
-    this.rightShoulderAnchor.position.set(-0.25, 0.46, 0.06);
+    this.rightShoulderAnchor.position.set(-0.31, 0.46, 0.12);
     this.vendorTorso.add(this.rightShoulderAnchor);
 
     this.leftShoulderAnchor = new THREE.Object3D();
-    this.leftShoulderAnchor.position.set(0.25, 0.46, 0.06);
+    this.leftShoulderAnchor.position.set(0.31, 0.46, 0.12);
     this.vendorTorso.add(this.leftShoulderAnchor);
 
-    this.rArmRig = this._createIKLimbRig();
-    this.lArmRig = this._createIKLimbRig();
+    this.rArmRig = this._createIKLimbRig('right');
+    this.lArmRig = this._createIKLimbRig('left');
 
     this.leftHandConeProp = new THREE.Mesh(
-      new THREE.ConeGeometry(0.056, 0.18, 18),
+      new THREE.ConeGeometry(0.056, 0.18, 18,1,true),
       new THREE.MeshStandardMaterial({
         map: this.waffleTexture,
         roughness: 0.6,
@@ -1577,12 +1825,12 @@ export class GameWorld {
     this.leftHandConeProp.visible = false;
     this.lArmRig.handGroup.add(this.leftHandConeProp);
 
-    // Fake "Peçeteli Külah" (Cone stuffed with a white folded paper napkin)
+    // Paper-wrapped EMPTY wafer: the paper is below the rim, never a white ice cap.
     this.napkinConeProp = new THREE.Group();
     this.napkinConeProp.visible = false;
     this.napkinConeProp.position.set(0, 0.08, 0.03);
     const fakeWaffle = new THREE.Mesh(
-      new THREE.ConeGeometry(0.056, 0.18, 18),
+      new THREE.ConeGeometry(0.056, 0.18, 18,1,true),
       new THREE.MeshStandardMaterial({
         map: this.waffleTexture,
         roughness: 0.6,
@@ -1597,18 +1845,18 @@ export class GameWorld {
       side: THREE.DoubleSide,
     });
     const fakeNapkinTop1 = new THREE.Mesh(
-      new THREE.ConeGeometry(0.072, 0.15, 4),
+      new THREE.CylinderGeometry(.044,.014,.10,16,1,true,0,Math.PI*1.75),
       napMat
     );
-    fakeNapkinTop1.position.y = 0.12;
+    fakeNapkinTop1.position.y = -.025;
     fakeNapkinTop1.rotation.z = 0.18;
     this.napkinConeProp.add(fakeNapkinTop1);
 
     const fakeNapkinTop2 = new THREE.Mesh(
-      new THREE.ConeGeometry(0.068, 0.14, 4),
+      new THREE.PlaneGeometry(.065,.095),
       napMat
     );
-    fakeNapkinTop2.position.y = 0.13;
+    fakeNapkinTop2.position.set(.012,-.026,.033);
     fakeNapkinTop2.rotation.y = 0.8;
     fakeNapkinTop2.rotation.x = -0.22;
     this.napkinConeProp.add(fakeNapkinTop2);
@@ -1624,6 +1872,7 @@ export class GameWorld {
     this.napkinProp.add(napFold1);
     this.napkinProp.position.set(0, 0.06, 0.04);
     this.lArmRig.handGroup.add(this.napkinProp);
+    this.vendorBody=new VendorBody(this);
   }
 
   /**
@@ -1818,7 +2067,7 @@ export class GameWorld {
     this.spectatorReactionTimer = 1.4;
   }
 
-  _createIKLimbRig() {
+  _createIKLimbRig(handedness = 'right') {
     const upperGroup = new THREE.Group();
     this.scene.add(upperGroup);
     const upperMesh = new THREE.Mesh(
@@ -1858,84 +2107,154 @@ export class GameWorld {
 
     const handGroup = new THREE.Group();
     this.scene.add(handGroup);
-    const palm = new THREE.Mesh(
-      new THREE.SphereGeometry(0.048, 14, 12),
-      this.vendorSkinMat
-    );
-    palm.scale.set(1.05, 0.9, 1.15);
-    handGroup.add(palm);
-
-    for (let i = 0; i < 4; i++) {
-      const finger = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.011, 0.036, 6, 8),
-        this.vendorSkinMat
-      );
-      finger.position.set(-0.022 + i * 0.015, -0.022, 0.01);
-      finger.rotation.x = Math.PI * 0.48;
-      handGroup.add(finger);
-    }
-
-    const thumb = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.012, 0.034, 6, 8),
-      this.vendorSkinMat
-    );
-    thumb.position.set(0.028, 0.018, 0.01);
-    thumb.rotation.z = -0.6;
-    handGroup.add(thumb);
-
-    return {
-      upperGroup,
-      lowerGroup,
-      handGroup,
-    };
+    const anatomicalHand=typeof handedness==='string'?handedness:handedness<0?'left':'right';
+    const handRig = new HandRig({material:this.vendorSkinMat,handedness:anatomicalHand});
+    handGroup.add(handRig);
+    // Non-rendering compatibility handles for older choreography reset paths.
+    const fingerWraps = new THREE.Group(),openFingers = new THREE.Group();
+    return {upperGroup,lowerGroup,handGroup,handRig,palm:handRig.palm,
+      fingerWraps,openFingers,thumb:handRig.thumbPivot,
+      wristAnchor:handRig.wristAnchor,gripAnchor:handRig.gripAnchor};
   }
 
-  _solveArmIK(rig, shoulderWorld, targetWorld, elbowHintOffset) {
-    const upperLen = 0.33;
-    const lowerLen = 0.33;
+  _solveArmIK(rig, shoulderWorld, targetWorld, elbowHintOffset, lockToGrip = false) {
+    const solver=this._vendorArmSolver||(this._vendorArmSolver=new VendorArmSolver(this.vendorTorso,{presentation:true,counter:Boolean(this.basinDeckGroup)}));
+    solver.prepare();
+    const side=elbowHintOffset.x<0?-1:1;
+    const gripAxis=lockToGrip?this.paddleRollGroup?.getWorldDirection(new THREE.Vector3()):null;
+    const pose=solver.solveContinuous(shoulderWorld,targetWorld,{side,mode:this.vendorArmMode||'front',previous:rig.previousFrameElbow||rig.armPose?.elbow,clampReach:!lockToGrip,gripAxis},rig.previousArmFrame,this._handPoseDt);
+    rig.shoulderWorld=shoulderWorld.clone();rig.armSide=side;rig.lockToGrip=lockToGrip;
+    this._applyVendorArmPose(rig,pose);
+    rig.handGroup.position.copy(pose.wrist);
+    rig.handGroup.quaternion.copy(this.paddleGroup.quaternion);
+  }
 
-    const dir = new THREE.Vector3().subVectors(targetWorld, shoulderWorld);
-    const dist = dir.length();
-    const maxReach = upperLen + lowerLen - 0.004;
-
-    const clampedTarget = targetWorld.clone();
-    if (dist > maxReach) {
-      dir.normalize();
-      clampedTarget.copy(shoulderWorld).addScaledVector(dir, maxReach);
+  _applyVendorArmPose(rig,pose) {
+    rig.armPose=pose;
+    if(!rig.shoulderCap){
+      rig.shoulderCap=new THREE.Mesh(new THREE.SphereGeometry(.078,12,10),this.vendorShirtMat);
+      rig.shoulderCap.castShadow=true;this.scene.add(rig.shoulderCap);
     }
+    const base=this.vendorTorso?this.vendorTorso.localToWorld(new THREE.Vector3((rig.armSide||1)*.22,.46,.06)):(rig.shoulderWorld||pose.shoulder).clone();
+    const shoulderAxis=pose.shoulder.clone().sub(base),span=shoulderAxis.length();
+    rig.shoulderCap.position.copy(base).add(pose.shoulder).multiplyScalar(.5);
+    if(span>.001)rig.shoulderCap.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),shoulderAxis.divideScalar(span));
+    rig.shoulderCap.scale.set(.95,Math.max(1,(span+.11)/.156),.95);
+    rig.upperGroup.position.copy(pose.shoulder);rig.upperGroup.lookAt(pose.elbow);
+    rig.upperGroup.scale.set(1,1,pose.upperLength);
+    rig.lowerGroup.position.copy(pose.elbow);rig.lowerGroup.lookAt(pose.wrist);
+    rig.lowerGroup.scale.set(1,1,pose.lowerLength);
+  }
 
-    const d = Math.min(maxReach, Math.max(0.08, dist));
-    const cosAngle = THREE.MathUtils.clamp(
-      (upperLen * upperLen + d * d - lowerLen * lowerLen) / (2 * upperLen * d),
-      -1,
-      1
-    );
-    const angle = Math.acos(cosAngle);
+  /** Shaft/wafer root stays in contact; skin joins the actual articulated wrist. */
+  _fitArmToHand(rig) {
+    if(!rig.handRig?.wristAnchor||!rig.shoulderWorld)return;
+    const wrist=rig.handRig.wristAnchor.getWorldPosition(new THREE.Vector3());
+    const solver=this._vendorArmSolver.prepare();
+    const gripAxis=['pole','cone'].includes(rig.handRig.pose)
+      ?new THREE.Vector3(1,0,0).transformDirection(rig.handRig.matrixWorld):null;
+    const pose=solver.solveContinuous(rig.shoulderWorld,wrist,{side:rig.armSide,mode:this.vendorArmMode||'front',previous:rig.previousFrameElbow||rig.armPose?.elbow,clampReach:false,gripAxis},rig.previousArmFrame,this._handPoseDt);
+    this._applyVendorArmPose(rig,pose);
+  }
 
-    const forward = new THREE.Vector3()
-      .subVectors(clampedTarget, shoulderWorld)
-      .normalize();
-    const pole = elbowHintOffset.clone().normalize();
-    const right = new THREE.Vector3().crossVectors(forward, pole).normalize();
-    const bendDir = new THREE.Vector3()
-      .crossVectors(right, forward)
-      .normalize();
+  _safeShaftGrip(tip,backward,shoulder,min,max,preferred,side) {
+    const solver=this._vendorArmSolver||(this._vendorArmSolver=new VendorArmSolver(this.vendorTorso,{presentation:true,counter:Boolean(this.basinDeckGroup)}));
+    solver.prepare();
+    const rig=side<0?this.rArmRig:this.lArmRig;
+    const direction=backward.clone().negate(),elbow=(rig.previousFrameElbow||rig.armPose?.elbow)?.clone()||shoulder.clone().add(new THREE.Vector3(side*.15,-.25,.06));
+    const roll=Math.sin(this._displayedPaddleRoll||0)*(side<0?.18:.14),local=canonicalPoleHandRotation(rig.handRig.side),frames=new Map();
+    const wristOffset=distance=>{
+      const contact=tip.clone().addScaledVector(backward,distance);
+      const frame=poleContactRotation(rig.handRig.side,direction,contact,elbow,roll,new THREE.Quaternion(),rig.poleFrameStart,this._handPoseDt*6);
+      frames.set(distance,frame);
+      return handGripCenter('pole',distance>.74?.027:.014).applyQuaternion(local).negate().applyQuaternion(frame);
+    };
+    const selected=solver.shaftGrip(tip,backward,shoulder,min,max,preferred,{side,mode:this.vendorArmMode||'front',wristOffset});
+    selected.handFrame=frames.get(selected.distance);return selected;
+  }
 
-    const elbowWorld = shoulderWorld
-      .clone()
-      .addScaledVector(forward, Math.cos(angle) * upperLen)
-      .addScaledVector(bendDir, Math.sin(angle) * upperLen);
+  _resolveVendorGrips(right,left,preferred=.82) {
+    const read=()=>{
+      const tip=this.paddleRollGroup.getWorldPosition(new THREE.Vector3());
+      const backward=new THREE.Vector3(0,0,-1).applyQuaternion(this.paddleRollGroup.getWorldQuaternion(new THREE.Quaternion()));
+      const rear=this._safeShaftGrip(tip,backward,right,.14,1.01,this.vendorRearGripHint??this._bareRearGrip??this._rearGripDistance??preferred,-1);
+      return{tip,backward,rear};
+    };
+    let selected=read();
+    // The blade can swivel tangent to the ice crown without moving the food.
+    // Select the nearest safe handle lane when a large/inverted cone blocks it.
+    if(!selected.rear.safe&&this.paddleContact?.active&&!this._resolvingVendorStance){
+      const initial=this.paddleTangentOffset||0;let best=initial,bestScore=selected.rear.score;
+      for(const delta of[.10,-.10,.17,-.17,.22,-.22,.45,-.45,.8,-.8,1.2,-1.2,1.7,-1.7]){
+        this.paddleTangentOffset=initial+delta;this.paddleContact.update(this,this._displayedPaddleRoll||0);
+        const candidate=read();
+        if(candidate.rear.score<bestScore){bestScore=candidate.rear.score;best=this.paddleTangentOffset;}
+        if(candidate.rear.safe){best=this.paddleTangentOffset;break;}
+      }
+      this.paddleTangentOffset=best;this.paddleContact.update(this,this._displayedPaddleRoll||0);selected=read();
+    }
+    const {tip,backward,rear}=selected;
+    const front=this._safeShaftGrip(tip,backward,left,.12,rear.distance-.10,this._frontGripDistance??rear.distance-.30,1);
+    front.safe=front.safe&&rear.distance-front.distance>=.099;
+    this._rearGripDistance=rear.distance;this._frontGripDistance=front.distance;
+    if(!rear.safe&&this.vendorTorso&&this.vendorGroup&&!this._resolvingVendorStance&&!Number.isFinite(this.vendorBodyYawHint)){
+      const baseYaw=this._bodyTargetYaw??this.vendorTorso.rotation.y;
+      const initial={yaw:this.vendorTorso.rotation.y,tangent:this.paddleTangentOffset||0,rear:this._rearGripDistance,front:this._frontGripDistance};
+      const heldForward=this.paddleRollGroup.getWorldDirection(new THREE.Vector3());
+      let best={...initial,result:{rear,front},score:rear.score};
+      const sign=rear.wrist.x>=right.x?1:-1;
+      const testedYaw=new Set([initial.yaw]);
+      this._resolvingVendorStance=true;
+      for(const turn of[.08,.16,.24]){
+        const candidateYaw=THREE.MathUtils.clamp(initial.yaw+turn*sign,Math.max(-.65,baseYaw-.30),Math.min(.65,baseYaw+.30));
+        if(testedYaw.has(candidateYaw))continue;testedYaw.add(candidateYaw);
+        this.vendorTorso.rotation.y=candidateYaw;
+        this.paddleTangentOffset=initial.tangent;this._rearGripDistance=initial.rear;this._frontGripDistance=initial.front;
+        this.vendorGroup.updateMatrixWorld(true);
+        this.rightShoulderAnchor.getWorldPosition(right);this.leftShoulderAnchor.getWorldPosition(left);
+        const candidate=this._resolveVendorGrips(right,left,preferred);
+        if(candidate.rear.score<best.score)best={yaw:this.vendorTorso.rotation.y,tangent:this.paddleTangentOffset,rear:this._rearGripDistance,front:this._frontGripDistance,result:candidate,score:candidate.rear.score};
+        if(candidate.rear.safe)break;
+      }
+      this.vendorTorso.rotation.y=best.yaw;this.paddleTangentOffset=best.tangent;this._rearGripDistance=best.rear;this._frontGripDistance=best.front;
+      this._vendorGripYawOffset=THREE.MathUtils.clamp(best.yaw-baseYaw,-.30,.30);
+      this.vendorGroup.updateMatrixWorld(true);this.rightShoulderAnchor.getWorldPosition(right);this.leftShoulderAnchor.getWorldPosition(left);
+      // The body moves beneath an already-held tool. Counter the changed
+      // shoulder reference so the steel/contact does not rotate with the torso.
+      if(this.paddleContact?.active&&this.paddleContact.scoop){
+        this.paddleTangentOffset=0;
+        const pose=this.paddleContact.poseForScoop(this,this.paddleContact.scoop),normal=pose.normal.clone(),base=pose.forward.clone();
+        heldForward.addScaledVector(normal,-heldForward.dot(normal)).normalize();
+        this.paddleTangentOffset=Math.atan2(normal.dot(new THREE.Vector3().crossVectors(base,heldForward)),base.dot(heldForward));
+        this.paddleContact.update(this,this._displayedPaddleRoll||0);
+      }
+      this._resolvingVendorStance=false;
+      return best.result;
+    }
+    return{rear,front};
+  }
 
-    rig.upperGroup.position.copy(shoulderWorld);
-    rig.upperGroup.lookAt(elbowWorld);
-    rig.upperGroup.scale.set(1, 1, shoulderWorld.distanceTo(elbowWorld));
+  _fitHandToShaft(rig, distance, wristRoll,selectedFrame=null) {
+    const shaftDirection = new THREE.Vector3(0,0,1).applyQuaternion(this.paddleRollGroup.getWorldQuaternion(new THREE.Quaternion()));
+    const frame=selectedFrame||poleContactRotation(rig.handRig.side,shaftDirection,rig.handGroup.position,rig.armPose?.elbow,wristRoll);
+    rig.handGroup.quaternion.copy(frame);
+    (rig.poleContactFrame ||= new THREE.Quaternion()).copy(frame);
+    rig.handRig.placeGrip(new THREE.Vector3(),'pole','pole',distance>.74?.027:.014);
+  }
 
-    rig.lowerGroup.position.copy(elbowWorld);
-    rig.lowerGroup.lookAt(clampedTarget);
-    rig.lowerGroup.scale.set(1, 1, elbowWorld.distanceTo(clampedTarget));
+  _setVendorOpenHand(rig,count=4,rest=false) {
+    rig.handRig?.placeOpen(count);
+    this._fitArmToHand?.(rig);
+    if(rest&&rig.armPose){
+      const forearm=rig.armPose.wrist.clone().sub(rig.armPose.elbow);
+      const bodyRight=new THREE.Vector3(1,0,0).transformDirection(this.vendorTorso.matrixWorld);
+      restHandRotation(rig.handRig.side,forearm,bodyRight,rig.handGroup.quaternion);
+    }
+  }
 
-    rig.handGroup.position.copy(clampedTarget);
-    rig.handGroup.rotation.copy(this.paddleGroup.rotation);
+  beginVendorConeReceive(){
+    this.vendorConeReceiveFrom=captureVendorHandPose(this.lArmRig);
+    this.vendorConeReceiveProgress=0;
   }
 
   setVendorMood(mood = 'smile') {
@@ -2038,87 +2357,49 @@ export class GameWorld {
       metalness: 0.05,
     });
 
-    const forearm = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.046, 0.058, 0.42, 16),
+    // All palm rotation originates at this wrist, where the forearm terminates.
+    // Keeping a shared joint prevents the old center-pivot palm from separating.
+    const wristCenter = new THREE.Vector3(0, -0.05, 0.012);
+    this.playerWristRest = wristCenter.clone();
+    const armEnd = new THREE.Vector3(0.105, -0.28, 0.37);
+    const armAxis = wristCenter.clone().sub(armEnd).normalize();
+    this.touristForearm = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.034, 0.055, PLAYER_FOREARM_LENGTH, 14),
       skinMat
     );
-    forearm.rotation.x = Math.PI * 0.38;
-    forearm.rotation.z = -0.18;
-    forearm.position.set(0.06, -0.14, 0.18);
-    this.touristHand.add(forearm);
+    this.touristForearm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), armAxis);
+    this.touristForearm.position.copy(wristCenter).add(armEnd).multiplyScalar(0.5);
+    this.touristForearm.castShadow = true;
+    this.touristHand.add(this.touristForearm);
 
     const sleeve = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.062, 0.068, 0.22, 16),
+      new THREE.CylinderGeometry(0.055, 0.059, PLAYER_UPPER_ARM_LENGTH, 14),
       new THREE.MeshStandardMaterial({ color: 0x1d3557, roughness: 0.7 })
     );
-    sleeve.rotation.x = Math.PI * 0.38;
-    sleeve.rotation.z = -0.18;
-    sleeve.position.set(0.09, -0.22, 0.29);
+    sleeve.quaternion.copy(this.touristForearm.quaternion);
+    sleeve.position.copy(armEnd).addScaledVector(armAxis, 0.025);
     this.touristHand.add(sleeve);
+    this.touristSleeve = sleeve;
 
-    const bracelet = new THREE.Mesh(
-      new THREE.TorusGeometry(0.048, 0.008, 10, 20),
-      new THREE.MeshStandardMaterial({ color: 0x00b4d8, roughness: 0.2 })
-    );
-    bracelet.rotation.x = Math.PI * 0.38;
-    bracelet.position.set(0.03, -0.06, 0.07);
-    this.touristHand.add(bracelet);
 
-    this.palmGroup = new THREE.Group();
-    this.touristHand.add(this.palmGroup);
+    this.playerHandRig = new HandRig({material:skinMat,handedness:'right'});
+    this.playerHandRig.position.copy(wristCenter);
+    this.touristHand.add(this.playerHandRig);
+    this.palmGroup = this.playerHandRig;
+    this.touristPalm = this.playerHandRig.palm;
+    this.touristWrist = this.playerHandRig.wrist;
+    this.fingers = this.playerHandRig.fingers;
+    for (const name of ['thumbPivot','thumbJoint','thumbBaseJoint','thumbProximal','thumbKnuckle','thumbDistal'])this[name]=this.playerHandRig[name];
+    this.playerAimAnchor = this.playerHandRig.aimAnchor;
+    this.touristHand.updateWorldMatrix(true,true);
+    this.playerAimReference = this.touristHand.worldToLocal(this.playerAimAnchor.getWorldPosition(new THREE.Vector3()));
 
-    const palmMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.105, 0.11, 0.038),
-      skinMat
-    );
-    palmMesh.castShadow = true;
-    this.palmGroup.add(palmMesh);
-
-    this.fingers = [];
-    const fingerOffsets = [-0.038, -0.013, 0.013, 0.038];
-    const fingerLengths = [0.072, 0.08, 0.074, 0.058];
-
-    fingerOffsets.forEach((fx, i) => {
-      const fPivot = new THREE.Group();
-      fPivot.position.set(fx, 0.052, 0);
-      this.palmGroup.add(fPivot);
-
-      const seg1 = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.011, fingerLengths[i] * 0.55, 8, 10),
-        skinMat
-      );
-      seg1.position.y = fingerLengths[i] * 0.32;
-      fPivot.add(seg1);
-
-      const knuckle2 = new THREE.Group();
-      knuckle2.position.y = fingerLengths[i] * 0.62;
-      fPivot.add(knuckle2);
-
-      const seg2 = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.0095, fingerLengths[i] * 0.45, 8, 10),
-        skinMat
-      );
-      seg2.position.y = fingerLengths[i] * 0.25;
-      knuckle2.add(seg2);
-
-      this.fingers.push({ base: fPivot, tip: knuckle2 });
-    });
-
-    this.thumbPivot = new THREE.Group();
-    this.thumbPivot.position.set(-0.056, -0.01, 0.012);
-    this.thumbPivot.rotation.z = 0.65;
-    this.palmGroup.add(this.thumbPivot);
-
-    const thumbMesh = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.013, 0.055, 8, 10),
-      skinMat
-    );
-    thumbMesh.position.y = 0.032;
-    this.thumbPivot.add(thumbMesh);
-
+    const bracelet = new THREE.Mesh(new THREE.TorusGeometry(.031,.0035,8,18),new THREE.MeshStandardMaterial({color:0x00b4d8,roughness:.35}));
+    this.touristHand.add(bracelet);this.touristBracelet=bracelet;this.playerBraceletRest=wristCenter.clone();
     this.heldSocket = new THREE.Group();
-    this.heldSocket.position.set(0, 0.04, -0.035);
-    this.palmGroup.add(this.heldSocket);
+    this.heldSocket.position.copy(HAND_GRIP_CENTER);
+    this.playerHandRig.add(this.heldSocket);
+    fitPlayerForearm(this);
 
     this.heldEmptyCone = new THREE.Mesh(
       new THREE.ConeGeometry(0.06, 0.19, 18),
@@ -2132,8 +2413,8 @@ export class GameWorld {
     this.heldSocket.add(this.heldEmptyCone);
 
     this.heldNapkin = new THREE.Mesh(
-      new THREE.ConeGeometry(0.075, 0.16, 4),
-      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 })
+      new THREE.PlaneGeometry(.14,.13,5,5),
+      new THREE.MeshStandardMaterial({color:0xf7f0e1,roughness:.95,side:THREE.DoubleSide})
     );
     this.heldNapkin.visible = false;
     this.heldSocket.add(this.heldNapkin);
@@ -2141,7 +2422,7 @@ export class GameWorld {
     this.heldNapkinCone = new THREE.Group();
     this.heldNapkinCone.visible = false;
     const hWaffle = new THREE.Mesh(
-      new THREE.ConeGeometry(0.056, 0.18, 18),
+      new THREE.ConeGeometry(0.056, 0.18, 18,1,true),
       new THREE.MeshStandardMaterial({
         map: this.waffleTexture,
         roughness: 0.6,
@@ -2155,17 +2436,17 @@ export class GameWorld {
       side: THREE.DoubleSide,
     });
     const hNap1 = new THREE.Mesh(
-      new THREE.ConeGeometry(0.072, 0.15, 4),
+      new THREE.CylinderGeometry(.044,.014,.10,16,1,true,0,Math.PI*1.75),
       hNapMat
     );
-    hNap1.position.y = 0.11;
+    hNap1.position.y = -.025;
     hNap1.rotation.z = 0.2;
     this.heldNapkinCone.add(hNap1);
     const hNap2 = new THREE.Mesh(
-      new THREE.ConeGeometry(0.066, 0.14, 4),
+      new THREE.PlaneGeometry(.065,.095),
       hNapMat
     );
-    hNap2.position.y = 0.12;
+    hNap2.position.set(.012,-.026,.033);
     hNap2.rotation.y = 0.8;
     hNap2.rotation.x = -0.22;
     this.heldNapkinCone.add(hNap2);
@@ -2226,30 +2507,39 @@ export class GameWorld {
   }
 
   updateIceCreamScoops(scoopCount, showCrownTopping = false) {
-    this.scoop1.visible = scoopCount >= 1;
-    this.scoop2.visible = scoopCount >= 2;
-    this.scoop3.visible = scoopCount >= 3;
-    this.scoop4.visible = scoopCount >= 4;
-
-    if (scoopCount > 0 && scoopCount < 1) {
-      this.scoop1.visible = true;
-      this.scoop1.scale.set(0.75, 0.5, 0.75);
-      this.scoop1.position.y = 0.025;
-    } else if (scoopCount >= 1) {
-      this.scoop1.scale.set(1, 1, 1);
-      this.scoop1.position.y = 0.045;
+    const amount = THREE.MathUtils.clamp(Number(scoopCount) || 0, 0, MAX_SCOOPS);
+    const count = Math.ceil(amount);
+    const layout = count > 4 ? LARGE_SCOOP_LAYOUT : CLASSIC_SCOOP_LAYOUT;
+    let highest = 0;
+    this.scoopMeshes.forEach((mesh, index) => {
+      const pose = layout[index] || LARGE_SCOOP_LAYOUT[index];
+      mesh.visible = index < count;
+      this.scoopLayoutTargets[index].set(pose[0], pose[1], pose[2]);
+      const radius = mesh.geometry.parameters.radius;
+      this.scoopScaleTargets[index].setScalar(pose[3] / radius);
+      if (amount > 0 && amount < 1 && index === 0) {
+        this.scoopLayoutTargets[index].y = .025;
+        this.scoopScaleTargets[index].set(.75, .5, .75);
+      }
+      if (index < count && pose[1] + pose[3] > (layout[highest]?.[1] ?? 0) + (layout[highest]?.[3] ?? 0)) highest = index;
+      if (!this._scoopLayoutInitialized) { mesh.position.copy(this.scoopLayoutTargets[index]); mesh.scale.copy(this.scoopScaleTargets[index]); }
+    });
+    this._scoopLayoutInitialized = true;
+    const top = layout[highest] || CLASSIC_SCOOP_LAYOUT[0];
+    this.toppingGroup.position.set(top[0], this.getScoopTopHeight(count) - .015, top[2]);
+    this.toppingGroup.visible = Boolean(showCrownTopping && count > 0);
+    if (this.waferStick) {
+      this.waferStick.rotation.z = count > 4 ? -1.05 : -.35;
+      this.waferStick.position.set(count > 4 ? .05 : .025, count > 4 ? 0 : .03, 0);
     }
+  }
 
-    const topY =
-      scoopCount >= 4
-        ? 0.265
-        : scoopCount >= 3
-          ? 0.21
-          : scoopCount >= 2
-            ? 0.15
-            : 0.085;
-    this.toppingGroup.position.y = topY;
-    this.toppingGroup.visible = Boolean(showCrownTopping && scoopCount >= 1);
+  updateServingLayout(dt) {
+    const blend = 1 - Math.exp(-Math.max(0, dt) * 14);
+    this.scoopMeshes.forEach((mesh, index) => {
+      mesh.position.lerp(this.scoopLayoutTargets[index], blend);
+      mesh.scale.lerp(this.scoopScaleTargets[index], blend);
+    });
   }
 
   triggerScoopJiggle(power = 1.0) {
@@ -2281,6 +2571,9 @@ export class GameWorld {
     const b = this.bells[idx];
     if (!b) return;
 
+    this.getBellBodyCenter(idx, b.worldPos);
+    b.strikeCooldown = 0.28;
+
     const dir = idx < 3 ? -1 : idx > 3 ? 1 : Math.random() < 0.5 ? -1 : 1;
     b.velZ += dir * 13.5 * power;
     b.velX += (0.5 + Math.random() * 0.5) * 9.0 * power;
@@ -2303,8 +2596,11 @@ export class GameWorld {
   }
 
   spawnBurst(worldPos, color = 0xf5b942, count = 16) {
+    count=Math.max(0,Math.ceil(count));
+    if(!Number.isFinite(count)||count===0)return;
     const geo = new THREE.OctahedronGeometry(0.017, 0);
     const mat = new THREE.MeshBasicMaterial({ color });
+    const resources={geometry:geo,material:mat,remaining:count};
     for (let i = 0; i < count; i++) {
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.copy(worldPos);
@@ -2314,68 +2610,166 @@ export class GameWorld {
         (Math.random() - 0.5) * 1.6
       );
       this.scene.add(mesh);
-      this.particles.push({ mesh, vel, life: 0.7 });
+      this.particles.push({ mesh, vel, life: 0.7, resources });
     }
   }
 
-  updateTouristHand(targetPos, grabCurl = 0.15, lungeBoost = 0, dt = 0.016) {
+  updateBurstParticles(dt) {
+    for(let i=this.particles.length-1;i>=0;i--){
+      const p=this.particles[i];p.life-=dt;
+      if(p.life<=0){
+        this.scene.remove(p.mesh);this.particles.splice(i,1);
+        // A burst shares one geometry/material; release after its final mote.
+        if(p.resources&&--p.resources.remaining===0){p.resources.geometry.dispose();p.resources.material.dispose();}
+      }else{
+        p.vel.y-=4.0*dt;p.mesh.position.addScaledVector(p.vel,dt);
+        p.mesh.rotation.x+=5*dt;p.mesh.rotation.y+=5*dt;
+        p.mesh.scale.setScalar(Math.max(.01,p.life*1.3));
+      }
+    }
+  }
+
+  updateTouristHand(targetPos, grabCurl = 0.15, lungeBoost = 0, dt = 0.016, directTouch = false, time=0) {
     this.handSpring.target.copy(targetPos);
+    if (directTouch) {
+      // The phone hand is a direct extension of the finger: no lag below it.
+      this.handSpring.pos.copy(targetPos); this.handSpring.vel.set(0, 0, 0);
+    }
     const pos = this.handSpring.step(dt);
     this.touristHand.position.copy(pos);
+    const resting=!this.playerPointerActive&&(!directTouch||this.playerPointerResting)&&!this.playerConeGripRequested&&!playerOwnsCone(this);
+    if(resting){this.touristHand.position.y+=Math.sin(time*1.8)*.004;this.touristHand.position.x+=Math.sin(time*.9)*.002;}
 
     const v = this.handSpring.vel;
-    this.palmGroup.rotation.z = THREE.MathUtils.clamp(
-      -pos.x * 0.4 - v.x * 0.08,
-      -0.75,
-      0.75
-    );
-    this.palmGroup.rotation.x = THREE.MathUtils.clamp(
-      (pos.y - 1.2) * 0.45 - lungeBoost * 0.35 + v.y * 0.08,
-      -0.8,
-      0.65
-    );
-    this.palmGroup.rotation.y = THREE.MathUtils.clamp(-v.x * 0.06, -0.4, 0.4);
-
-    const isHoldingObject =
-      this.heldEmptyCone.visible ||
-      this.heldNapkin.visible ||
-      (this.heldNapkinCone && this.heldNapkinCone.visible) ||
-      this.conePivot.parent === this.heldSocket;
-
-    if (this.heldSocket) {
-      this.heldSocket.rotation.z = THREE.MathUtils.lerp(
-        this.heldSocket.rotation.z,
-        THREE.MathUtils.clamp(-v.x * 0.18, -0.45, 0.45),
-        Math.min(1, dt * 14)
-      );
-      this.heldSocket.rotation.x = THREE.MathUtils.lerp(
-        this.heldSocket.rotation.x,
-        THREE.MathUtils.clamp(v.y * 0.16, -0.35, 0.35),
-        Math.min(1, dt * 14)
-      );
+    playerFreeHandRotation(pos.x,pos.y,time,this.playerHandRig.quaternion);
+    const isHoldingObject=this.heldEmptyCone.visible||this.heldNapkin.visible||
+      this.heldNapkinCone.visible||this.servingNapkin?.visible&&this.servingNapkin.parent===this.heldSocket||
+      this.outerConeGroup?.visible&&this.outerConeGroup.parent===this.heldSocket||this.conePivot.parent===this.heldSocket;
+    const coneGrip=playerOwnsCone(this)||this.playerConeGripRequested||(grabCurl>.85&&!isHoldingObject);
+    const servingPaper=this.servingNapkin?.visible&&this.servingNapkin.parent===this.heldSocket;
+    const paperOnly=!coneGrip&&(this.heldNapkin.visible||servingPaper);
+    const poseBlend=1-Math.exp(-Math.max(0,dt)*18);
+    this.playerHandRig.setPose(paperOnly?'pinch':this.playerInspectPointing?'point':'relaxed',poseBlend,{curl:grabCurl});
+    applyPlayerConeGrip(this,dt,coneGrip);
+    if(paperOnly){
+      this.playerHandRig.setPose('pinch',poseBlend);
+      // Keep the existing paper and socket; align its authored held edge with
+      // the moving thumb/index pinch. Do not cancel the paper's transfer path.
+      const edge=servingPaper?new THREE.Vector3(0,.06,-.018):new THREE.Vector3(0,.08,0);
+      edge.applyQuaternion(this.heldSocket.quaternion);
+      this.heldSocket.position.copy(this.playerHandRig.gripAnchor.position).sub(edge);
     }
-
-    const effectiveGrab = isHoldingObject ? Math.max(grabCurl, 0.92) : grabCurl;
-    const lerpSpeed = Math.min(1, dt * 18);
-    const curlAngle = effectiveGrab * 1.38;
-    this.fingers.forEach((f, idx) => {
-      f.base.rotation.x = THREE.MathUtils.lerp(
-        f.base.rotation.x,
-        -curlAngle - idx * 0.04,
-        lerpSpeed
-      );
-      f.tip.rotation.x = THREE.MathUtils.lerp(
-        f.tip.rotation.x,
-        -curlAngle * 0.95,
-        lerpSpeed
-      );
-    });
-    this.thumbPivot.rotation.x = THREE.MathUtils.lerp(
-      this.thumbPivot.rotation.x,
-      -curlAngle * 0.85,
-      lerpSpeed
-    );
+    if(directTouch&&!this.playerConeGripRequested){
+      const visual=constrainPlayerArmDepth(this,targetPos,this.playerRenderAim ||= new THREE.Vector3());
+      this.alignPlayerTipTo(visual);
+    }
+    fitPlayerForearm(this);
   }
+
+  /** Presentation alignment only. The logical spring and raw input remain at
+   * their canonical target, while the actual posed fingertip is the cursor. */
+  alignPlayerTipTo(target) {
+    this.touristHand.updateWorldMatrix(true,true);
+    const tip=this.playerAimAnchor.getWorldPosition(new THREE.Vector3());
+    this.touristHand.position.add(new THREE.Vector3().copy(target).sub(tip));
+    this.touristHand.updateWorldMatrix(true,true);
+  }
+
+  /** Convert a fingertip destination to the authored hand-root destination.
+   * Use the current articulated pose, without moving the hand or its cone. */
+  getPlayerTipRootTarget(tipWorld,out=new THREE.Vector3()) {
+    this.touristHand.updateWorldMatrix(true,true);
+    const offset=this.playerAimAnchor.getWorldPosition(new THREE.Vector3())
+      .sub(this.touristHand.getWorldPosition(new THREE.Vector3()));
+    return out.copy(tipWorld).sub(offset);
+  }
+
+  fitPlayerForearm() { fitPlayerForearm(this); }
+
+  setPlayerConeGrip(enabled) { this.playerConeGripRequested = Boolean(enabled); }
+
+  getPlayerConeGripTarget(coneWorldPosition, out = new THREE.Vector3()) {
+    return playerConeGripTarget(this, coneWorldPosition, out);
+  }
+
+  /** Idle start: the real empty cone is offered by hand; the pole tip is bare. */
+  prepareEmptyConeOffer() {
+    this.clearTrickPresentations?.();
+    this.clearServingNapkin?.();
+    this.stretchyStrand?.detach();
+    this.handoffOuterCone?.('nested', false);
+    this.handoffCone('vendor');
+    this.conePivot.position.set(0, .11, .035);
+    this.conePivot.quaternion.identity();
+    if (this.stallEffects) this.stallEffects.coneMoving = false;
+    this.mainConeMesh.visible = this.conePivot.visible = true;
+    this.carryScoop.visible = false;
+    this.updateIceCreamScoops(0, false);
+    this.coneHandTiltZ = 0;
+    this.playerConeGripRequested = false;
+    this._emptyConeOffer = { releaseAge:0 };
+  }
+
+  updateEmptyConeOffer(time, dt, { reach = 0, receiving = false } = {}) {
+    this.beginPoseFrame();
+    if (!this._emptyConeOffer) this.prepareEmptyConeOffer();
+    const amount = THREE.MathUtils.clamp(reach, 0, 1);
+    const offered = new THREE.Vector3(.06, 1.20 + Math.sin(time * 1.25) * .006, -.10);
+    const resting = new THREE.Vector3(.21, 1.22, -.30);
+    let hand = resting.clone().lerp(offered, .74 + amount * .26);
+    if (receiving && this.conePivot.parent === this.heldSocket) {
+      this._emptyConeOffer.releaseAge += Math.max(0, dt);
+      hand.lerp(resting, THREE.MathUtils.smoothstep(this._emptyConeOffer.releaseAge, .10, .55));
+    } else this._emptyConeOffer.releaseAge = 0;
+    this.paddleGroup.position.set(-.25, 1.11, -.22);
+    this.coneSpring.pos.copy(this.paddleGroup.position); this.coneSpring.target.copy(this.paddleGroup.position); this.coneSpring.vel.set(0,0,0);
+    const oldForward=this.vendorPoleForwardHint,oldGrip=this.vendorRearGripHint;
+    this.vendorPoleForwardHint=new THREE.Vector3(.08,-.98,.18).normalize();this.vendorRearGripHint=.30;
+    this.orientPaddleAndHands(0, hand, dt, 0, 0);
+    this.vendorPoleForwardHint=oldForward;this.vendorRearGripHint=oldGrip;
+    if (receiving && this.conePivot.parent === this.heldSocket) this._setVendorOpenHand(this.lArmRig, 4, true);
+  }
+
+  getConeOfferTarget(out = new THREE.Vector3()) {
+    this.conePivot.updateWorldMatrix(true, false);
+    return this.conePivot.getWorldPosition(out);
+  }
+
+  setConeOfferGlow(amount=0){
+    const material=this.mainConeMesh?.material;if(!material?.emissive)return;
+    if(!this._offerGlowRest)this._offerGlowRest={color:material.emissive.clone(),intensity:material.emissiveIntensity};
+    if(amount>0){material.emissive.setHex(0xffcf8a);material.emissiveIntensity=.08+.14*amount;}
+    else{material.emissive.copy(this._offerGlowRest.color);material.emissiveIntensity=this._offerGlowRest.intensity;}
+  }
+
+  resetPaddleOrientation() {
+    this.servingOrientation?.reset();
+    this._poseFrameManaged=false;this._poseFramePending=false;
+    this._displayedPaddleRoll = 0;
+    this._leftHandOnShaft = false;
+    this._leftSupportRecovery=null;
+    this._vendorGripYawOffset=0;this._resolvingVendorStance=false;
+    this.paddleTangentOffset=0;this._rearGripDistance=this._frontGripDistance=this._bareRearGrip=null;
+    if(this.rArmRig)this.rArmRig.armPose=null;
+    if(this.lArmRig)this.lArmRig.armPose=null;
+    if(this.rArmRig)this.rArmRig.previousFrameElbow=null;
+    if(this.lArmRig)this.lArmRig.previousFrameElbow=null;
+    if(this.rArmRig)this.rArmRig.previousArmFrame=null;
+    if(this.lArmRig)this.lArmRig.previousArmFrame=null;
+    if (this.paddleRollGroup) { this.paddleRollGroup.position.set(0, 0, 0); this.paddleRollGroup.rotation.set(0, 0, 0); }
+    if (!this.paddleAngularMotion) {
+      this.paddleAngularMotion = {
+        shaft: new AngularMotion({ response: 22, maxSpeed: 14 }),
+        flip: new AngularMotion({ response: 18, maxSpeed: 8 }),
+        pitch: new AngularMotion({ response: 20, maxSpeed: 6 }),
+      };
+      this.paddleAimQuaternion = new THREE.Quaternion();
+    } else {
+      Object.values(this.paddleAngularMotion).forEach((channel) => channel.reset(0));
+    }
+  }
+
+  beginPoseFrame(){this._poseFrameManaged=true;this._poseFramePending=true;}
 
   /**
    * True 3D Paddle & Cone Orientation!
@@ -2389,61 +2783,124 @@ export class GameWorld {
     leftHandCustomTarget = null,
     dt = 0.016,
     coneFlipZ = 0,
-    conePitchX = 0
+    conePitchX = 0,
+    leftHandGesture = null
   ) {
+    dt = Math.max(0, Math.min(0.1, Number.isFinite(dt) ? dt : 0));
+    // A new palm frame must not rotate the serving before its authored tilt.
+    const heldConeStart=this.coneHeldByVendor&&this.conePivot.parent===this.lArmRig.handGroup
+      ?this.conePivot.getWorldQuaternion(this._heldConeStart ||= new THREE.Quaternion()):null;
+    const advance=!this._poseFrameManaged||this._poseFramePending;this._poseFramePending=false;
+    if(advance){
+      this._handPoseDt=dt;this.paddleContact?.beginPoseFrame(this,dt);
+      for(const rig of[this.rArmRig,this.lArmRig])rig.poleFrameStart=rig.handRig.getWorldQuaternion(rig.poleFrameStart||new THREE.Quaternion());
+    }else{
+      dt=0; // Exact strike/contact refits do not advance animation a second time.
+    }
+    if (!this.paddleAngularMotion) this.resetPaddleOrientation();
+    const displayedRoll = this.paddleAngularMotion.shaft.step(shaftRoll, dt);
+    this._displayedPaddleRoll = displayedRoll;
+    const displayedFlip = this.paddleAngularMotion.flip.step(coneFlipZ, dt);
+    const displayedPitch = this.paddleAngularMotion.pitch.step(conePitchX, dt);
     const tipPos = this.paddleGroup.position;
     const vendorChestCenter = new THREE.Vector3(
-      tipPos.x * 0.35 - 0.06,
-      1.22 + (tipPos.y - 1.24) * 0.25,
-      -0.64
+      tipPos.x * 0.12 - 0.36,
+      1.26 + (tipPos.y - 1.24) * 0.10,
+      -0.46
     );
+    if(!poleHasFood(this))vendorChestCenter.set(-.26,1.40+(tipPos.y-1.24)*.08,-.45);
 
-    const awayFromChest = tipPos
-      .clone()
-      .multiplyScalar(2)
-      .sub(vendorChestCenter);
+    const awayFromChest = this.vendorPoleForwardHint
+      ? tipPos.clone().add(this.vendorPoleForwardHint)
+      : tipPos.clone().multiplyScalar(2).sub(vendorChestCenter);
+    this.paddleAimQuaternion.copy(this.paddleGroup.quaternion);
     this.paddleGroup.lookAt(awayFromChest);
-
-    this.paddleRollGroup.rotation.z = THREE.MathUtils.lerp(
-      this.paddleRollGroup.rotation.z,
-      shaftRoll,
-      Math.min(1, dt * 14)
-    );
-
-    const distToChest = tipPos.distanceTo(vendorChestCenter);
-    const rearZ = -Math.min(0.84, Math.max(0.54, distToChest * 0.92));
-    const frontZ = rearZ + 0.3;
-    this.paddleRearGripAnchor.position.set(0, 0, rearZ);
-    this.paddleFrontGripAnchor.position.set(0, 0, frontZ);
+    if(!this.vendorPoleForwardHint)this.paddleGroup.quaternion.slerp(this.paddleAimQuaternion, Math.exp(-dt * 22));
+    this.paddleRollGroup.rotation.z = displayedRoll;
 
     // Let the cone physically tilt up/down (conePitchX), revolve with shaftRoll, and flip (coneFlipZ)!
     if (this.conePivot.parent === this.paddleGroup) {
+      // Axial turns rotate the serving around its long axis with a readable
+      // wrist rock. Deliberate flip/windmill shows retain their full rotation.
+      const axialSpin=Boolean(this.presentationAxialSpin);
       this.conePivot.rotation.set(
-        -this.paddleGroup.rotation.x * 0.55 + conePitchX,
-        -this.paddleGroup.rotation.y * 0.65 + Math.sin(shaftRoll) * 0.45,
-        shaftRoll * 0.88 + coneFlipZ
+        -this.paddleGroup.rotation.x * 0.55 + displayedPitch,
+        -this.paddleGroup.rotation.y * 0.65 + Math.sin(displayedRoll) * 0.45 + (axialSpin?displayedRoll:0),
+        (axialSpin?Math.sin(displayedRoll)*.12:displayedRoll) + displayedFlip
       );
+      (this.servingOrientation ||= new ServingOrientation()).apply(this.conePivot,axialSpin,dt);
+    }else{
+      this.servingOrientation?.reset();
     }
 
-    // Subtle vendor torso lean following the paddle
+    // Spine and shoulder girdle lead a reach; elbows then route around clothing.
+    const bodyBlend=1-Math.exp(-dt*7);
+    const largeServing=(this.scoopMeshes?.filter(mesh=>mesh.visible).length||0)>4;
+    const holdingServing=this.conePivot.parent===this.paddleGroup||this.coneHeldByVendor||this.scoopStackGroup?.parent===this.paddleGroup||
+      (this.scoopStackGroup?.parent===this.outerConeGroup&&this.outerConeGroup?.parent===this.paddleGroup);
+    // A bare pole approaches the crown, but its loaded logical root is the
+    // wafer pivot. Use one serving height on both sides of this handoff so
+    // the torso is already ready when the low/inverted show resumes.
+    let bodyWorkY=largeServing&&this.vendorLargeServingReturn
+      ? this.conePivot.getWorldPosition(this._bodyServingPoint ||= new THREE.Vector3()).y
+      : tipPos.y;
+    if(this.vendorPoleFree&&this.coneHeldByVendor&&!Number.isFinite(this.vendorBodyYawHint)){
+      bodyWorkY=Math.max(bodyWorkY,this.conePivot.getWorldPosition(this._bodyServingPoint ||= new THREE.Vector3()).y);
+    }
+    // A broad, heavy serving needs a lower working stance. Establish it before
+    // the resumed inversion, while the front rejoin is already in progress.
+    // The authored behind-back orbit keeps its original upright clearance.
+    const largeStance=largeServing&&holdingServing&&(poleHasFood(this)||this.vendorLargeServingReturn)&&!this.presentationAxialSpin&&(!Number.isFinite(this.vendorBodyYawHint)||this.vendorLargeServingReturn)
+      ? (this.vendorLargeServingReturn?1:1-THREE.MathUtils.smoothstep(tipPos.y,1.40,1.70)) : 0;
+    this._bodyTargetYaw=tipPos.x*.30;
+    if(!Number.isFinite(this.vendorBodyYawHint))this._vendorGripYawOffset=(this._vendorGripYawOffset||0)*Math.exp(-dt*.8);
+    const bodyYaw=Number.isFinite(this.vendorBodyYawHint)?this.vendorBodyYawHint:this._bodyTargetYaw+(this._vendorGripYawOffset||0);
     this.vendorTorso.rotation.y = THREE.MathUtils.lerp(
       this.vendorTorso.rotation.y,
-      THREE.MathUtils.clamp(tipPos.x * 0.35, -0.28, 0.28),
-      Math.min(1, dt * 8)
+      THREE.MathUtils.clamp(bodyYaw,-.65,.65),
+      bodyBlend
     );
     this.vendorTorso.rotation.x = THREE.MathUtils.lerp(
       this.vendorTorso.rotation.x,
-      THREE.MathUtils.clamp((1.28 - tipPos.y) * 0.18, -0.14, 0.18),
-      Math.min(1, dt * 8)
+      THREE.MathUtils.clamp((1.28-bodyWorkY)*.18+Math.max(0,tipPos.z)*.12+largeStance*.20,-.14,.42),
+      bodyBlend
     );
+    const stanceOffset=THREE.MathUtils.clamp(this.vendorBodyOffsetX||0,-.22,.22);
+    this.vendorTorso.position.x=THREE.MathUtils.lerp(this.vendorTorso.position.x,THREE.MathUtils.clamp(tipPos.x*.06,-.045,.045)+stanceOffset,bodyBlend);
+    this.vendorTorso.position.y=THREE.MathUtils.lerp(this.vendorTorso.position.y,.94+THREE.MathUtils.clamp((bodyWorkY-1.24)*.15,-.065,.10)-largeStance*.10,bodyBlend);
+    this.vendorTorso.position.z=THREE.MathUtils.lerp(this.vendorTorso.position.z,THREE.MathUtils.clamp(tipPos.z*.12,0,.06),bodyBlend);
+    this.rightShoulderAnchor.position.x=-.31;this.leftShoulderAnchor.position.x=.31;
+    this.rightShoulderAnchor.position.z=this.leftShoulderAnchor.position.z=.12;
 
     this.vendorGroup.updateMatrixWorld(true);
     this.paddleGroup.updateMatrixWorld(true);
+    if (this.carryScoop?.visible) {
+      this.carryScoop.position.copy(this.paddleGroup.position).y += this.paddleCarryOffsetY ?? .035;
+    }
+    this.paddleContact?.update(this, displayedRoll);
+    const shaftTipPos = this.paddleRollGroup.getWorldPosition(new THREE.Vector3());
+    const shaftRotation = this.paddleRollGroup.getWorldQuaternion(new THREE.Quaternion());
+    const distToChest = shaftTipPos.distanceTo(vendorChestCenter);
+    const preferredRear = Math.min(0.94, Math.max(0.56, distToChest * 0.92));
 
     const rShoulderWorld = new THREE.Vector3();
     const lShoulderWorld = new THREE.Vector3();
     this.rightShoulderAnchor.getWorldPosition(rShoulderWorld);
     this.leftShoulderAnchor.getWorldPosition(lShoulderWorld);
+
+    // Slide each grip along the real shaft into arm reach before solving IK.
+    // Clamping a hand independently in world space used to detach it from the rod.
+    const backward = new THREE.Vector3(0, 0, -1).applyQuaternion(shaftRotation);
+    const previous=this._rearGripDistance??.45;
+    this._bareRearGrip=poleHasFood(this)?null:previous+THREE.MathUtils.clamp(.45-previous,-dt*.65,dt*.65);
+    if(!this.paddleContact?.active&&!this.vendorPoleForwardHint){
+      const trial=this._safeShaftGrip(shaftTipPos,backward,rShoulderWorld,.14,1.01,this._rearGripDistance??preferredRear,-1);
+      if(!trial.safe){this.paddleGroup.lookAt(awayFromChest);this.paddleGroup.updateMatrixWorld(true);}
+    }
+    const {rear,front}=this._resolveVendorGrips(rShoulderWorld,lShoulderWorld,preferredRear);
+    this.paddleRearGripAnchor.position.set(0, 0, -rear.distance);
+    this.paddleFrontGripAnchor.position.set(0, 0, -front.distance);
+    this.paddleGroup.updateMatrixWorld(true);
 
     const rearGripWorld = new THREE.Vector3();
     const frontGripWorld = new THREE.Vector3();
@@ -2454,22 +2911,140 @@ export class GameWorld {
       this.rArmRig,
       rShoulderWorld,
       rearGripWorld,
-      new THREE.Vector3(-0.35, -0.5, -0.2)
+      new THREE.Vector3(-0.35, -0.5, -0.2),
+      true
     );
+    this._fitHandToShaft(this.rArmRig, rear.distance, Math.sin(displayedRoll) * 0.18,rear.handFrame);
 
-    if (leftHandCustomTarget) {
-      this.leftPropSpring.target.copy(leftHandCustomTarget);
+    const stockArrival=this.collectedCones?.reusing?.target;
+    // A wafer travelling from the rack still needs a waiting receiving hand;
+    // hiding its destination must not send that hand back to the pole mid-flight.
+    const vendorHoldsCone = this.coneHeldByVendor ||
+      ((this.outerConeGroup?.visible||(stockArrival&&stockArrival===this.outerConeGroup)) && this.outerConeGroup.parent === this.lArmRig.handGroup);
+    const legacyCone = [this.leftHandConeProp,this.napkinConeProp].find(prop=>(prop?.visible||(stockArrival&&stockArrival===prop))&&prop?.parent===this.lArmRig.handGroup);
+    const legacyPaper = this.napkinProp?.visible&&this.napkinProp.parent===this.lArmRig.handGroup ? this.napkinProp : null;
+    let leftPresentationTarget = leftHandCustomTarget || (vendorHoldsCone ? new THREE.Vector3(.18, 1.22, -.20) : null);
+    const releasedSupport=!leftPresentationTarget&&!front.safe;
+    if(releasedSupport){leftPresentationTarget=this.vendorTorso.localToWorld(new THREE.Vector3(.36,.25,.34));leftPresentationTarget.y=Math.max(1.15,leftPresentationTarget.y);}
+    const reaction = this._vendorReaction;
+    const reactionArm = reaction && !leftHandCustomTarget && !this.coneHeldByVendor &&
+      !this.leftHandConeProp?.visible && !this.napkinProp?.visible && !this.napkinConeProp?.visible &&
+      ['greeting', 'recognition', 'photo'].includes(reaction.kind);
+    if (this.lArmRig.openFingers) this.lArmRig.openFingers.visible = false;
+    if (this.lArmRig.coneFingerWraps) this.lArmRig.coneFingerWraps.visible = false;
+    this.lArmRig.fingerWraps.visible = true;
+    this.lArmRig.fingerWraps.children.forEach((finger) => { finger.visible = true; });
+    if (reactionArm) {
+      const blend = Math.sin(Math.min(1, reaction.age / reaction.duration) * Math.PI);
+      const destination = reaction.kind === 'photo' ? new THREE.Vector3(.12, 1.48, -.40) : new THREE.Vector3(.28, reaction.kind === 'recognition' ? 1.36 : 1.44, -.29);
+      leftPresentationTarget = frontGripWorld.clone().lerp(destination, blend);
+    }
+    const emptyRest=Boolean(leftPresentationTarget)&&!reactionArm&&!leftHandGesture&&!vendorHoldsCone&&!legacyCone&&!legacyPaper&&
+      !(this.servingNapkin?.visible&&this.servingNapkin.parent===this.lArmRig.handGroup)&&!Number.isFinite(this.vendorConeReceiveProgress);
+    if (((releasedSupport||reactionArm)&&this._leftHandOnShaft||emptyRest&&this.lArmRig.handRig.position.lengthSq()>1e-10)&&this.lArmRig.handRig?.wristAnchor) {
+      // A pole grip root is at the steel contact; an open-hand root is at its
+      // wrist. Rebase the spring to that same wrist before changing the pose.
+      this.lArmRig.handRig.wristAnchor.getWorldPosition(this.leftPropSpring.pos);
+      this.leftPropSpring.vel.set(0,0,0);
+    }
+    const supportWanted=!leftPresentationTarget&&!legacyCone&&!legacyPaper;
+    if(!supportWanted)this._leftSupportRecovery=null;
+    else if(!this._leftHandOnShaft&&this.lArmRig.armPose&&!this._leftSupportRecovery)
+      this._leftSupportRecovery=new VendorSupportReach(this.lArmRig,this.leftPropSpring);
+    const recovery=this._leftSupportRecovery;
+    let recoveringTarget=null;
+    if(recovery){
+      const direction=new THREE.Vector3(0,0,1).applyQuaternion(this.paddleRollGroup.getWorldQuaternion(new THREE.Quaternion()));
+      recoveringTarget=recovery.update(this.lArmRig,frontGripWorld,direction,Math.sin(displayedRoll)*.14,dt,this._vendorArmSolver.prepare(),front.distance>.74?.027:.014,front.handFrame);
+    }else if (leftPresentationTarget) {
+      this.leftPropSpring.target.copy(leftPresentationTarget);
     } else {
       this.leftPropSpring.target.copy(frontGripWorld);
     }
-    const lTarget = this.leftPropSpring.step(dt);
+    // A held pole is a hard contact constraint. Only independent props lag softly.
+    const lTarget = recoveringTarget || (leftPresentationTarget ? this.leftPropSpring.step(dt) : frontGripWorld);
+    this._leftHandOnShaft = supportWanted&&!recovery;
+    if (!leftPresentationTarget&&!recovery) {
+      this.leftPropSpring.pos.copy(frontGripWorld);
+      this.leftPropSpring.vel.set(0, 0, 0);
+    }
 
     this._solveArmIK(
       this.lArmRig,
       lShoulderWorld,
       lTarget,
-      new THREE.Vector3(0.35, -0.5, -0.2)
+      new THREE.Vector3(0.35, -0.5, -0.2),
+      this._leftHandOnShaft
     );
+    if(recovery){
+      recovery.apply(this.lArmRig,dt);
+      if(recovery.ready(this.lArmRig)){
+        this._leftSupportRecovery=null;this._leftHandOnShaft=true;
+        this.lArmRig.handGroup.position.copy(frontGripWorld);this.leftPropSpring.pos.copy(frontGripWorld);this.leftPropSpring.vel.set(0,0,0);
+        this._fitHandToShaft(this.lArmRig,front.distance,Math.sin(displayedRoll)*.14,front.handFrame);
+      }
+    }else if (!leftPresentationTarget) this._fitHandToShaft(this.lArmRig, front.distance, Math.sin(displayedRoll) * 0.14,front.handFrame);
+    else if (reactionArm || leftHandGesture) {
+      this._setVendorOpenHand(this.lArmRig, reaction?.kind === 'photo' ? 1 : 4);
+      if (reaction?.kind === 'photo' && this.stallDecor) {
+        const direction = this.stallDecor.props.photo.group.getWorldPosition(new THREE.Vector3()).sub(this.lArmRig.handGroup.position).normalize();
+        this.lArmRig.handGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+      }
+    }else if(emptyRest){
+      this._setVendorOpenHand(this.lArmRig,4,true);
+    }
+
+    if(Number.isFinite(this.vendorConeReceiveProgress)&&this.vendorConeReceiveFrom)
+      applyVendorReceivingGrip(this.lArmRig,this.vendorConeReceiveProgress,this.vendorConeReceiveFrom);
+    else if (vendorHoldsCone) applyVendorConeGrip(this.lArmRig, this.coneHandTiltZ || 0);
+    else if(legacyCone)applyVendorConeGrip(this.lArmRig,0,legacyCone.position);
+    else if(legacyPaper){
+      // Pinch the actual front fold's lower edge. The paper and its authored
+      // owner/target remain untouched; only the same articulated fingers pose.
+      const fold=legacyPaper.children[0],edge=new THREE.Vector3(.04,-.09,.04);
+      if(fold){fold.updateMatrix();edge.applyMatrix4(fold.matrix);}else edge.set(0,0,0);
+      edge.add(legacyPaper.position);applyVendorPaperGrip(this.lArmRig,edge);
+    }
+
+    if(this.servingNapkin?.visible&&this.servingNapkin.parent===this.lArmRig.handGroup&&!vendorHoldsCone&&!legacyCone)
+      applyVendorPaperGrip(this.lArmRig,new THREE.Vector3(0,.07,0));
+    if (this.coneHeldByVendor && this.conePivot.parent === this.lArmRig.handGroup) {
+      this.conePivot.position.lerp(new THREE.Vector3(0, 0.11, 0.035), Math.min(1, dt * 12));
+      if(heldConeStart)this.conePivot.quaternion.copy(this.lArmRig.handGroup.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(heldConeStart));
+      orientVendorHeldCone(this, dt);
+    } else if (this.conePivot.parent === this.paddleGroup) {
+      this.coneHeldByVendor = false;
+      this.conePivot.position.lerp(new THREE.Vector3(0, 0.02, 0), Math.min(1, dt * 14));
+    }
+    (this.servingClearance ||= new ServingClearance()).apply(this);
+    this.refreshPaddleAttachment();
+    const handRole=this._leftHandOnShaft||this._leftSupportRecovery?'pole':vendorHoldsCone||legacyCone?'cone':legacyPaper||this.servingNapkin?.visible&&this.servingNapkin.parent===this.lArmRig.handGroup?'paper':'free';
+    if(this.lArmRig.handRig)(this.lArmRig.poseBlend ||= new VendorHandBlend(this.lArmRig)).apply(handRole,dt);
+    this._fitArmToHand(this.lArmRig);
+  }
+
+  /** Refit after food deformation/ownership settling, before rendering. */
+  refreshPaddleAttachment() {
+    if (!this.paddleContact || !this.rArmRig) return;
+    this.paddleContact.update(this, this._displayedPaddleRoll || 0);
+    const tip = this.paddleRollGroup.getWorldPosition(new THREE.Vector3());
+    const backward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.paddleRollGroup.getWorldQuaternion(new THREE.Quaternion()));
+    const right = this.rightShoulderAnchor.getWorldPosition(new THREE.Vector3());
+    const left = this.leftShoulderAnchor.getWorldPosition(new THREE.Vector3());
+    const {rear,front}=this._resolveVendorGrips(right,left);
+    this.paddleRearGripAnchor.position.set(0, 0, -rear.distance);
+    this.paddleFrontGripAnchor.position.set(0, 0, -front.distance);
+    this.paddleRollGroup.updateWorldMatrix(true, true);
+    this._solveArmIK(this.rArmRig, right, this.paddleRearGripAnchor.getWorldPosition(new THREE.Vector3()), new THREE.Vector3(-.35, -.5, -.2), true);
+    this._fitHandToShaft(this.rArmRig, rear.distance, Math.sin(this._displayedPaddleRoll || 0) * .18,rear.handFrame);
+    this._fitArmToHand(this.rArmRig);
+    if (this._leftHandOnShaft && front.safe) {
+      const target = this.paddleFrontGripAnchor.getWorldPosition(new THREE.Vector3());
+      this.leftPropSpring.pos.copy(target); this.leftPropSpring.vel.set(0, 0, 0);
+      this._solveArmIK(this.lArmRig, left, target, new THREE.Vector3(.35, -.5, -.2), true);
+      this._fitHandToShaft(this.lArmRig, front.distance, Math.sin(this._displayedPaddleRoll || 0) * .14,front.handFrame);
+      this._fitArmToHand(this.lArmRig);
+    }
   }
 
   updateEnvironmentAnimations(
@@ -2481,6 +3056,10 @@ export class GameWorld {
     voiceMouthOpen = 0
   ) {
     this.rigidBodies.update(dt);
+    this.updateServingLayout(dt);
+    this.stallEffects?.update(dt);
+    this.collectedCones?.update(dt);
+    this.stallDecor?.update(time);
 
     // Real-time Vendor Lip-Sync & Jaw/Beard/Mustache Animation
     // Note: jawGroup hinges DOWNWARD (-0.068 - voiceMouthOpen * 0.024) so the beard NEVER rises over the face!
@@ -2501,10 +3080,33 @@ export class GameWorld {
       this.jawGroup.rotation.x = 0;
       this.mustacheGroup.position.y = -0.032;
       this.mustacheGroup.rotation.z = 0;
-      this.vendorHead.position.y = 0.67 + Math.sin(time * 2.2) * 0.005;
+      this.vendorHead.position.y = 0.67 + Math.sin(Number.isFinite(this.vendorBeatPhase)?this.vendorBeatPhase*Math.PI*2:time*2.2) * 0.005;
       this.setVendorMood(this.vendorMood || 'smile');
     }
 
+    if (this._vendorReaction) {
+      const reaction = this._vendorReaction;
+      reaction.age += Math.max(0, dt);
+      const p = Math.min(1, reaction.age / reaction.duration);
+      const envelope = Math.sin(p * Math.PI);
+      if(reaction.kind==='refusal'){
+        this.vendorHead.rotation.x=-.08*envelope;
+        this.vendorHead.rotation.y=Math.sin(p*Math.PI*3)*.14*envelope;
+        this.vendorHead.rotation.z=Math.sin(p*Math.PI*2)*.10*envelope;
+        if(p>.42&&!reaction.grinning){reaction.grinning=true;this.setVendorMood('mischief');}
+      }else{
+        this.vendorHead.rotation.x = Math.sin(p * Math.PI * (reaction.kind === 'recognition' ? 4 : 2)) * .12 * envelope;
+        this.vendorHead.rotation.y = reaction.kind === 'photo' ? -.24 * envelope : .035 * Math.sin(p * Math.PI * 2);
+      }
+      if (p >= 1) { this.vendorHead.rotation.set(0, 0, 0); this._vendorReaction = null; }
+    }
+
+    if(Number.isInteger(this.vendorBellLook)&&!this._vendorReaction){
+      this._bellLooking=true;const target=this.getBellBodyCenter(this.vendorBellLook),b=1-Math.exp(-dt*9);
+      this.vendorHead.rotation.x=THREE.MathUtils.lerp(this.vendorHead.rotation.x,-.13,b);
+      this.vendorHead.rotation.y=THREE.MathUtils.lerp(this.vendorHead.rotation.y,target.x*.42,b);
+    }
+    if(!Number.isInteger(this.vendorBellLook)&&this._bellLooking&&!this._vendorReaction){this.vendorHead.rotation.x*=Math.exp(-dt*9);if(Math.abs(this.vendorHead.rotation.x)<.002)this._bellLooking=false;}
     // Natural Vendor Eye Blinking
     this.blinkTimer -= dt;
     if (this.blinkTimer <= 0) {
@@ -2520,6 +3122,18 @@ export class GameWorld {
     }
 
     // Animate Spectator Puppets watching the cone and reacting!
+    if(this._faceTouch){
+      const reaction=this._faceTouch;reaction.age+=dt;
+      const p=Math.min(1,reaction.age/1.1),amount=Math.sin(p*Math.PI);
+      this.vendorHead.position.z=.02-amount*.055;
+      this.vendorHead.rotation.x=-amount*.13;
+      this.vendorHead.rotation.y=Math.sin(p*Math.PI*3)*amount*.16;
+      this.leftBrow.rotation.z=Math.PI*.5-.38*amount;
+      this.rightBrow.rotation.z=Math.PI*.5+.38*amount;
+      this.eyes.forEach(eye=>eye.scale.y=this.isBlinking?.12:1-amount*(reaction.part==='eye'?.8:.35));
+      if(p>=1){this._faceTouch=null;this.vendorHead.position.z=.02;this.vendorHead.rotation.set(0,0,0);this.setVendorMood(this.vendorMood);}
+    }
+
     if (this.spectatorReactionTimer > 0) {
       this.spectatorReactionTimer = Math.max(
         0,
@@ -2564,15 +3178,11 @@ export class GameWorld {
       }
     });
 
-    this.frostMotes.forEach((m) => {
-      m.phase += dt * 0.9;
-      m.mesh.position.y = 0.98 + ((m.phase * 0.12) % 0.26);
-      m.mesh.position.x = m.baseX + Math.sin(m.phase * 2) * 0.03;
-    });
-
-    // Animate the swirled ice cream mounds inside the 6 shiny stainless-steel buckets!
+    // The extracted mass is carried by the pole, not also left inside its tub.
     if (this.tubIceGroups) {
       this.tubIceGroups.forEach((tig) => {
+        tig.group.visible=!tig.moldOut;
+        if(tig.moldOut)return;
         if (tig.churnEnergy > 0.005) {
           tig.churnEnergy = Math.max(0, tig.churnEnergy - dt * 1.6);
           tig.group.rotation.y += dt * 7.5 * tig.churnEnergy;
@@ -2583,6 +3193,8 @@ export class GameWorld {
           tig.group.scale.set(1, 1, 1);
           tig.group.position.y = tig.baseY;
         }
+        tig.group.scale.y *= tig.fill ?? 1;
+        tig.group.position.y -= (1 - (tig.fill ?? 1)) * 0.035;
       });
     }
 
@@ -2609,40 +3221,41 @@ export class GameWorld {
 
     const squashY = THREE.MathUtils.clamp(1 + jiggle.y * 1.2, 0.78, 1.25);
     const invSquash = 1 / Math.sqrt(squashY);
-    this.scoopStackGroup.scale.set(invSquash, squashY, invSquash);
+    const servingFactor = this.scoopStackGroup.parent === this.conePivot ? 1 : this.servingScale;
+    this.scoopStackGroup.scale.set(invSquash * servingFactor, squashY * servingFactor, invSquash * servingFactor);
     this.scoopStackGroup.rotation.z = THREE.MathUtils.clamp(
       jiggle.x * 1.8,
       -0.32,
       0.32
     );
+    if((this.servingClearance ||= new ServingClearance()).apply(this))this._fitArmToHand(this.lArmRig);
+    this.refreshPaddleAttachment();
 
     this.lanterns.forEach((l) => {
       l.group.rotation.z = Math.sin(time * 1.4 + l.phase) * 0.05;
     });
 
     const handPos = this.touristHand.position;
+    const paddleStrikePoint = this.getPaddleStrikePoint();
+    const previousStrikePoint = this.previousPaddleStrikePoint || paddleStrikePoint;
 
     // Coupled 2-DOF Bell Body + Independent Internal Clapper Pendulum & Shimmer Ring Animation
     this.bells.forEach((b) => {
+      this.getBellBodyCenter(b.index, b.worldPos);
+      b.strikeCooldown = Math.max(0, b.strikeCooldown - dt);
       const distHand = handPos.distanceTo(b.worldPos);
-      const distPaddle = paddlePos.distanceTo(b.worldPos);
-      if (distHand < 0.16 && Math.abs(b.velZ) < 4) {
-        const sign = handPos.x < b.worldPos.x ? 1 : -1;
-        b.velZ += sign * 11;
-        b.velX += 7;
-        b.clapperVelZ += -sign * 20;
-        b.shimmerTimer = 0.42;
-        this.spawnBurst(b.worldPos, 0xffe194, 7);
+      const bodyRadius = 0.074 * b.pivot.scale.x;
+      const handContact = this.playerCounterInteractionEnabled!==false && distHand < bodyRadius + 0.055;
+      const paddleContact = distanceToSegment(b.worldPos, previousStrikePoint, paddleStrikePoint) < bodyRadius + 0.018;
+      if (handContact && !b.handInContact && b.strikeCooldown === 0) {
+        this.strikeBell(b.index, 0.65);
         if (onBellHit) onBellHit(0.78, b.worldPos.x, b.index);
-      } else if (distPaddle < 0.18 && Math.abs(b.velZ) < 4) {
-        const sign = paddlePos.x < b.worldPos.x ? 1 : -1;
-        b.velZ += sign * 12;
-        b.velX += 8;
-        b.clapperVelZ += -sign * 22;
-        b.shimmerTimer = 0.48;
-        this.spawnBurst(b.worldPos, 0xffe194, 9);
+      } else if (paddleContact && !poleHasFood(this) && !b.paddleInContact && b.strikeCooldown === 0) {
+        this.strikeBell(b.index, 0.8);
         if (onBellHit) onBellHit(0.92, b.worldPos.x, b.index);
       }
+      b.handInContact = handContact;
+      b.paddleInContact = paddleContact;
 
       // Outer brass bell swing physics
       const springZ = -115 * b.angleZ - 4.4 * b.velZ;
@@ -2693,6 +3306,8 @@ export class GameWorld {
         b.shimmerRing.visible = false;
       }
     });
+    if (!this.previousPaddleStrikePoint) this.previousPaddleStrikePoint = new THREE.Vector3();
+    this.previousPaddleStrikePoint.copy(paddleStrikePoint);
 
     this.pupils.forEach((p) => {
       p.mesh.position.x =
@@ -2704,20 +3319,7 @@ export class GameWorld {
       );
     });
 
-    for (let i = this.particles.length - 1; i >= 0; i--) {
-      const p = this.particles[i];
-      p.life -= dt;
-      if (p.life <= 0) {
-        this.scene.remove(p.mesh);
-        this.particles.splice(i, 1);
-      } else {
-        p.vel.y -= 4.0 * dt;
-        p.mesh.position.addScaledVector(p.vel, dt);
-        p.mesh.rotation.x += 5 * dt;
-        p.mesh.rotation.y += 5 * dt;
-        p.mesh.scale.setScalar(Math.max(0.01, p.life * 1.3));
-      }
-    }
+    this.updateBurstParticles(dt);
 
     const swayX =
       Math.sin(time * 1.6) * 0.005 +
@@ -2734,27 +3336,33 @@ export class GameWorld {
       this.baseCamPos.z
     );
     this.camera.rotation.z = Math.sin(time * 4.2) * (0.04 * dizzyAmount);
+    this.vendorBody?.update(time,dt);
+    this.stretchCutView?.update(dt);
+    this.culturalScene?.update(dt);
+    for(const rig of[this.rArmRig,this.lArmRig])if(rig?.armPose){
+      (rig.previousFrameElbow ||= new THREE.Vector3()).copy(rig.armPose.elbow);
+      const frame=(rig.previousArmFrame ||= {base:new THREE.Vector3(),shoulder:new THREE.Vector3(),elbow:new THREE.Vector3(),wrist:new THREE.Vector3()});
+      frame.base.copy(rig.shoulderWorld);frame.shoulder.copy(rig.armPose.shoulder);frame.elbow.copy(rig.armPose.elbow);frame.wrist.copy(rig.armPose.wrist);
+    }
+    this._poseFrameManaged=false;
   }
 
   onResize() {
     const w = Math.max(1, window.visualViewport?.width || window.innerWidth);
     const h = Math.max(1, window.visualViewport?.height || window.innerHeight);
+    const size=resizeRenderer(this.renderer,w,h,Math.min(window.devicePixelRatio||1,2),this._renderSize);
+    // The constructor allocates the buffer before the first camera fitting.
+    if(size===this._renderSize&&size===this._cameraSize)return;
+    this._renderSize=size;this._cameraSize=size;
     const aspect = w / h;
     this.camera.aspect = aspect;
-    if (aspect < 0.75) {
-      this.camera.fov = THREE.MathUtils.clamp(
-        62 + (0.65 - aspect) * 28,
-        64,
-        72
-      );
-      this.baseCamPos.set(0, 1.5, 1.12);
-    } else {
-      this.camera.fov = 54;
-      this.baseCamPos.set(0, 1.52, 1.05);
-    }
+    const framing=shopCameraProfile(w,h);
+    this.camera.fov=framing.fov;
+    this.baseCamPos.fromArray(framing.position);
+    this.baseCamTarget.fromArray(framing.target);
+    this.camera.position.copy(this.baseCamPos);
+    this.camera.lookAt(this.baseCamTarget);
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(w, h);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   }
 
   render() {

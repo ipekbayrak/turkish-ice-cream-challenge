@@ -1,6 +1,13 @@
+import {isStageNumber,normalizeStage} from './progression.js';
+import {normalizeFlavorIndex} from './flavors.js';
 import { TRICK_CATALOG, CAMPAIGN_LEVELS, ICE_CREAM_FLAVORS } from './protocol.js';
+import { MAX_SCOOPS } from './venues.js';
 
+// Keep the key: an existing ten-encounter save expands in place.
 const STORAGE_KEY = 'turkish_ice_cream_save_v6';
+const validStage = isStageNumber;
+const boundedScoops = value => Math.max(1, Math.min(MAX_SCOOPS, Math.round(Number(value) || 3)));
+const boundedFlavors = values => values.slice(0, MAX_SCOOPS).map(normalizeFlavorIndex);
 
 export const SUPPORTED_LANGS = [
   { code: 'tr', flag: '🇹🇷', label: 'Türkçe', dir: 'ltr', locale: 'tr-TR' },
@@ -75,9 +82,10 @@ export const I18N = {
     cue_double_pump: 'SAHTE UZATMA! 2.DE TUT!',
     cue_eyelock_hold: 'YEŞİL ÇİZGİ ORTASINDA BEKLE (GÖZ GÖZE)! 👀',
     cue_eyelock_rhythm: 'RİTME UY! ÇİZGİYLE SAĞA-SOLA GİT! ↔️',
-    cue_afk_table: 'USTA MASAYA VURUYOR! ELİNİ HAREKET ETTİR! 🥄💥',
-    cue_afk_bells: 'USTA ÇANLARI ÇALIYOR! ELİNİ UZAT! 🔔🎶',
-    cue_afk_wave: 'USTA SENİ ÇAĞIRIYOR! PARMAĞINI OYNAT! 👋',
+    cue_afk_stir: 'USTA DONDURMAYI KARIŞTIRIYOR',
+    cue_afk_table: 'DEVAM İÇİN ELİNİ HAREKET ETTİR',
+    cue_afk_bells: 'ÇANLARIN RİTMİNİ DİNLE',
+    cue_afk_wave: 'ELİNİ UZAT',
     cue_swap_watch: 'İKİ ELİ TAKİP ET!',
     cue_swap_pick: 'GERÇEK KÜLAHI TUT!',
     cue_pull_back: 'ELİNİ ÇEK! TUZAK!',
@@ -200,9 +208,10 @@ export const I18N = {
     cue_double_pump: 'DOUBLE FEINT! CATCH 2ND!',
     cue_eyelock_hold: 'HOLD AT GREEN MIDPOINT (EYE CONTACT)! 👀',
     cue_eyelock_rhythm: 'FOLLOW RHYTHM LEFT & RIGHT! ↔️',
-    cue_afk_table: 'VENDOR RAPPING TABLE! MOVE HAND! 🥄💥',
-    cue_afk_bells: 'VENDOR RINGING BELLS! REACH OUT! 🔔🎶',
-    cue_afk_wave: 'VENDOR BECKONING YOU! MOVE HAND! 👋',
+    cue_afk_stir: 'VENDOR IS STIRRING THE ICE CREAM',
+    cue_afk_table: 'MOVE YOUR HAND TO CONTINUE',
+    cue_afk_bells: 'LISTEN TO THE BELLS',
+    cue_afk_wave: 'REACH OUT',
     cue_swap_watch: 'WATCH BOTH HANDS!',
     cue_swap_pick: 'GRAB REAL CONE!',
     cue_pull_back: 'PULL BACK! TRAP!',
@@ -712,8 +721,10 @@ export class SaveManager {
     this.hapticsEnabled = true;
     this.data = {
       unlockedStage: 1,
+      completedStages: [],
       stageStars: new Array(CAMPAIGN_LEVELS.length).fill(0),
       stageHighScores: new Array(CAMPAIGN_LEVELS.length).fill(0),
+      endlessResults: {},
       discoveredTricks: ['DOUBLE_CONE_SLIDE', 'SHAFT_SPIN_360'],
       tutorialCompleted: false,
       coins: 0,
@@ -742,23 +753,35 @@ export class SaveManager {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (typeof parsed.unlockedStage === 'number') {
+        if (Number.isFinite(parsed.unlockedStage)) {
           this.data.unlockedStage = Math.max(
             1,
-            Math.min(CAMPAIGN_LEVELS.length, parsed.unlockedStage)
+            normalizeStage(parsed.unlockedStage)
           );
         }
+        // A sequential unlock proves only its predecessors were won. In a legacy
+        // max-10 save, reaching 10 does NOT prove stage 10 was completed.
+        const predecessors = Array.from({ length: Math.min(CAMPAIGN_LEVELS.length,this.data.unlockedStage - 1) }, (_, i) => i + 1);
+        const recordedWins = Array.isArray(parsed.completedStages) ? parsed.completedStages.filter(validStage) : [];
+        this.data.completedStages = [...new Set([...predecessors, ...recordedWins])].sort((a, b) => a - b);
         if (Array.isArray(parsed.stageStars)) {
           parsed.stageStars.forEach((s, i) => {
-            if (i < this.data.stageStars.length) this.data.stageStars[i] = s || 0;
+            if (i < this.data.stageStars.length && Number.isFinite(s)) this.data.stageStars[i] = Math.max(0, Math.min(3, s));
           });
         }
         if (Array.isArray(parsed.stageHighScores)) {
           parsed.stageHighScores.forEach((sc, i) => {
-            if (i < this.data.stageHighScores.length) {
-              this.data.stageHighScores[i] = sc || 0;
+            if (i < this.data.stageHighScores.length && Number.isFinite(sc)) {
+              this.data.stageHighScores[i] = Math.max(0, sc);
             }
           });
+        }
+        if(parsed.endlessResults&&typeof parsed.endlessResults==='object'&&!Array.isArray(parsed.endlessResults)){
+          for(const[key,result]of Object.entries(parsed.endlessResults)){
+            const stage=Number(key);
+            if(!validStage(stage)||stage<=CAMPAIGN_LEVELS.length||!result||typeof result!=='object')continue;
+            this.data.endlessResults[String(stage)]={score:Number.isFinite(result.score)?Math.max(0,result.score):0,stars:Number.isFinite(result.stars)?Math.max(0,Math.min(3,result.stars)):0};
+          }
         }
         if (Array.isArray(parsed.discoveredTricks)) {
           this.data.discoveredTricks = Array.from(new Set(parsed.discoveredTricks));
@@ -770,11 +793,11 @@ export class SaveManager {
         if (typeof parsed.conesCaught === 'number') {
           this.data.conesCaught = parsed.conesCaught;
         }
-        if (typeof parsed.preferredScoopCount === 'number') {
-          this.data.preferredScoopCount = Math.max(2, Math.min(4, parsed.preferredScoopCount));
+        if (Number.isFinite(parsed.preferredScoopCount)) {
+          this.data.preferredScoopCount = boundedScoops(parsed.preferredScoopCount);
         }
-        if (Array.isArray(parsed.preferredFlavors) && parsed.preferredFlavors.length >= 2) {
-          this.data.preferredFlavors = parsed.preferredFlavors;
+        if (Array.isArray(parsed.preferredFlavors) && parsed.preferredFlavors.length >= 1) {
+          this.data.preferredFlavors = boundedFlavors(parsed.preferredFlavors);
         }
         if (typeof parsed.hapticsEnabled === 'boolean') {
           this.hapticsEnabled = parsed.hapticsEnabled;
@@ -826,7 +849,13 @@ export class SaveManager {
 
   formatNumber(num) {
     try {
-      return new Intl.NumberFormat(this.getLangMeta().locale).format(Math.round(num));
+      const locale = this.getLangMeta().locale;
+      // One active-locale formatter; HUD frames must not rebuild ICU state.
+      // This presentation cache stays outside the persisted save data.
+      if (this.numberFormatCache?.locale !== locale) {
+        this.numberFormatCache = { locale, formatter: new Intl.NumberFormat(locale) };
+      }
+      return this.numberFormatCache.formatter.format(Math.round(num));
     } catch {
       return String(Math.round(num));
     }
@@ -882,9 +911,9 @@ export class SaveManager {
   }
 
   setOrderPreferences(scoopCount, flavorsArray) {
-    this.data.preferredScoopCount = Math.max(2, Math.min(4, scoopCount));
+    this.data.preferredScoopCount = boundedScoops(scoopCount);
     if (Array.isArray(flavorsArray) && flavorsArray.length > 0) {
-      this.data.preferredFlavors = flavorsArray.slice(0, 4);
+      this.data.preferredFlavors = boundedFlavors(flavorsArray);
     }
     this.save();
   }
@@ -900,31 +929,52 @@ export class SaveManager {
     return this.hapticsEnabled;
   }
 
+  /**
+   * Merge trusted explicit win records, e.g. the existing postcard journal. This
+   * migration grants no coins/scores and advances only through consecutive wins.
+   */
+  reconcileCompletedStages(knownWins = []) {
+    const before = JSON.stringify([this.data.unlockedStage, this.data.completedStages]);
+    const explicit = Array.isArray(knownWins) ? knownWins.filter(validStage) : [];
+    this.data.completedStages = [...new Set([...this.data.completedStages, ...explicit])].sort((a, b) => a - b);
+    const completed = new Set(this.data.completedStages);
+    while (this.data.unlockedStage < Number.MAX_SAFE_INTEGER && completed.has(this.data.unlockedStage)) {
+      this.data.unlockedStage++;
+    }
+    if (before !== JSON.stringify([this.data.unlockedStage, this.data.completedStages])) this.save();
+    return this.data.unlockedStage;
+  }
+
   recordStageResult(stageNumber, score, starCount, wonFullCone) {
-    const idx = Math.max(0, Math.min(CAMPAIGN_LEVELS.length - 1, stageNumber - 1));
-    if (score > (this.data.stageHighScores[idx] || 0)) {
+    if (!validStage(stageNumber)) return false;
+    const idx = stageNumber - 1;
+    if(stageNumber>CAMPAIGN_LEVELS.length){
+      this.data.endlessResults ||= {};
+      const previous=this.data.endlessResults[String(stageNumber)]||{score:0,stars:0};
+      this.data.endlessResults[String(stageNumber)]={score:Math.max(previous.score,Number.isFinite(score)?score:0),stars:Math.max(previous.stars,Math.min(3,Number(starCount)||0))};
+    } else if (score > (this.data.stageHighScores[idx] || 0)) {
       this.data.stageHighScores[idx] = score;
     }
-    if (starCount > (this.data.stageStars[idx] || 0)) {
+    if (idx<CAMPAIGN_LEVELS.length && starCount > (this.data.stageStars[idx] || 0)) {
       this.data.stageStars[idx] = starCount;
     }
     if (wonFullCone) {
       this.data.conesCaught++;
       this.data.coins += 25 * starCount + stageNumber * 10;
-      if (stageNumber >= this.data.unlockedStage && stageNumber < CAMPAIGN_LEVELS.length) {
-        this.data.unlockedStage = stageNumber + 1;
-      }
+      this.reconcileCompletedStages([stageNumber]);
     }
     this.save();
   }
 
   getStageBestScore(stageNumber) {
-    const idx = Math.max(0, Math.min(CAMPAIGN_LEVELS.length - 1, stageNumber - 1));
-    return this.data.stageHighScores[idx] || 0;
+    const stage=normalizeStage(stageNumber);
+    if(stage>CAMPAIGN_LEVELS.length)return this.data.endlessResults?.[String(stage)]?.score||0;
+    return this.data.stageHighScores[stage-1] || 0;
   }
 
   getStageStars(stageNumber) {
-    const idx = Math.max(0, Math.min(CAMPAIGN_LEVELS.length - 1, stageNumber - 1));
-    return this.data.stageStars[idx] || 0;
+    const stage=normalizeStage(stageNumber);
+    if(stage>CAMPAIGN_LEVELS.length)return this.data.endlessResults?.[String(stage)]?.stars||0;
+    return this.data.stageStars[stage-1] || 0;
   }
 }

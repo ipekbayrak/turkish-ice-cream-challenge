@@ -1,0 +1,45 @@
+<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Göreli el kontrolü — gerçek oyun testi</title>
+<style>body{margin:0;background:#25180e;font:11px system-ui;color:#fff}iframe{display:block;width:100%;height:100dvh;border:0}aside{position:fixed;bottom:0;left:0;right:0;background:#20150fee;padding:8px;z-index:2}button{padding:9px;margin-right:6px}output{display:block;white-space:pre-wrap;max-height:95px;overflow:auto}#game-probe{display:none}</style>
+<iframe id="game" src="/?flow-check=1" title="Gerçek oyun"></iframe><aside><button id="drag">İki kez sola sürükle</button><button id="flow">Külah ve sipariş</button><button id="ordercheck">Dört lezzet / kontrol</button><button id="reset">Sıfırla</button><button id="hide">Bilgiyi gizle</button><output id="report">Hazır</output></aside>
+<script type="module">
+import {TOUCH_GAIN} from '../src/relative-touch.js';
+const frame=document.querySelector('iframe'),report=document.querySelector('#report');
+const params=new URLSearchParams(location.search);if(params.has('phone')){frame.style.width='394px';frame.style.height='853px';document.body.style.width='394px';}
+const stage=params.get('stage');if(stage)frame.src='/?flow-check=1&stage-check='+encodeURIComponent(stage);
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const read=()=>JSON.parse(frame.contentDocument.querySelector('output[aria-label="Kontrol durumu"]').textContent);
+const copy=()=>JSON.parse(JSON.stringify(read()));
+let raw=[0,0],held=false;
+function send(type,x=raw[0],y=raw[1]){raw=[x,y];held=type!=='pointerup';const win=frame.contentWindow;win.focus();frame.contentDocument.querySelector('canvas').dispatchEvent(new win.PointerEvent(type,{bubbles:true,cancelable:true,isPrimary:true,pointerType:'touch',pointerId:971,button:0,buttons:held?1:0,clientX:x,clientY:y}));}
+const move=(dx,dy)=>send('pointermove',raw[0]+dx,raw[1]+dy);
+function done(result){report.textContent=JSON.stringify(result,null,1);}
+document.querySelector('#drag').onclick=async()=>{
+ const results={},w=frame.contentWindow.innerWidth,h=frame.contentWindow.innerHeight;await pause(160);
+ results.before=copy();send('pointerdown',w*.75,h*.90);await pause(140);results.down=copy();move(-42,0);await pause(140);results.left=copy();send('pointerup');results.held=copy();
+ send('pointerdown',w*.90,h*.86);await pause(140);results.regrab=copy();move(-42,0);await pause(140);results.leftAgain=copy();send('pointerup');await pause(420);results.returned=copy();
+ send('pointerdown',w*.1,h*.9);await pause(1800);results.stationary=copy();send('pointerup');
+ const distance=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
+ results.checks={noJump:distance(results.before.tip,results.down.tip)<2,leftDelta:Math.abs(results.left.tip[0]-results.down.tip[0]+42*TOUCH_GAIN)<1,retained:distance(results.left.tip,results.held.tip)<1,regrab:distance(results.held.tip,results.regrab.tip)<1,accumulated:Math.abs(results.leftAgain.tip[0]-results.down.tip[0]+84*TOUCH_GAIN)<1,returned:distance(results.returned.tip,[results.down.cursor.homeX,results.down.cursor.homeY])<1,stationary:distance(results.stationary.tip,results.returned.tip)<1&&results.stationary.down};done(results);
+};
+document.querySelector('#flow').onclick=async()=>{
+ const result={},w=frame.contentWindow.innerWidth,h=frame.contentWindow.innerHeight;
+ send('pointerdown',w*.8,h*.9);await pause(150);let s=read();move((s.cone[0]-s.cursor.x)/TOUCH_GAIN,(s.cone[1]-s.cursor.y)/TOUCH_GAIN);for(let i=0;i<100&&read().order!=='order';i++)await pause(20);result.taken=copy();
+ s=read();move((s.tubs[0][0]-s.cursor.x)/TOUCH_GAIN,(s.tubs[0][1]-s.cursor.y)/TOUCH_GAIN);const pickStart=performance.now();for(let i=0;i<40&&read().orderSelection.count===0;i++)await pause(20);result.choiceMs=Math.round(performance.now()-pickStart);result.firstChoice=copy();await pause(2200);result.play=copy();move(40,-15);await pause(160);result.drag=copy();
+ result.checks={immediate:result.firstChoice.orderSelection.count===1&&result.choiceMs<700,taken:result.taken.owner==='player',playing:result.play.playing&&result.play.order==='inactive',held:result.play.down&&result.play.epoch===result.taken.epoch&&result.play.cancel===result.taken.cancel,stillMoves:Math.abs(result.drag.cursor.x-result.play.cursor.x-40*TOUCH_GAIN)<1};done(result);
+};
+document.querySelector('#ordercheck').onclick=async()=>{
+ const result={samples:[]},w=frame.contentWindow.innerWidth,h=frame.contentWindow.innerHeight;
+ send('pointerdown',w*.8,h*.9);await pause(120);let s=read();
+ move((s.cone[0]-s.cursor.x)/TOUCH_GAIN,(s.cone[1]-s.cursor.y)/TOUCH_GAIN);await pause(1900);
+ for(let i=0;i<100&&read().order!=='order';i++)await pause(50);
+ result.taken=copy();
+ for(const flavor of [0,1,2,3]){
+  s=read();move((s.tubs[flavor][0]-s.cursor.x)/TOUCH_GAIN,(s.tubs[flavor][1]+25-s.cursor.y)/TOUCH_GAIN);
+  for(let i=0;i<10;i++){await pause(48);const snap=copy();result.samples.push({tip:snap.tip,cursor:snap.cursor,depth:snap.handDepth,count:snap.orderSelection.count});}
+ }
+ result.selected=copy();await pause(1400);result.play=copy();send('pointerup');
+ result.checks={four:result.selected.orderSelection.count===4,colors:JSON.stringify(result.selected.orderSelection.flavors)==='[0,1,2,3]',aligned:result.samples.every(s=>Math.hypot(s.tip[0]-s.cursor.x,s.tip[1]-s.cursor.y)<2),sameDepth:result.samples.every(s=>Math.abs(s.depth-.26)<1e-5),playing:result.play.playing,held:result.play.down&&result.play.epoch===result.taken.epoch&&result.play.cancel===result.taken.cancel};done(result);
+};
+document.querySelector('#reset').onclick=()=>{held=false;frame.contentWindow.location.reload();report.textContent='Hazır';};
+document.querySelector('#hide').onclick=()=>{frame.contentDocument.querySelector('output[aria-label="Kontrol durumu"]').hidden=true;document.querySelector('aside').hidden=true;};
+</script></html>

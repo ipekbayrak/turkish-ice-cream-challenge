@@ -1,0 +1,28 @@
+<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dik külah tutuşu ve hazne — geliştirme</title><style>body{margin:0;background:#180b07;color:#ffe5b6;font:12px system-ui}canvas{position:fixed;inset:0}aside{position:fixed;bottom:12px;left:12px;right:12px;padding:10px;background:#21130fee;border-radius:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}button{font:inherit;padding:8px}output{white-space:pre-wrap;width:100%}</style><canvas></canvas><aside><button id="offer">Usta uzatır</button><button id="take">Külahı al</button><button id="hold">Dik tutuş</button><button id="flip">Ters çevir</button><button id="rack">Külah haznesi</button><output id="metrics"></output></aside>
+<script type="module">
+import * as THREE from 'three';import {GameWorld}from'/src/world.js';
+const V=(x=0,y=0,z=0)=>new THREE.Vector3(x,y,z),world=new GameWorld(document.querySelector('canvas'));
+world.setVendorCharacter(1);let mode='offer',time=0,last=performance.now(),age=0;const baseQ=world.camera.quaternion.clone();
+function offer(){mode='offer';age=0;world.setPlayerConeGrip(false);world.prepareEmptyConeOffer();world.camera.quaternion.copy(baseQ);}
+document.getElementById('offer').onclick=offer;document.getElementById('take').onclick=()=>{offer();mode='take';world.setPlayerConeGrip(true);};
+document.getElementById('hold').onclick=()=>{offer();mode='hold';world.setPlayerConeGrip(true);world.handoffCone('player');world.updateIceCreamScoops(2,false);};
+document.getElementById('flip').onclick=()=>{offer();mode='flip';};document.getElementById('rack').onclick=()=>{offer();mode='rack';};offer();
+function frame(now){requestAnimationFrame(frame);const dt=Math.min(.04,(now-last)/1000);last=now;time+=dt;age+=dt;
+ if(mode==='flip')world.coneHandTiltZ=Math.sin(Math.min(1,age/.9)*Math.PI)*2.89;
+ world.updateEmptyConeOffer(time,dt,{reach:1,receiving:mode==='take'||mode==='hold'});
+ let target=V(.22,1.04,.64),curl=.14;
+ if(mode==='take'){
+  const contact=world.getPlayerConeGripTarget(world.getConeOfferTarget());
+  if(age<.3){target.lerp(contact,THREE.MathUtils.smoothstep(age,0,.3));}
+  else {if(world.conePivot.parent!==world.heldSocket)world.handoffCone('player');target.copy(contact);target.lerp(V(0,1.25,.26),THREE.MathUtils.smoothstep(age,.48,.98));}
+  curl=.95;
+ }else if(mode==='hold'){target.set(0,1.25,.26);curl=.95;}
+ world.updateTouristHand(target,curl,0,dt,true);world.updateEnvironmentAnimations(time,dt,0,0,null,0);
+ if(mode==='rack'){world.camera.position.set(-.72,1.66,.05);world.camera.lookAt(-.72,1.09,-.94);world.camera.updateMatrixWorld(true);}
+ world.render();
+ const up=V(0,1,0).applyQuaternion(world.conePivot.getWorldQuaternion(new THREE.Quaternion()));const palmNormal=V(0,0,1).applyQuaternion(world.palmGroup.getWorldQuaternion(new THREE.Quaternion()));
+ const poleGap=world.rArmRig.handGroup.getWorldPosition(V()).distanceTo(world.paddleRearGripAnchor.getWorldPosition(V()));
+ document.getElementById('metrics').textContent=`${mode} · külah ${world.conePivot.parent===world.heldSocket?'müşteride':world.conePivot.parent===world.lArmRig.handGroup?'usta elinde':'çubukta'}\nKülah dikliği ${up.y.toFixed(3)} · avuç yatay normal payı ${Math.abs(palmNormal.y).toFixed(3)} · çubuk tutuş ${Math.round(poleGap*1000)}mm\nHazne: ${world.coneRack.userData.wellCount} sıra × ${world.coneRack.userData.conesPerWell} iç içe külah · ${world.conePivot.uuid.slice(0,8)}`;
+}
+requestAnimationFrame(frame);
+</script></html>

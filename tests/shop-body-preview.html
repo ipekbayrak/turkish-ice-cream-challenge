@@ -1,0 +1,19 @@
+<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dükkan alanı ve bütün gövde — geliştirme</title>
+<style>body{margin:0;background:#160c08;color:#ffe8bd;font:12px system-ui}canvas{position:fixed;inset:0}aside{position:fixed;bottom:8px;left:8px;right:8px;padding:10px;background:#21160fee;border:1px solid #9b7951;border-radius:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;max-height:116px;box-sizing:border-box}select{font:inherit;padding:6px}output{white-space:pre-line;width:100%;font-size:11px}label{display:flex;gap:5px;align-items:center}</style>
+<canvas id="scene"></canvas><aside><select id="motion" aria-label="Hareket"><option value="idle">Bekleme</option><option value="step">Sağa sola adım</option><option value="dance">Hafif ritim</option></select><select id="vendor" aria-label="Usta"><option value="0">Kadir</option><option value="1">Pala</option><option value="2">Aksakal</option><option value="3">Cihan</option></select><label><input id="frame" type="checkbox">Tezgahı gizle</label><output id="metrics">Görünürlük ölçülüyor…</output></aside>
+<script type="module">
+import * as THREE from 'three';import{GameWorld}from'/src/world.js';import{sampleBodyVisibility}from'/tests/shop-body-visibility.js';
+const $=id=>document.getElementById(id),w=new GameWorld($('scene')),V=(x=0,y=0,z=0)=>new THREE.Vector3(x,y,z);let last=performance.now(),time=0,nextMetric=0;
+w.touristHand.visible=false;w.prepareEmptyConeOffer();w.setVendorCharacter(0);
+$('vendor').onchange=()=>w.setVendorCharacter(+$('vendor').value);$('frame').onchange=()=>{w.cartGroup.visible=!$('frame').checked;};
+function animate(now){requestAnimationFrame(animate);const dt=Math.min(.04,(now-last)/1000);last=now;time+=dt;const mode=$('motion').value;
+ w.vendorBodyOffsetX=mode==='idle'?0:Math.sin(time*1.6)*.20;
+ w.paddleGroup.position.set(-.22,1.15+(mode==='dance'?Math.sin(time*3.2)*.07:0),-.16);
+ w.orientPaddleAndHands(mode==='dance'?Math.sin(time*1.6)*.16:0,V(.23,1.16,-.22),dt,0,0);
+ w.updateEnvironmentAnimations(time,dt,0,0,null,0);w.render();
+ if(time>nextMetric){nextMetric=time+.75;const visible=w.cartGroup.visible;w.cartGroup.visible=true;const m=sampleBodyVisibility(w,innerWidth,innerHeight);w.cartGroup.visible=visible;
+  const ray=name=>m[name].visible>0?'görünür':'kapalı',b=w.vendorBody;
+  $('metrics').textContent=`${innerWidth}×${innerHeight} · Sabit kamera · bel kuşağı ${ray('waist')}\nBaldırlar ${ray('calf0')} / ${ray('calf1')} · ayakkabılar ${ray('shoe0')} / ${ray('shoe1')}\nAyak kalkışı ${b.legs.map(l=>Math.round(l.foot.position.y*1000)+'mm').join(' / ')} · ${b.stepCount} yer değiştiren adım`;
+ }
+}requestAnimationFrame(animate);
+</script></html>

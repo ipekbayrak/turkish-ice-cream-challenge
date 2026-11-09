@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Gösteri koreografisi · geliştirme önizlemesi</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#170f09;color:#fff6df;font:12px/1.4 system-ui}canvas{position:fixed;inset:0;width:100%;height:100%}#guide{pointer-events:none}
+    #panel{position:fixed;left:12px;right:12px;bottom:12px;z-index:3;padding:12px 14px;border:1px solid #9c7b45;border-radius:14px;background:#1b1209ed;backdrop-filter:blur(12px);max-height:42vh;overflow:auto}
+    .toolbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.toolbar+ .toolbar{margin-top:7px}label{display:flex;align-items:center;gap:5px}select,button,input{font:inherit;border:1px solid #aa8c55;border-radius:6px;padding:7px;background:#f4e4bd;color:#342314}button{cursor:pointer;min-height:34px}button:disabled{opacity:.4}select{max-width:min(100%,430px)}input[type=number]{width:67px}#play{background:#bbdfb6}#state{font-weight:700;margin-left:auto}.muted{color:#bea985;font-size:10px}
+    #metrics{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:4px 12px;margin:10px 0 0;font-variant-numeric:tabular-nums}#metrics span{overflow-wrap:anywhere}#events{margin:7px 0 0;color:#c0b093;font-size:10px;max-height:46px;overflow:auto;white-space:pre-wrap}.bad{color:#ff947e}.good{color:#bde2b6}
+    @media(max-width:620px){#panel{left:7px;right:7px;bottom:7px;padding:9px}#metrics{grid-template-columns:1fr 1fr;font-size:10px}#state{margin-left:0}select{width:100%;max-width:none}.show-label{width:100%}.muted{display:none}}
+  </style>
+</head>
+<body>
+<canvas id="scene" aria-label="Gerçek oyun sahnesi"></canvas>
+<canvas id="guide" aria-hidden="true"></canvas>
+<section id="panel" aria-label="Koreografi test kontrolleri">
+  <div class="toolbar">
+    <label class="show-label">Gösteri <select id="show" aria-label="Gösteri seç"></select></label>
+    <label>Top <input id="scoops" type="number" min="1" max="8" value="2"></label>
+    <label><input id="sound" type="checkbox">Ses</label>
+    <label><input id="touch" type="checkbox">Dokunmatik girdi</label>
+    <span id="state" role="status">Yükleniyor</span>
+  </div>
+  <div class="toolbar">
+    <button id="play" type="button">Oynat</button><button id="pause" type="button">Duraklat</button><button id="reset" type="button">Başa al</button>
+    <button id="frame" type="button">1 kare</button><button id="tenth" type="button">+0,1 sn</button>
+    <label>Zaman <input id="seek-time" type="number" min="0" max="45" step="0.1" value="0"></label><button id="seek" type="button">Yeniden oynat → an</button>
+    <span class="muted">Geliştirme aracı · 60 Hz · seed 71931 · kullanıcı kayıtlarına erişmez</span>
+  </div>
+  <output id="metrics" aria-live="off"></output><pre id="events"></pre>
+</section>
+<script type="module">
+  import * as THREE from 'three';
+  import { GameWorld } from '/src/world.js';
+  import { TouchArmView } from '/src/touch-arm-view.js';
+  import { poleGripRenderTarget } from '/src/cone-grip.js';
+  import { SoundEngine } from '/src/audio.js';
+  import { TrickDirector } from '/src/tricks.js';
+  import { CHOREOGRAPHED_ROUTINES } from '/src/trick-routines.js';
+  import { TRICK_CATALOG } from '/src/protocol.js';
+  import { getVenueForStage } from '/src/venues.js';
+  import { RoutinePreviewDriver, seededPreviewRandom } from './routines-driver.js';
+
+  const $ = id => document.getElementById(id);
+  const params = new URLSearchParams(location.search);
+  const world = new GameWorld($('scene'));
+  const touchArmView = new TouchArmView(world);
+  const sound = new SoundEngine(); sound.setMuted(true);
+  const save = {
+    lang:'tr', hapticsEnabled:false,
+    data:{unlockedStage:1,preferredScoopCount:2,preferredFlavors:[0,1,2,3,4,5,0,1],tutorialCompleted:true},
+    t:key=>key, discoverTrick(){}, recordStageResult(){}, getStageBestScore(){return 0;}, getUstaName(){return 'Usta';},
+    setOrderPreferences(count,flavors){this.data.preferredScoopCount=count;this.data.preferredFlavors=[...flavors];},
+    getTrickInfo(id){const t=TRICK_CATALOG.find(entry=>entry.id===id);return {name:t?.names.tr||id,icon:t?.icon||'',desc:t?.descs.tr||''};},
+  };
+  let running=false, finished=false, finishAfterTick=false, elapsed=0, accumulator=0, maxRightError=0, maxLeftError=0, frameCount=0;
+  let rng=seededPreviewRandom(), selected=CHOREOGRAPHED_ROUTINES[0], completedComponents=0;
+  const log=[];
+  function event(text){log.push(text);if(log.length>8)log.shift();$('events').textContent=log.join('\n');}
+  const director=new TrickDirector(world,sound,save,{
+    onTrickStart(e){if(e.trickId===selected.id)event(`${elapsed.toFixed(2)}s · ${e.componentIndex+1}/${selected.componentIds.length} · ${e.componentId}`);},
+    onReaction(e){if(e.kind==='success'&&e.trickId===selected.id){completedComponents=e.componentIndex+1;if(e.showComplete)finishAfterTick=true;}},
+    onRoundEnd(data){running=false;event(`Sonuç: ${data.outcomeType}`);},
+  });
+  const driver=new RoutinePreviewDriver(director,world);
+  $('touch').checked=params.get('input')==='touch';
+  director.protocol.onCommand(packet=>{if(packet.type==='SHOW_BRIDGE_BEGIN')event(`${elapsed.toFixed(2)}s · geçiş: ${packet.payload.family}`);});
+  function seeded(fn){const previous=Math.random;Math.random=rng;try{return fn();}finally{Math.random=previous;}}
+  CHOREOGRAPHED_ROUTINES.forEach((routine,index)=>{const option=document.createElement('option');option.value=routine.id;option.textContent=`${String(index+1).padStart(2,'0')} · ${routine.names.tr}`;$('show').append(option);});
+  if(CHOREOGRAPHED_ROUTINES.some(r=>r.id===params.get('show')))$('show').value=params.get('show');
+  if(params.has('scoops'))$('scoops').value=THREE.MathUtils.clamp(Number(params.get('scoops'))||2,1,8);
+
+  function parentName(object){
+    if(!object)return '—';const parent=object.parent;
+    return parent===world.heldSocket?'müşteri eli':parent===world.paddleGroup?'çubuk':parent===world.paddleRollGroup?'çubuk ucu':parent===world.conePivot?'külah':parent===world.lArmRig.handGroup?'usta sol eli':parent===world.scene?'sahne':'diğer';
+  }
+  function clearTransientBodies(){
+    world.rigidBodies.bodies.forEach(body=>world.scene.remove(body.mesh));world.rigidBodies.bodies.length=0;
+    const geometries=new Set(),materials=new Set();
+    world.particles.forEach(p=>{world.scene.remove(p.mesh);geometries.add(p.mesh.geometry);materials.add(p.mesh.material);});world.particles.length=0;
+    geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());
+  }
+  function reset(){
+    touchArmView.setActive(false);
+    running=false;finished=false;finishAfterTick=false;elapsed=0;frameCount=0;accumulator=0;completedComponents=0;maxRightError=maxLeftError=0;
+    rng=seededPreviewRandom();log.length=0;$('events').textContent='';sound.setMuted(true);sound.stopMusic();sound.beginRound();
+    selected=CHOREOGRAPHED_ROUTINES.find(r=>r.id===$('show').value)||CHOREOGRAPHED_ROUTINES[0];
+    const requested=THREE.MathUtils.clamp(Math.round(Number($('scoops').value)||2),1,8);
+    const countStage=requested>4?(requested-3)*5+1:1;
+    const stage=Math.max(selected.unlockStage,countStage);
+    world.setVenue(getVenueForStage(stage));world.cancelVendorReaction?.();clearTransientBodies();
+    director.setOrderConfig(requested,[0,1,2,3,4,5,0,1],stage);
+    seeded(()=>director.resetRound(stage,false));
+    director.config={...director.config,speedMult:1}; // Constant preview speed, real action timing.
+    director.routine=[selected.id,'FINAL_PISTACHIO_CATCH'];
+    director.scoopCount=director.targetScoopCount;world.updateIceCreamScoops(director.scoopCount,false);
+    driver.setTouchMode($('touch').checked);
+    world.handSpring.pos.set(.22,1.04,.64);world.handSpring.target.copy(world.handSpring.pos);world.handSpring.vel.set(0,0,0);
+    if(world.paddleAngularMotion)Object.values(world.paddleAngularMotion).forEach(c=>{c.value=0;c.target=0;c.previousRaw=0;});
+    world.paddleGroup.rotation.set(0,0,0);world.paddleRollGroup.rotation.set(0,0,0);
+    seeded(()=>director.startRound());
+    director._applyKinematics(0,0,driver.input);world.render();
+    $('scoops').value=director.targetScoopCount;$('seek-time').value=0;
+    event(`Bölüm ${stage} · ${director.targetScoopCount} top · gösteri hazır`);metrics();drawGuide();
+  }
+  function audio(){if($('sound').checked){sound.setMuted(false);sound.init();sound.startMusic();}else sound.setMuted(true);}
+  function pause(){running=false;sound.setMuted(true);sound.stopMusic();metrics();}
+  function step(){
+    if(finished||director.roundEnded)return;
+    const dt=1/60,s=driver.update(dt);elapsed+=dt;frameCount++;
+    const target=new THREE.Vector3(.22,1.04,.64);
+    if(director.isGraspingPaddleCone)target.copy(director.coneWorldPos).add(new THREE.Vector3(0,-.03,.04));
+    else if(!s.isReaching && (director.heldItem || world.conePivot.parent===world.heldSocket))target.copy(s.handWorldPos);
+    else if(s.isReaching){target.copy(s.intentWorldPos);if(director.heldItem)target.z=.26;}
+    const directTouch=driver.touchEnabled&&s.isPointerDown&&!director.roundEnded&&!director.isGraspingPaddleCone;
+    if(directTouch)s.handWorldPos.copy(target);else s.handWorldPos.lerp(target,Math.min(1,dt*18));
+    s.grabCurl=THREE.MathUtils.lerp(s.grabCurl,(director.heldItem||director.isGraspingPaddleCone) ? .98 : s.isPointerDown ? .36 : .14,dt*14);
+    world.setPlayerConeGrip(director.isGraspingPaddleCone);
+    const rendered=director.isGraspingPaddleCone && world.conePivot.parent===world.paddleGroup?poleGripRenderTarget(world,s.handWorldPos,director.coneWorldPos):s.handWorldPos;
+    world.updateTouristHand(rendered,s.grabCurl,0,dt,directTouch);
+    seeded(()=>director.update(dt,elapsed,s));
+    world.updateEnvironmentAnimations(elapsed,dt,0,0,(power,pan,index)=>sound.playBellNote(index??3,power,pan),sound.getVoiceMouthOpen());
+    touchArmView.update(driver.touchEnabled && s.isPointerDown, s.pointerX, s.pointerY, innerWidth, innerHeight);
+    const right=world.rArmRig.handGroup.getWorldPosition(new THREE.Vector3()).distanceTo(world.paddleRearGripAnchor.getWorldPosition(new THREE.Vector3()));
+    const left=world.lArmRig.handGroup.getWorldPosition(new THREE.Vector3()).distanceTo(world.paddleFrontGripAnchor.getWorldPosition(new THREE.Vector3()));
+    maxRightError=Math.max(maxRightError,right);if(!director.leftHandCustomTarget)maxLeftError=Math.max(maxLeftError,left);
+    if(finishAfterTick){finished=true;running=false;sound.stopMusic();event(`${elapsed.toFixed(2)}s · gösteri tamamlandı; final oynatılmadı`);}
+    if(elapsed>45&&!finished){running=false;event('45s kontrol sınırı: aktif girdi/poz incelenmeli.');}
+  }
+  const guideCanvas=$('guide'),ctx=guideCanvas.getContext('2d');
+  function resize(){if(driver.touchEnabled){driver.release();driver.input.cancelEpoch++;}const ratio=Math.min(devicePixelRatio||1,2);guideCanvas.width=innerWidth*ratio;guideCanvas.height=innerHeight*ratio;ctx.setTransform(ratio,0,0,ratio,0,0);}
+  function drawGuide(){
+    ctx.clearRect(0,0,innerWidth,innerHeight);
+    if(!$('guide').hidden&&!finished){const g=director.getGestureGuide();ctx.lineWidth=2;ctx.strokeStyle=g.theme==='red'?'#ff9c82':g.theme==='amber'?'#edcd83':'#bde9c2';ctx.globalAlpha=.55;
+      for(const ring of g.rings){ctx.beginPath();ctx.arc(ring.x,ring.y,ring.radius,0,Math.PI*2);ctx.stroke();}
+      if(driver.input.isPointerDown){const x=(driver.input.normX+1)*innerWidth/2,y=(1-driver.input.normY)*innerHeight/2;ctx.strokeStyle='#fff';ctx.beginPath();ctx.moveTo(x-6,y);ctx.lineTo(x+6,y);ctx.moveTo(x,y-6);ctx.lineTo(x,y+6);ctx.stroke();}ctx.globalAlpha=1;
+    }
+  }
+  function metrics(){
+    const right=world.rArmRig.handGroup.getWorldPosition(new THREE.Vector3()).distanceTo(world.paddleRearGripAnchor.getWorldPosition(new THREE.Vector3()));
+    const left=world.lArmRig.handGroup.getWorldPosition(new THREE.Vector3()).distanceTo(world.paddleFrontGripAnchor.getWorldPosition(new THREE.Vector3()));
+    const bridge=director.choreography?.bridge;
+    $('state').textContent=finished?'Tamamlandı':director.roundEnded?'Tur bitti':running?'Oynuyor':'Duraklatıldı';
+    const values=[`Süre: ${elapsed.toFixed(2)}s · kare ${frameCount}`,`Parça: ${completedComponents}/${selected.componentIds.length} · adım ${director.subStep}`,`Girdi: ${driver.mode} · epoch ${driver.input.pointerEpoch}`,`Aktif: ${director.currentMechanic}`,`Geçiş: ${bridge?`${bridge.family} ${(bridge.elapsed/bridge.duration*100).toFixed(0)}%`:'—'}`,`Skor: ${director.score} · hak ${director.hearts}`,`Külah: ${parentName(world.conePivot)} · ${world.conePivot.uuid.slice(0,8)}`,`Dondurma: ${parentName(world.scoopStackGroup)} · ${director.scoopCount} top`,`Peçete: ${world.servingNapkin.visible?parentName(world.servingNapkin):'gizli'}`,`Sağ tutuş: ${(right*1000).toFixed(2)}mm · max ${(maxRightError*1000).toFixed(2)}`,`Sol: ${director.leftHandCustomTarget?'serbest / destek':`${(left*1000).toFixed(2)}mm`} · max ${(maxLeftError*1000).toFixed(2)}`,`Çizim: ${world.renderer.info.render.calls} çağrı`,`Kontrol: ${driver.touchEnabled?'dokunmatik':'eski sürücü'} · parmak ${Math.round(driver.input.pointerX)},${Math.round(driver.input.pointerY)}`];
+    $('metrics').replaceChildren(...values.map((text,index)=>{const span=document.createElement('span');span.textContent=text;if(index===9)span.className=right<.005?'good':'bad';return span;}));
+    $('play').disabled=finished;$('frame').disabled=finished;$('tenth').disabled=finished;
+  }
+  $('play').onclick=()=>{audio();running=true;metrics();};$('pause').onclick=pause;$('reset').onclick=reset;$('show').onchange=reset;$('scoops').onchange=reset;$('touch').onchange=reset;
+  $('sound').onchange=()=>{if(running)audio();};
+  $('frame').onclick=()=>{pause();step();world.render();metrics();drawGuide();};
+  $('tenth').onclick=()=>{pause();for(let i=0;i<6;i++)step();world.render();metrics();drawGuide();};
+  $('seek').onclick=()=>{const target=THREE.MathUtils.clamp(Number($('seek-time').value)||0,0,45);reset();for(let i=0;i<Math.round(target*60)&&!finished;i++)step();$('seek-time').value=elapsed.toFixed(2);world.render();metrics();drawGuide();};
+  window.addEventListener('resize',resize);document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});
+  resize();reset();
+  let previous=performance.now();
+  function frame(now){requestAnimationFrame(frame);const dt=Math.max(0,Math.min(.1,(now-previous)/1000));previous=now;if(running){accumulator+=dt;while(accumulator>=1/60&&running){step();accumulator-=1/60;}metrics();}world.render();drawGuide();}
+  requestAnimationFrame(frame);
+  if(params.get('play')==='1'){running=true;metrics();}
+</script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mobil el yerleşimi — geliştirme kontrolü</title>
+<style>html,body{margin:0;height:100%;background:#160c08;color:#f3dfbc;font:12px system-ui}iframe{border:0;width:100%;height:100%;display:block}body.has-controls iframe{height:calc(100% - 100px)}aside[hidden]{display:none}aside{height:100px;box-sizing:border-box;padding:8px;display:flex;gap:6px;flex-wrap:wrap;align-content:center}button{font:inherit;border:1px solid #81633b;border-radius:7px;background:#302016;color:#f3dfbc;padding:7px}output{width:100%;font-size:11px}</style>
+<iframe id="game" src="/?touch-preview=1" title="Gerçek oyun — dokunma testi"></iframe><aside hidden><button disabled id="start">Başlat ve dokun</button><button disabled data-point=".5,.78">Alt orta</button><button disabled data-point=".25,.64">Sol</button><button disabled data-point=".75,.64">Sağ</button><button disabled data-point=".12,.615">Beyaz kovaya</button><button disabled data-point=".427,.615">Çikolata kovaya</button><button disabled id="release">Bırak</button><button disabled id="reset">Sıfırla</button><output id="status">Oyun alanında basılı tutup sürükle: fare de dokunma gibi çalışır.</output></aside>
+<script type="module">
+import {controlPointerType} from '/src/pointer-controls.js';
+if(new URLSearchParams(location.search).get('controls')==='1'){document.body.classList.add('has-controls');document.querySelector('aside').hidden=false;}
+const frame=document.getElementById('game'),status=document.getElementById('status');let down=false,syntheticDown=false;
+const controls=[...document.querySelectorAll('aside button')];
+const ready=enabled=>controls.forEach(button=>button.disabled=!enabled);
+ready(false);
+function ended(){down=false;syntheticDown=false;}
+function bindFrame(){
+ ended();ready(true);status.textContent='Oyun alanında basılı tutup sürükle: fare de dokunma gibi çalışır.';const win=frame.contentWindow,doc=frame.contentDocument;
+ win.addEventListener('blur',ended);win.addEventListener('resize',ended);
+ doc.addEventListener('visibilitychange',()=>{if(doc.hidden)ended();});
+ // A real finger/drag takes over from a preset instead of being blocked by its id.
+ doc.addEventListener('pointerdown',event=>{
+  if(!event.isTrusted||!syntheticDown||!event.target.closest('#game-container'))return;
+  doc.getElementById('game-canvas').dispatchEvent(new win.PointerEvent('pointercancel',{bubbles:true,pointerId:913,pointerType:'touch',isPrimary:true}));
+ },true);
+ for(const type of ['pointerup','pointercancel','lostpointercapture'])doc.addEventListener(type,ended);
+ for(const type of ['pointerdown','pointermove','pointerup','pointercancel'])doc.addEventListener(type,event=>{
+  if(event.target.closest('button,dialog,a,input')||!event.target.closest('#game-container'))return;
+  if(type==='pointerdown'){down=true;syntheticDown=event.pointerId===913;}
+  if(type==='pointermove'&&!down)return;
+  status.textContent=`${event.pointerType==='mouse'?'Fare → dokunma':'Dokunma'} · ${Math.round(event.clientX)}, ${Math.round(event.clientY)} · ${win.innerWidth}×${win.innerHeight} · ${event.type} · ${controlPointerType(event,true)}`;
+ });
+}
+frame.addEventListener('load',bindFrame);if(frame.contentDocument?.readyState==='complete'&&frame.contentDocument.getElementById('game-canvas'))bindFrame();
+function send(kind,x=.5,y=.78){const win=frame.contentWindow,el=frame.contentDocument.getElementById('game-canvas');if(!el)return;win.focus();el.dispatchEvent(new win.PointerEvent(kind,{bubbles:true,cancelable:true,pointerId:913,pointerType:'touch',isPrimary:true,button:0,buttons:kind==='pointerup'?0:1,clientX:x*win.innerWidth,clientY:y*win.innerHeight}));}
+document.getElementById('start').onclick=()=>{frame.contentDocument.getElementById('btn-start-game').click();send('pointerdown');};
+for(const button of document.querySelectorAll('[data-point]'))button.onclick=()=>{const [x,y]=button.dataset.point.split(',').map(Number);send(down?'pointermove':'pointerdown',x,y);};
+document.getElementById('release').onclick=()=>send('pointerup');document.getElementById('reset').onclick=()=>{ended();ready(false);frame.contentWindow.location.reload();status.textContent='Yükleniyor…';};
+</script></html>

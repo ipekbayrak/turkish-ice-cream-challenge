@@ -5,16 +5,20 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
+    "test": "node --test tests/*.test.js",
+    "perf:cpu": "node scripts/vendor-cpu-benchmark.mjs",
     "build": "vite build",
     "preview": "vite preview --host",
     "deploy:web": "bash scripts/deploy-web.sh",
     "android:sync": "vite build && cap sync android",
     "android:open": "cap open android",
-    "android:apk": "vite build && cap sync android && cd android && ./gradlew assembleDebug",
+    "android:apk": "node scripts/build-native-soak.mjs --clean && vite build && cap sync android && cd android && ./gradlew assembleDebug",
+    "android:soak:assets": "node scripts/build-native-soak.mjs",
     "play:assets": "node scripts/generate-play-assets.mjs",
     "play:build": "bash scripts/release-android.sh --no-publish",
     "play:publish": "node scripts/play-publish-all.mjs production",
-    "release:android": "bash scripts/release-android.sh"
+    "release:android": "bash scripts/release-android.sh",
+    "test:encounters": "node scripts/audit-encounters.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.0",

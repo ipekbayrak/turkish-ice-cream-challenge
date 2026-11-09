@@ -1,39 +1,54 @@
+import {paperReturnHandTarget} from './napkin-return.js';
 import * as THREE from 'three';
+import { isControlActive, canUseMouseHover, controlPointerType } from './pointer-controls.js';
 import { GameWorld } from './world.js';
 import { SoundEngine } from './audio.js';
 import {
   CAMPAIGN_LEVELS,
   ICE_CREAM_FLAVORS,
-  TRICK_CATALOG,
   TrickDirector,
 } from './tricks.js';
 import { SaveManager } from './storage.js';
+import { LoreJournal } from './lore-journal.js';
+import { OrderFlow } from './order-flow.js';
+import { TubOrderView, ORDER_COPY, orderAcknowledgement } from './order-view.js';
+import { VendorRelationships } from './vendor-relationships.js';
+import { MAX_SCOOPS, VENUES, getVenueForStage, getVenueProgress, getStageOrderOptions } from './venues.js';
+import { loadStoryWins } from './lore-progress.js';
+import { venueIllustration } from './venue-cards.js';
+import { DiscoveryUI } from './discovery-ui.js';
+import { TouchReach } from './touch-reach.js';
+import { RelativeTouchController } from './relative-touch.js';
+import { encounterHudLayout } from './hud-layout.js';
+import { CounterInteractions,customerHandEmpty } from './counter-interactions.js';
+import {GameAnalytics} from './game-analytics.js';
+import { OrderPatience } from './order-patience.js';
+import { PointerTipView, drawPointerTip } from './touch-arm-view.js';
+import { ConeIntroduction } from './cone-introduction.js';
+import { poleGripRenderTarget } from './cone-grip.js';
+import { drawFigureEightGuide } from './gesture-guide-view.js';
+import { resizeOverlay } from './render-size.js';
+import { EncounterCamera } from './encounter-camera.js';
 
 const gameContainer = document.getElementById('game-container');
 const gameCanvas = document.getElementById('game-canvas');
 const trailCanvas = document.getElementById('trail-canvas');
 const trailCtx = trailCanvas.getContext('2d');
+// Only the development iframe opts into mouse-as-touch; normal desktop play is unchanged.
+const touchPreview = import.meta.env.DEV && new URLSearchParams(location.search).get('touch-preview') === '1';
 
 const startOverlay = document.getElementById('start-overlay');
 const startTitle = document.getElementById('start-title');
 const playerRankBadge = document.getElementById('player-rank-badge');
 const stageSelector = document.getElementById('stage-selector');
-const scoopCntBtns = document.querySelectorAll('.scoop-cnt-btn');
-const flavorOrbBtns = document.querySelectorAll('.flavor-orb-btn[data-flavor]');
-const btnRandomFlavors = document.getElementById('btn-random-flavors');
-const previewScoopsStack = document.getElementById('preview-scoops-stack');
 
 const legReach = document.getElementById('leg-reach');
 const legPull = document.getElementById('leg-pull');
 const legFlick = document.getElementById('leg-flick');
 const btnStartGame = document.getElementById('btn-start-game');
-const btnStartTutorial = document.getElementById('btn-start-tutorial');
-const btnOpenTricks = document.getElementById('btn-open-tricks');
-const btnTricksTop = document.getElementById('btn-tricks-top');
 const btnAudio = document.getElementById('btn-audio');
 const btnFullscreenTop = document.getElementById('btn-fullscreen-top');
 const btnLang = document.getElementById('btn-lang');
-const btnSwitchUsta = document.getElementById('btn-switch-usta');
 
 const hudLevel = document.getElementById('hud-level');
 const hudHearts = document.getElementById('hud-hearts');
@@ -50,13 +65,9 @@ const dot2 = document.getElementById('dot-2');
 const dot3 = document.getElementById('dot-3');
 const dot4 = document.getElementById('dot-4');
 const dotCrown = document.getElementById('dot-crown');
-const scoopDotEls = [dot1, dot2, dot3, dot4];
+const scoopDotEls = Array.from({length:MAX_SCOOPS},(_,i)=>document.getElementById(`dot-${i+1}`));
+const scoopSummary = document.getElementById('hud-scoop-count');
 
-const dialogTricks = document.getElementById('dialog-tricks');
-const tricksCountBadge = document.getElementById('tricks-count-badge');
-const tricksModalTitle = document.getElementById('tricks-modal-title');
-const tricksCatalogList = document.getElementById('tricks-catalog-list');
-const btnCloseTricks = document.getElementById('btn-close-tricks');
 
 const dialogSettings = document.getElementById('dialog-settings');
 const settingsTitle = document.getElementById('settings-title');
@@ -147,6 +158,15 @@ document.querySelectorAll('dialog').forEach((dlg) => {
   });
 });
 
+// Browser activation must be handled synchronously in the actual input event,
+// including clicks on menus and the release event used by mobile Safari.
+function unlockGameAudio(event){
+  if(!event.isTrusted||!sound.enabled)return;
+  if(event.type==='keydown'&&(event.repeat||event.ctrlKey||event.metaKey||event.altKey))return;
+  sound.unlockFromGesture?.();
+}
+for(const event of ['pointerdown','pointerup','touchend','keydown'])document.addEventListener(event,unlockGameAudio,{capture:true,passive:true});
+
 // Screen WakeLock for uninterrupted mobile gameplay
 let wakeLockSentinel = null;
 async function requestScreenWakeLock() {
@@ -182,7 +202,7 @@ document.addEventListener('visibilitychange', () => {
 document.addEventListener(
   'touchmove',
   (e) => {
-    if (!e.target.closest('dialog')) {
+    if (!e.target.closest('dialog, .discovery-card')) {
       e.preventDefault();
     }
   },
@@ -196,7 +216,10 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   });
 }
 
+const gameAnalytics=new GameAnalytics();
 const saveManager = new SaveManager();
+saveManager.reconcileCompletedStages(loadStoryWins());
+const lore = new LoreJournal(saveManager);
 const sound = new SoundEngine();
 const world = new GameWorld(gameCanvas, (surface) => {
   if (surface === 'cart') {
@@ -206,45 +229,25 @@ const world = new GameWorld(gameCanvas, (surface) => {
   }
 });
 
+let discovery = null;
+let discoveryHomeWasVisible=false;
+let coneIntro = null;
+let orderFlow = null;
+const tubOrderView = new TubOrderView(world);
+const orderHandTarget = new THREE.Vector3();
+let relationships = null;
+let orderGreeting = '';
+let lastOrderFlavor = null;
+let previousOrderVenue = null;
 let lastAdvanceUnlocked = false;
 let selectedStage = saveManager.data.unlockedStage || 1;
+if(import.meta.env.DEV){const previewStage=Number(new URLSearchParams(location.search).get('stage-check'));if(Number.isSafeInteger(previewStage)&&previewStage>0)selectedStage=previewStage;}
 let selectedScoopCount = saveManager.data.preferredScoopCount || 3;
 let selectedFlavors = (saveManager.data.preferredFlavors || [0, 1, 2, 3]).slice();
-let nextFlavorSlot = 0;
 
 const VENDOR_ICONS = ['🧢', '🏮', '🧔‍♂️👓', '👑'];
 
-function renderVisualOrderPreview() {
-  scoopCntBtns.forEach((btn) => {
-    btn.classList.toggle(
-      'active',
-      Number(btn.dataset.scoops) === selectedScoopCount
-    );
-  });
-
-  if (previewScoopsStack) {
-    previewScoopsStack.innerHTML = '';
-    for (let i = 0; i < selectedScoopCount; i++) {
-      const fIdx = selectedFlavors[i % selectedFlavors.length] ?? i;
-      const flav =
-        ICE_CREAM_FLAVORS[fIdx % ICE_CREAM_FLAVORS.length] ||
-        ICE_CREAM_FLAVORS[0];
-      const ball = document.createElement('span');
-      ball.className = 'prev-ball';
-      ball.style.background = flav.cssColor;
-      previewScoopsStack.appendChild(ball);
-    }
-  }
-
-  flavorOrbBtns.forEach((btn) => {
-    const fIdx = Number(btn.dataset.flavor);
-    const activeInCone = selectedFlavors
-      .slice(0, selectedScoopCount)
-      .includes(fIdx);
-    btn.classList.toggle('selected', activeInCone);
-    btn.title = saveManager.getFlavorName(fIdx);
-  });
-
+function refreshOrderHUD() {
   // Update Top HUD scoop dot visibility and colors
   scoopDotEls.forEach((dotEl, idx) => {
     if (!dotEl) return;
@@ -257,115 +260,43 @@ function renderVisualOrderPreview() {
   });
 
   if (director) {
-    director.setOrderConfig(selectedScoopCount, selectedFlavors);
-    if (!director.active) {
-      world.updateIceCreamScoops(selectedScoopCount, true);
+    director.setOrderConfig(selectedScoopCount, selectedFlavors, selectedStage);
+    if (!director.active && !orderFlow?.active) {
+      world.updateIceCreamScoops(0, false);
     }
   }
 }
 
-function renderStageSelector() {
+function renderVenueSelector() {
   if (!stageSelector) return;
   stageSelector.innerHTML = '';
-  const unlocked = saveManager.data.unlockedStage || 1;
-
-  CAMPAIGN_LEVELS.forEach((lvl) => {
-    const isLocked = lvl.stage > unlocked;
-    const stars = saveManager.getStageStars(lvl.stage);
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = `stage-chip${lvl.stage === selectedStage ? ' active' : ''}${isLocked ? ' locked' : ''}`;
-    chip.title = `${saveManager.t('stageLabel')} ${lvl.stage} — ${saveManager.getUstaName(lvl.vendorIdx)}`;
-
-    const topSpan = document.createElement('span');
-    topSpan.className = 'st-top';
-    topSpan.textContent = isLocked
-      ? `🔒 ${lvl.stage}`
-      : `${VENDOR_ICONS[lvl.vendorIdx % VENDOR_ICONS.length]} ${lvl.stage}`;
-
-    const starSpan = document.createElement('small');
-    starSpan.className = 'st-stars';
-    starSpan.textContent =
-      stars > 0 ? '⭐'.repeat(stars) : isLocked ? '' : '☆☆☆';
-
-    chip.appendChild(topSpan);
-    chip.appendChild(starSpan);
-
-    chip.addEventListener('click', () => {
-      if (isLocked) {
-        sound.init();
-        sound.playPenalty();
-        return;
-      }
-      sound.init();
-      sound.playConePop(0);
-      selectedStage = lvl.stage;
-      director.resetRound(selectedStage, false);
-      renderStageSelector();
-      renderVisualOrderPreview();
+  const lang=saveManager.lang==='tr'?'tr':'en';
+  for (const venue of VENUES) {
+    const progress=getVenueProgress(venue,saveManager.data);
+    const options=getStageOrderOptions(venue.lastStage);
+    const selected=getVenueForStage(selectedStage).id===venue.id;
+    const card=document.createElement('button');
+    card.type='button';card.className=`venue-card${selected?' selected':''}`;card.disabled=!progress.unlocked;
+    card.setAttribute('aria-pressed',String(selected));
+    card.style.setProperty('--venue-accent',`#${venue.palette.accent.toString(16).padStart(6,'0')}`);
+    card.innerHTML=`<span class="venue-art">${venueIllustration(venue.propTheme)}</span><span class="venue-card-head"><strong>${venue.name[lang]}</strong><span>${progress.unlocked?'':'⌑'}</span></span><small>${venue.subtitle[lang]}</small><span class="venue-card-foot"><span class="venue-stamps" aria-label="${progress.completed}/${progress.total}">${Array.from({length:progress.total},(_,i)=>`<i class="${saveManager.data.completedStages.includes(venue.firstStage+i)?'done':''}"></i>`).join('')}</span><span>${options.min}–${options.max} ${lang==='tr'?'top':'scoops'}</span></span>`;
+    card.title=progress.unlocked?`${venue.name[lang]} · ${progress.completed}/${progress.total}`:lang==='tr'?'Önce önceki mekândaki gösterileri tamamla.':'Finish the previous venue first.';
+    card.addEventListener('click',()=>{
+      selectedStage=progress.cleared&&venue===VENUES.at(-1)?saveManager.data.unlockedStage:Math.min(saveManager.data.unlockedStage,progress.nextStage);
+      director.resetRound(selectedStage,false);
+      world.setVenue?.(venue);
+      coneIntro?.reset();
+      selectedScoopCount=getStageOrderOptions(selectedStage).default;
+      renderVenueSelector();refreshOrderHUD();closeTopLayer(document.getElementById('dialog-stages'));
     });
-
-    stageSelector.appendChild(chip);
-  });
-
-  if (playerRankBadge) {
-    const totalStars = saveManager.getTotalStars();
-    const maxStars = CAMPAIGN_LEVELS.length * 3;
-    const foundTricks = saveManager.data.discoveredTricks.length;
-    playerRankBadge.textContent = `🏅 ${saveManager.getPlayerRankTitle()} • ⭐ ${totalStars}/${maxStars} • 🎪 ${foundTricks}/${TRICK_CATALOG.length}`;
+    stageSelector.appendChild(card);
   }
-}
-
-function renderTricksCatalogModal() {
-  if (!tricksCatalogList) return;
-  tricksCatalogList.innerHTML = '';
-  const foundCount = saveManager.data.discoveredTricks.length;
-  if (tricksCountBadge) {
-    tricksCountBadge.textContent = `🎪 ${foundCount} / ${TRICK_CATALOG.length} ${saveManager.t('tricksFoundLabel')}`;
-  }
-  if (tricksModalTitle) {
-    tricksModalTitle.textContent = saveManager.t('tricksModalTitle');
-  }
-
-  TRICK_CATALOG.forEach((trick, idx) => {
-    const info = saveManager.getTrickInfo(trick.id);
-    const isFound = saveManager.isTrickDiscovered(trick.id);
-
-    const row = document.createElement('div');
-    row.className = `trick-item-row${isFound ? '' : ' undiscovered'}`;
-
-    const iconEl = document.createElement('div');
-    iconEl.className = 'trick-item-icon';
-    iconEl.textContent = info.icon;
-
-    const bodyEl = document.createElement('div');
-    bodyEl.className = 'trick-item-body';
-
-    const headEl = document.createElement('div');
-    headEl.className = 'trick-item-head';
-
-    const titleEl = document.createElement('span');
-    titleEl.className = 'trick-item-title';
-    titleEl.textContent = `${idx + 1}. ${info.name} ${isFound ? '✓' : ''}`;
-
-    const diffEl = document.createElement('span');
-    diffEl.className = 'trick-item-diff';
-    diffEl.textContent = '🔥'.repeat(info.difficulty || 1);
-
-    headEl.appendChild(titleEl);
-    headEl.appendChild(diffEl);
-
-    const descEl = document.createElement('p');
-    descEl.className = 'trick-item-desc';
-    descEl.textContent = info.desc;
-
-    bodyEl.appendChild(headEl);
-    bodyEl.appendChild(descEl);
-
-    row.appendChild(iconEl);
-    row.appendChild(bodyEl);
-    tricksCatalogList.appendChild(row);
-  });
+  playerRankBadge.textContent=`${saveManager.getPlayerRankTitle()} · ${saveManager.getTotalStars()} ★`;
+  const currentVenue=getVenueForStage(selectedStage);
+  world.setVenue?.(currentVenue);
+  document.getElementById('home-venue-label').textContent=currentVenue.name[lang];
+  lore.update(selectedStage);
+  discovery?.refresh();
 }
 
 function applyLanguageUI() {
@@ -377,17 +308,8 @@ function applyLanguageUI() {
   legFlick.textContent = saveManager.t('legFlick');
 
   btnStartGame.textContent = saveManager.t('playBtn');
-  if (btnStartTutorial) {
-    btnStartTutorial.textContent = saveManager.t('tutorialBtn');
-  }
-  if (btnOpenTricks) {
-    btnOpenTricks.textContent = saveManager.t('tricksBtn');
-  }
   if (btnMenuRound) {
     btnMenuRound.textContent = saveManager.t('menuBtn');
-  }
-  if (btnCloseTricks) {
-    btnCloseTricks.textContent = saveManager.t('closeBtn');
   }
 
   lblScore.textContent = saveManager.t('scoreLabel');
@@ -426,19 +348,26 @@ function applyLanguageUI() {
     valFullscreen.classList.toggle('on', isFsActive);
   }
 
-  renderStageSelector();
-  renderVisualOrderPreview();
+  renderVenueSelector();
+  refreshOrderHUD();
 }
 
 const uiCallbacks = {
   onPrompt() {},
+  onTrickStart(event) { relationships?.onTrickStart(event); },
+  onReaction(event) { relationships?.onReaction(event); },
 
   onRoundEnd(data) {
-    renderStageSelector();
+    gameAnalytics.finish(director.currentStage,{won:data.outcomeType==='MASTER_CATCH',outcome:data.outcomeType});
+    endPointerInteraction();
+    renderVenueSelector();
     resultBadge.textContent = data.badge;
     resultIcon.textContent = data.icon;
     resultTitle.textContent = data.title;
     resultDesc.textContent = data.desc;
+    lore.recordResult(director.currentStage, data.outcomeType === 'MASTER_CATCH', director.targetScoopCount);
+    const earnedMemory = relationships?.finish(data.outcomeType === 'MASTER_CATCH');
+    if (earnedMemory) document.getElementById('result-story').textContent = earnedMemory;
     resultStars.textContent = data.stars;
     resScore.textContent = saveManager.formatNumber(data.score);
     resBest.textContent = saveManager.formatNumber(
@@ -446,10 +375,17 @@ const uiCallbacks = {
     );
     resScoops.textContent = data.scoopsText;
 
-    lastAdvanceUnlocked = data.canAdvance;
-    btnNextRound.textContent = data.canAdvance
-      ? saveManager.t('nextUsta')
-      : saveManager.t('retryBtn');
+    lastAdvanceUnlocked = data.canAdvance && director.currentStage<Number.MAX_SAFE_INTEGER;
+    const continuation = {
+      tr:['Gösteriye devam','Yeni mekâna geç'], en:['Continue the show','Next place'], ar:['متابعة العرض','المكان التالي'],
+      ru:['Продолжить','Следующее место'], de:['Weiter zur Show','Nächster Ort'], ja:['ショーを続ける','次の場所へ'],
+    }[saveManager.lang] || ['Continue the show','Next place'];
+    const nextPlace = getVenueForStage(director.currentStage + 1).id !== getVenueForStage(director.currentStage).id;
+    btnNextRound.textContent = lastAdvanceUnlocked ? continuation[nextPlace ? 1 : 0] : saveManager.t('retryBtn');
+    if (data.outcomeType === 'MASTER_CATCH') {
+      const place=getVenueForStage(director.currentStage);
+      resultBadge.textContent=`${place.name[saveManager.lang==='tr'?'tr':'en']} · ${director.currentStage>30?(saveManager.lang==='tr'?'Ustalık serisi':'Master streak'):`${director.currentStage-place.firstStage+1}/5`}`;
+    }
 
     if (!dialogResult.open) {
       dialogResult.showModal();
@@ -458,80 +394,87 @@ const uiCallbacks = {
 };
 
 const director = new TrickDirector(world, sound, saveManager, uiCallbacks);
-applyLanguageUI();
-
-// Non-Textual Visual Order Picker Events
-scoopCntBtns.forEach((btn) => {
-  btn.addEventListener('click', () => {
-    sound.init();
+relationships = new VendorRelationships({save:saveManager,lore,world,director});
+orderFlow = new OrderFlow({
+  onSingle(){director.sayLine(saveManager.lang==='tr'?'Sadece bir mi?':'Just one?','hmm',.9);},
+  onPhase(snapshot) {
+    const words = ORDER_COPY[saveManager.lang] || ORDER_COPY.en;
+    if (snapshot.phase === 'order') {
+      director.sayLine?.(words.ask,'hmm',1.4);
+      tubOrderView.settleCamera();
+      // A finger held during the introductory camera move keeps its contact;
+      // rebase its visual aim without creating a new gesture or pointer epoch.
+      if (pointerPresentationActive()) {
+        touchReach.begin(world.camera, viewportWidth, viewportHeight);
+        updatePointerAim();
+      }
+    } else {
+      if (snapshot.phase === 'confirm') {
+        // Bring the customer's same cone back from the chosen tub before the
+        // ordering camera returns and the mold is mounted onto it.
+        carryHandRest.set(.04,1.20,.26);
+      }
+      const text = snapshot.phase === 'greeting' ? words.ask : words.confirm(snapshot.count);
+      if (director.sayLine) director.sayLine(text, 'hmm', snapshot.phase === 'greeting' ? 1.6 : 1.2);
+      else { director.vendorBubbleText = text; director.vendorBubbleTimer = 1.6; }
+    }
+    document.body.dataset.orderPhase = snapshot.phase;
+    document.querySelector('.hud-bottom').setAttribute('aria-hidden', 'true');
+  },
+  onChoice(choice) {
+    lastOrderFlavor = choice.value;
+    tubOrderView.acknowledge(choice.value);
+    director.sayLine?.(orderAcknowledgement(choice, saveManager.lang), 'eeeh', 1.3);
     sound.playConePop(0);
-    selectedScoopCount = Number(btn.dataset.scoops) || 3;
-    renderVisualOrderPreview();
-  });
+    if (saveManager.hapticsEnabled) navigator.vibrate?.(18);
+  },
+  onComplete(order) {
+    tubOrderView.end();
+    selectedScoopCount = order.count;
+    selectedFlavors = order.flavors;
+    while(selectedFlavors.length < MAX_SCOOPS) selectedFlavors.push(selectedFlavors[selectedFlavors.length - 1] ?? 0);
+    gestureState.trailPoints.length = 0;
+    trailCtx.clearRect(0,0,viewportWidth,viewportHeight);
+    document.body.classList.remove('ordering');
+    document.body.removeAttribute('data-order-phase');
+    document.querySelector('.hud-bottom').setAttribute('aria-hidden', 'false');
+    world.cancelVendorReaction?.();
+    director.setOrderConfig(selectedScoopCount, selectedFlavors, selectedStage);
+    refreshOrderHUD();
+    director.resetRound(selectedStage, false, {preserveCustomerCone:true});
+    director.startRound({customerCone:true});
+    gameAnalytics.startRound(director.currentStage);
+    encounterCamera.setPhase('play');
+  },
 });
-
-function pickFlavorIndex(fIdx) {
-  sound.init();
-  sound.playScoopAdded();
-  selectedFlavors[nextFlavorSlot % selectedScoopCount] = fIdx;
-  nextFlavorSlot = (nextFlavorSlot + 1) % selectedScoopCount;
-  renderVisualOrderPreview();
-  world.triggerScoopJiggle(1.1);
-}
-
-flavorOrbBtns.forEach((btn) => {
-  btn.addEventListener('click', () => {
-    pickFlavorIndex(Number(btn.dataset.flavor) || 0);
-  });
+discovery = new DiscoveryUI({
+  world, save:saveManager, sound, getStage:()=>selectedStage,
+  onInspect:detail=>relationships.discoverObject(detail),
+  getMemory:(id,venueId)=>relationships.discoveryMemory(id,venueId),
+  canOpen:()=>!orderFlow.active && !dialogResult.open && coneIntro?.phase !== 'take' && customerHandEmpty(world,director),
+  onEnter(){
+    discoveryHomeWasVisible=!startOverlay.classList.contains('hidden');
+    dialogSettings.close();
+    endPointerInteraction();gestureState.trailPoints.length=0;
+    counterInteractions.reset();
+    trailCtx.clearRect(0,0,viewportWidth,viewportHeight);
+    // The frame loop pauses the encounter. Keep every serving owner, trick
+    // timer and introduction phase so inspection can resume the same moment.
+    startOverlay.classList.add('hidden');
+  },
+  onExit(){world.resetExploration();startOverlay.classList.toggle('hidden',!discoveryHomeWasVisible);},
 });
-
-if (btnRandomFlavors) {
-  btnRandomFlavors.addEventListener('click', () => {
-    sound.init();
-    sound.playBell(0.75, 0);
-    const counts = [2, 3, 4];
-    selectedScoopCount = counts[Math.floor(Math.random() * counts.length)];
-    selectedFlavors = [
-      Math.floor(Math.random() * ICE_CREAM_FLAVORS.length),
-      Math.floor(Math.random() * ICE_CREAM_FLAVORS.length),
-      Math.floor(Math.random() * ICE_CREAM_FLAVORS.length),
-      Math.floor(Math.random() * ICE_CREAM_FLAVORS.length),
-    ];
-    renderVisualOrderPreview();
-    world.triggerScoopJiggle(1.3);
-  });
-}
-
-btnSwitchUsta.addEventListener('click', () => {
-  const maxUnlocked = saveManager.data.unlockedStage || 1;
-  selectedStage = (director.currentStage % maxUnlocked) + 1;
-  director.resetRound(selectedStage, false);
-  renderStageSelector();
-  if (startOverlay.classList.contains('hidden')) {
-    director.startRound();
-  } else {
-    renderVisualOrderPreview();
-  }
-});
-
-// 15 Tricks Catalog Modal
-function openTricksModal() {
-  renderTricksCatalogModal();
-  if (dialogTricks && !dialogTricks.open) {
-    dialogTricks.showModal();
-  }
-}
-if (btnOpenTricks) btnOpenTricks.addEventListener('click', openTricksModal);
-if (btnTricksTop) btnTricksTop.addEventListener('click', openTricksModal);
-if (btnCloseTricks) {
-  btnCloseTricks.addEventListener('click', () => {
-    closeTopLayer(dialogTricks);
-  });
-}
+relationships.setDiscoveredObjects(discovery.progress.ids);
+applyLanguageUI();
 
 // Settings & Language Modal Controls
 btnLang.addEventListener('click', () => {
+  endPointerInteraction();
   applyLanguageUI();
+  const atCounter = !director.active && !orderFlow.active && coneIntro?.ready;
+  document.getElementById('btn-stages-panel').disabled = !atCounter;
+  document.getElementById('btn-discover').disabled = !atCounter;
+  btnStartGame.hidden = !atCounter;
   if (!dialogSettings.open) {
     dialogSettings.showModal();
   }
@@ -613,6 +556,7 @@ btnCloseSettings.addEventListener('click', () => {
 
 let viewportWidth = window.innerWidth;
 let viewportHeight = window.innerHeight;
+let trailSize=null;
 
 function resizeTrailCanvas() {
   viewportWidth = Math.max(
@@ -624,9 +568,7 @@ function resizeTrailCanvas() {
     window.visualViewport?.height || window.innerHeight
   );
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  trailCanvas.width = Math.round(viewportWidth * dpr);
-  trailCanvas.height = Math.round(viewportHeight * dpr);
-  trailCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  trailSize=resizeOverlay(trailCanvas,trailCtx,viewportWidth,viewportHeight,dpr,trailSize);
 }
 window.addEventListener('resize', resizeTrailCanvas);
 window.addEventListener('orientationchange', () =>
@@ -637,6 +579,12 @@ resizeTrailCanvas();
 
 const gestureState = {
   isPointerDown: false,
+  isMouseHover: false,
+  pointerType: null,
+  aimNormX: null,
+  aimNormY: null,
+  pointerX: 0,
+  pointerY: 0,
   isReaching: false,
   isMoving: false,
   normX: 0.2,
@@ -648,8 +596,49 @@ const gestureState = {
   lungeBoost: 0,
   lastTapTime: 0,
   handWorldPos: new THREE.Vector3(0.22, 1.08, 0.62),
+  // Raw finger intention stays independent of the visually gripped/snapped hand.
+  intentWorldPos: new THREE.Vector3(0.22, 1.08, 0.62),
+  pointerEpoch: 0,
+  cancelEpoch: 0,
   trailPoints: [],
 };
+
+const touchReach = new TouchReach(world);
+const touchArmView = new PointerTipView(world);
+const counterInteractions=new CounterInteractions(world,sound,{
+  canInspect:id=>discovery.progress.canInspect(id,getVenueForStage(selectedStage).id,saveManager.data.unlockedStage),
+  onInspect(id){
+    const contact=gestureState.isPointerDown?{pointerId:activePointerId,clientX:gestureState.pointerX,clientY:gestureState.pointerY,button:0,isPrimary:true,currentTarget:gameContainer,timeStamp:performance.now()}:null;
+    if(discovery.openItem(id)&&contact){
+      discovery.pointerDown(contact);
+      // Releasing the dwell that opened the object is not a second tap on the
+      // now-moving camera. Keep inspection open, while allowing drag-to-rotate.
+      if(discovery.pointer)discovery.pointer.moved=true;
+    }
+  },
+  onPoke(part){
+    const tr=saveManager.lang==='tr';
+    director.sayLine(tr?(part==='eye'?'Gözüm orada, dondurma burada!':part==='nose'?'Burnumdan dondurma çıkmaz!':'Hop! Dondurmaya bakalım.'):(part==='eye'?'Easy on the eyes!':part==='nose'?'No ice cream in my nose!':'The ice cream is over here!'),'hmm',1.5);
+  }
+});
+const orderPatience=new OrderPatience(world,sound,()=>{
+  director.sayLine(saveManager.lang==='tr'?'Hadi bakalım, hangi lezzetten?':'Come on, which flavor?','afk_table',1.6);
+});
+const relativeTouch = new RelativeTouchController();
+const relativeSeed = new THREE.Vector3();
+const relativePresented = () => relativeTouch.initialized && gestureState.pointerType !== 'mouse';
+const pointerHandActive = () => isControlActive(gestureState) && Boolean(touchReach.camera);
+const pointerPresentationActive = () => (isControlActive(gestureState) || relativePresented()) && Boolean(touchReach.camera);
+
+function updatePointerAim(begin = false) {
+  if (begin || !touchReach.camera) touchReach.begin(world.camera, viewportWidth, viewportHeight);
+  const reach = THREE.MathUtils.clamp((gestureState.normY + .48) / .52, 0, 1);
+  const depth = gestureState.pointerType === 'mouse' && !orderFlow.active && !coneIntro?.active && !director.heldItem
+    ? THREE.MathUtils.lerp(.48, .26, reach) : .26;
+  if (relativePresented()) touchReach.updateAim(relativeTouch.x,relativeTouch.y,depth);
+  else touchReach.update(gestureState.pointerX, gestureState.pointerY, depth,gestureState.pointerType);
+  gestureState.aimNormX = touchReach.aimX; gestureState.aimNormY = touchReach.aimY;
+}
 
 const PALETTE = {
   green: {
@@ -672,18 +661,32 @@ const PALETTE = {
   },
 };
 
-function updateNormalizedPointer(clientX, clientY, dt = 0.016) {
-  const newX = (clientX / viewportWidth) * 2 - 1;
-  const newY = -((clientY / viewportHeight) * 2 - 1);
+function updateNormalizedPointer(clientX, clientY, dt = 0.016, begin = false) {
+  let aimX=clientX,aimY=clientY;
+  if (gestureState.pointerType !== 'mouse') {
+    relativeTouch.configure(viewportWidth,viewportHeight);
+    if (begin) {
+      // Read the displayed fingertip only on a real new contact. Camera, pose
+      // and return animation must never generate continuous gesture evidence.
+      world.playerAimAnchor.getWorldPosition(relativeSeed).project(world.camera);
+      relativeTouch.press(clientX,clientY,{x:(relativeSeed.x+1)*viewportWidth*.5,y:(1-relativeSeed.y)*viewportHeight*.5});
+    } else relativeTouch.move(clientX,clientY);
+    aimX=relativeTouch.x;aimY=relativeTouch.y;
+  } else relativeTouch.reset();
+  const newX = (aimX / viewportWidth) * 2 - 1;
+  const newY = 1 - (aimY / viewportHeight) * 2;
 
-  const dx = newX - gestureState.normX;
-  const dy = newY - gestureState.normY;
+  const dx = begin ? 0 : newX - gestureState.normX;
+  const dy = begin ? 0 : newY - gestureState.normY;
   gestureState.vx = dx / Math.max(0.008, dt);
   gestureState.vy = dy / Math.max(0.008, dt);
   gestureState.speed = Math.hypot(dx, dy) / Math.max(0.008, dt);
 
   gestureState.normX = newX;
   gestureState.normY = newY;
+  gestureState.pointerX = clientX; gestureState.pointerY = clientY;
+  updatePointerAim(begin);
+  gameContainer.classList.add('hand-pointer');
   gestureState.isMoving = gestureState.speed > 0.06;
 
   const isTrapActive =
@@ -702,8 +705,8 @@ function updateNormalizedPointer(clientX, clientY, dt = 0.016) {
       director.subStep === 0);
 
   gestureState.trailPoints.push({
-    x: clientX,
-    y: clientY,
+    x: (gestureState.aimNormX+1)*viewportWidth*.5,
+    y: (1-gestureState.aimNormY)*viewportHeight*.5,
     life: 1.0,
     theme: isTrapActive ? 'red' : 'green',
   });
@@ -713,10 +716,18 @@ function updateNormalizedPointer(clientX, clientY, dt = 0.016) {
 }
 
 let lastMoveTime = performance.now();
+let activePointerId = null;
+let touchStartedAt=0,lastTouchTapUp=-Infinity;
 
 gameContainer.addEventListener('pointerdown', (event) => {
+  if (discovery?.active) {
+    discovery.pointerDown(event);
+    return;
+  }
   if (
     event.button !== 0 ||
+    activePointerId !== null ||
+    (!startOverlay.classList.contains('hidden') && !coneIntro?.active) ||
     event.target.closest('button, dialog, a, input, .start-sheet-card')
   ) {
     return;
@@ -725,19 +736,8 @@ gameContainer.addEventListener('pointerdown', (event) => {
   sound.init();
 
   const now = performance.now();
-  updateNormalizedPointer(event.clientX, event.clientY, 0.016);
-
-  // If the start overlay is open, allow tapping directly on the 6 3D copper tubs in the cart to pick flavors!
-  if (!startOverlay.classList.contains('hidden')) {
-    const clickedTubIdx = world.getTubIndexAtRay(
-      gestureState.normX,
-      gestureState.normY
-    );
-    if (clickedTubIdx >= 0) {
-      pickFlavorIndex(clickedTubIdx);
-      return;
-    }
-  }
+  gestureState.pointerType = controlPointerType(event, touchPreview);
+  updateNormalizedPointer(event.clientX, event.clientY, 0.016, true);
 
   try {
     gameContainer.setPointerCapture(event.pointerId);
@@ -746,10 +746,15 @@ gameContainer.addEventListener('pointerdown', (event) => {
   }
   gameContainer.classList.add('dragging');
 
-  const isDoubleTap = now - gestureState.lastTapTime < 280;
+  const isDoubleTap = now - (gestureState.pointerType==='mouse'?gestureState.lastTapTime:lastTouchTapUp) < 280;
+  touchStartedAt=now;
+  lastTouchTapUp=-Infinity;
   gestureState.lastTapTime = now;
 
+  activePointerId = event.pointerId;
+  gestureState.pointerEpoch++;
   gestureState.isPointerDown = true;
+  gestureState.isMouseHover = gestureState.pointerType === 'mouse';
   gestureState.isReaching = true;
   lastMoveTime = now;
 
@@ -759,7 +764,9 @@ gameContainer.addEventListener('pointerdown', (event) => {
     0.24
   );
 
-  if (isDoubleTap) {
+  tapWorld.copy(touchReach.target);
+
+  if (isDoubleTap && director.active && !orderFlow.active && !coneIntro?.active) {
     gestureState.lungeBoost = 1.0;
     gestureState.grabCurl = 1.0;
     director.attemptSnatch(tapWorld);
@@ -767,82 +774,161 @@ gameContainer.addEventListener('pointerdown', (event) => {
 });
 
 gameContainer.addEventListener('pointermove', (event) => {
+  if (discovery?.active) { discovery.pointerMove(event); return; }
+  const blocked = Boolean(event.target.closest('button, dialog, a, input, .start-sheet-card')) ||
+    Boolean(document.querySelector('dialog[open]'));
+  const hovering = canUseMouseHover(event, {
+    active: coneIntro?.active || orderFlow?.active || (director.active && !director.roundEnded),
+    blocked,
+    capturedPointer: activePointerId,
+    touchPreview,
+  });
+  if (!hovering && (!gestureState.isPointerDown || event.pointerId !== activePointerId)) {
+    if (gestureState.isMouseHover && controlPointerType(event, touchPreview) === 'mouse') endPointerInteraction();
+    return;
+  }
   const now = performance.now();
+  const begin = !isControlActive(gestureState);
   const dt = Math.max(0.004, (now - lastMoveTime) / 1000);
   lastMoveTime = now;
-
-  if (
-    gestureState.isPointerDown ||
-    gameContainer.hasPointerCapture?.(event.pointerId) ||
-    director.active
-  ) {
-    updateNormalizedPointer(event.clientX, event.clientY, dt);
-    gestureState.isReaching =
-      gestureState.isPointerDown ||
-      gameContainer.hasPointerCapture?.(event.pointerId) ||
-      gestureState.normY > -0.68;
-  }
+  gestureState.isMouseHover = hovering;
+  gestureState.pointerType = controlPointerType(event, touchPreview);
+  updateNormalizedPointer(event.clientX, event.clientY, dt, begin);
+  // Restore the original desktop reach: move up to extend, down to withdraw.
+  gestureState.isReaching = gestureState.isPointerDown || gestureState.normY > -0.68;
+});
+gameContainer.addEventListener('pointerleave', (event) => {
+  if (controlPointerType(event, touchPreview) === 'mouse' && activePointerId === null) endPointerInteraction();
 });
 
-function endPointerInteraction() {
+function endPointerInteraction(event = null) {
+  if (event && activePointerId !== event.pointerId) return;
+  const pointerType = gestureState.pointerType;
+  const cancelled = !event || event.type !== 'pointerup';
+  const wasDown = isControlActive(gestureState);
+  if (world.conePivot.parent === world.heldSocket || director.heldItem) carryHandRest.copy(gestureState.handWorldPos);
+  activePointerId = null;
   gameContainer.classList.remove('dragging');
+  gameContainer.classList.remove('hand-pointer');
   gestureState.isPointerDown = false;
+  gestureState.isMouseHover = false;
   gestureState.isReaching = false;
+  gestureState.isMoving = false;
+  gestureState.vx = 0;
+  gestureState.vy = 0;
+  gestureState.speed = 0;
+  gestureState.aimNormX = null; gestureState.aimNormY = null;
+  gestureState.trailPoints.length = 0;
+  trailCtx.clearRect(0, 0, viewportWidth, viewportHeight);
+  const retainTouch = !cancelled && pointerType !== 'mouse' && relativeTouch.initialized;
+  if (retainTouch && relativeTouch.travel<8 && performance.now()-touchStartedAt<220) lastTouchTapUp=performance.now();
+  else lastTouchTapUp=-Infinity;
+  if (retainTouch) relativeTouch.release();
+  else { relativeTouch.reset(); touchReach.end(); }
+  gestureState.pointerType = null;
+  touchArmView.setActive(false);
+  if (wasDown && cancelled) gestureState.cancelEpoch++;
+  if (!cancelled && pointerType === 'mouse' && (coneIntro?.active || orderFlow?.active || (director.active && !director.roundEnded)) &&
+      event.clientX >= 0 && event.clientX <= viewportWidth && event.clientY >= 0 && event.clientY <= viewportHeight &&
+      !event.target.closest('button, dialog, a, input') && !document.querySelector('dialog[open]')) {
+    gestureState.isMouseHover = true;
+    gestureState.pointerType = 'mouse';
+    gestureState.isReaching = gestureState.normY > -0.68;
+    updatePointerAim(true);
+    gameContainer.classList.add('hand-pointer');
+  }
 }
 
-gameContainer.addEventListener('pointerup', endPointerInteraction);
-gameContainer.addEventListener('pointercancel', endPointerInteraction);
-gameContainer.addEventListener('lostpointercapture', endPointerInteraction);
-
-function launchStageRound(runTutorial = false) {
-  sound.init();
-  requestScreenWakeLock();
-  document.body.classList.add('ios-immersive');
-  window.scrollTo(0, 1);
-  startOverlay.classList.add('hidden');
-  director.setOrderConfig(selectedScoopCount, selectedFlavors);
-  director.resetRound(selectedStage, runTutorial);
-  director.startRound();
-}
-
-btnStartGame.addEventListener('click', () => {
-  launchStageRound(false);
+gameContainer.addEventListener('pointerup', event => discovery?.active ? discovery.pointerUp(event) : endPointerInteraction(event));
+gameContainer.addEventListener('pointercancel', event => { discovery?.pointerCancel(event);endPointerInteraction(event); });
+gameContainer.addEventListener('lostpointercapture', event => { discovery?.pointerCancel(event);endPointerInteraction(event); });
+window.addEventListener('blur', () => {discovery?.pointerCancel();endPointerInteraction();});
+const cancelTouchOnResize = () => {
+  if (!pointerPresentationActive()) return;
+  endPointerInteraction(); gestureState.trailPoints.length = 0;
+};
+window.addEventListener('resize', cancelTouchOnResize);
+window.addEventListener('orientationchange', cancelTouchOnResize);
+window.visualViewport?.addEventListener('resize', cancelTouchOnResize);
+document.addEventListener('visibilitychange', () => {
+  sound.setBackgroundPaused(document.hidden);
+  if (document.hidden) {discovery?.pointerCancel();endPointerInteraction();}
 });
 
-if (btnStartTutorial) {
-  btnStartTutorial.addEventListener('click', () => {
-    launchStageRound(true);
-  });
+function beginOrderFlow() {
+  discovery?.exit(true);
+  world.resetExploration?.();
+  gestureState.trailPoints.length = 0;
+  trailCtx.clearRect(0,0,viewportWidth,viewportHeight);
+  sound.init();
+  sound.stopMusic();
+  requestScreenWakeLock();
+  document.body.classList.add('ios-immersive', 'ordering');
+  // Do not scroll/hide browser chrome during a held pickup: a viewport resize
+  // can cancel the same pointer just as the flavor selection becomes active.
+  startOverlay.classList.add('hidden');
+  director.heldItem = 'CUSTOMER_CONE';
+  sound.beginRound?.();
+  world.updateIceCreamScoops(0, false);
+  lastOrderFlavor = null;
+  orderGreeting = relationships.begin(selectedStage, director.levelIndex);
+  const orderOptions=getStageOrderOptions(selectedStage);
+  if(previousOrderVenue!==orderOptions.venueId)selectedScoopCount=orderOptions.default;
+  previousOrderVenue=orderOptions.venueId;
+  selectedScoopCount=Math.max(orderOptions.min,Math.min(orderOptions.max,selectedScoopCount));
+  tubOrderView.begin();
+  orderFlow.start({flavors:selectedFlavors,greetingSeconds:0,maxScoops:orderOptions.max,initialPointer:coneIntro?.orderIntentAnchor});
 }
+
+function prepareCounter() {
+  endPointerInteraction();orderFlow.cancel();tubOrderView.end();
+  counterInteractions.reset();orderPatience.reset();
+  document.body.classList.remove('ordering');document.body.removeAttribute('data-order-phase');
+  world.resetTransientPresentation?.();director.resetRound(selectedStage,false);
+  world.updateIceCreamScoops(0,false);startOverlay.classList.remove('hidden');
+  coneIntro.reset();
+  encounterCamera.setPhase('offer',true);
+}
+function launchStageRound() {
+  dialogSettings.close();
+  prepareCounter();
+}
+btnStartGame.addEventListener('click', launchStageRound);
 
 if (btnMenuRound) {
   btnMenuRound.addEventListener('click', () => {
     closeTopLayer(dialogResult);
     startOverlay.classList.remove('hidden');
+    orderFlow.cancel();
+    tubOrderView.end();
+    relationships.active = false;
+    document.body.classList.remove('ordering');
+    document.body.removeAttribute('data-order-phase');
+    world.cancelVendorReaction?.();
     director.resetRound(selectedStage, false);
-    renderStageSelector();
-    renderVisualOrderPreview();
+    renderVenueSelector();
+    refreshOrderHUD();
+    prepareCounter();
   });
 }
 
 btnNextRound.addEventListener('click', () => {
   closeTopLayer(dialogResult);
   requestScreenWakeLock();
-  if (lastAdvanceUnlocked && director.currentStage < CAMPAIGN_LEVELS.length) {
+  if (lastAdvanceUnlocked && director.currentStage < Number.MAX_SAFE_INTEGER) {
     selectedStage = director.currentStage + 1;
   } else {
     selectedStage = director.currentStage;
   }
-  renderStageSelector();
-  director.resetRound(selectedStage, false);
-  director.startRound();
+  renderVenueSelector();
+  prepareCounter();
 });
 
 btnRetryRound.addEventListener('click', () => {
   closeTopLayer(dialogResult);
   requestScreenWakeLock();
-  director.resetRound(director.currentStage, false);
-  director.startRound();
+  selectedStage = director.currentStage;
+  prepareCounter();
 });
 
 btnAudio.addEventListener('click', () => {
@@ -856,6 +942,7 @@ const hudCache = {
   scoreText: '',
   hearts: -1,
   scoopCount: -1,
+  scoopText: '',
   crownActive: false,
   cardClass: '',
   iconText: '',
@@ -867,10 +954,32 @@ const hudCache = {
 const heartSpanEls = hudHearts
   ? Array.from(hudHearts.querySelectorAll('.h-icon'))
   : [];
+const hudBellPoint=new THREE.Vector3();
+const hudBottom=document.querySelector('.hud-bottom');
+const hudTop=document.querySelector('.hud-top');
+let infoTopInset=parseFloat(getComputedStyle(hudTop).top)||8;
+window.addEventListener('resize',()=>{infoTopInset=parseFloat(getComputedStyle(hudTop).top)||8;});
+function projectBellRest(down=0){
+  const pivot=world.bells[3].pivot;
+  // Include the cart's placement, but not ringing oscillation: labels must not
+  // bob with the bell. The central bell has the longest tassel.
+  hudBellPoint.copy(pivot.position);hudBellPoint.y-=down*pivot.scale.y;
+  pivot.parent.localToWorld(hudBellPoint);return hudBellPoint.project(world.camera);
+}
 
 function updateHUD(guide) {
+  // Project the canopy's real position, leaving the whole bell and face clear.
+  projectBellRest();
+  const {cueTop}=encounterHudLayout(viewportWidth,viewportHeight,infoTopInset,(1-hudBellPoint.y)*viewportHeight*.5);
+  if(hudCache.cueTop!==cueTop){hudCache.cueTop=cueTop;hudBottom.style.top=`${cueTop}px`;}
+  tubOrderView.headerInset=cueTop;
+  const speaking=Boolean(guide?.vendorBubble?.text)&&!orderFlow.active;
+  if(hudCache.speaking!==speaking){hudCache.speaking=speaking;document.body.classList.toggle('vendor-speaking',speaking);}
   const ustaName = saveManager.getUstaName(director.levelIndex);
-  const levelText = `${director.currentStage} • ${ustaName}`;
+  const scoopText=orderFlow?.active?`${orderFlow.count} ${saveManager.lang==='tr'?'top':'scoops'}`:`${director.scoopCount}/${director.targetScoopCount}`;
+  if(scoopSummary&&hudCache.scoopText!==scoopText){hudCache.scoopText=scoopText;scoopSummary.textContent=scoopText;}
+  const venue=getVenueForStage(director.currentStage);
+  const levelText = `${venue.name[saveManager.lang==='tr'?'tr':'en']} · ${ustaName}`;
   if (hudCache.levelText !== levelText) {
     hudCache.levelText = levelText;
     hudLevel.textContent = levelText;
@@ -1075,33 +1184,35 @@ function drawTargetRings(ctx, rings, elapsed) {
 }
 
 function drawVendorSpeechBubble(ctx, bubble) {
-  if (!bubble || !bubble.text) return;
+  if (!bubble || !bubble.text || orderFlow.active) return;
   ctx.save();
   ctx.globalAlpha = bubble.alpha;
-  ctx.font = '900 13px system-ui, -apple-system, sans-serif';
-  const tw = ctx.measureText(bubble.text).width;
-  const padX = 11;
-  const bw = tw + padX * 2;
-  const bh = 28;
-  const bx = THREE.MathUtils.clamp(
-    bubble.x - bw * 0.5,
-    12,
-    viewportWidth - bw - 12
-  );
-  const by = Math.max(58, bubble.y - bh * 0.5);
-
-  ctx.fillStyle = 'rgba(255, 248, 235, 0.95)';
-  ctx.strokeStyle = '#f5b942';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.roundRect(bx, by, bw, bh, 14);
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.fillStyle = '#1b0a04';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(bubble.text, bx + bw * 0.5, by + bh * 0.5 + 0.5);
+  const landscape=viewportWidth>viewportHeight;
+  const maxWidth = landscape?Math.min(236,viewportWidth*.30-24):Math.min(330, viewportWidth - 48);
+  projectBellRest();
+  const layout=encounterHudLayout(viewportWidth,viewportHeight,infoTopInset,(1-hudBellPoint.y)*viewportHeight*.5);
+  const availableHeight=layout.captionMaxHeight;
+  let lines=[],font=12,lineHeight=16;
+  for(;font>=10;font--){
+    ctx.font=`600 ${font}px system-ui, -apple-system, sans-serif`;lines=[];let line='';lineHeight=font+4;
+    for(const word of bubble.text.split(' ')){
+      const next=line?`${line} ${word}`:word;
+      if(line&&ctx.measureText(next).width>maxWidth){lines.push(line);line=word;}else line=next;
+    }
+    if(line)lines.push(line);
+    if(lines.length*lineHeight+14<=availableHeight)break;
+  }
+  const bw = Math.min(maxWidth, Math.max(...lines.map(text => ctx.measureText(text).width))) + 24;
+  const bh = lineHeight * lines.length + 14;
+  // Speech shares the information area instead of following the vendor's head
+  // through the bell row. In landscape the whole area uses the left margin.
+  const bx = 12;
+  const by = layout.cueTop;
+  ctx.fillStyle = 'rgba(255, 248, 235, 0.96)';
+  ctx.strokeStyle = '#dbb66b'; ctx.lineWidth = 1;
+  ctx.beginPath();ctx.roundRect(bx, by, bw, bh, 12);ctx.fill();ctx.stroke();
+  ctx.fillStyle = '#342116';ctx.textAlign = 'center';ctx.textBaseline = 'middle';
+  lines.forEach((text,i) => ctx.fillText(text,bx+bw*.5,by+7+lineHeight*.5+i*lineHeight));
   ctx.restore();
 }
 
@@ -1149,17 +1260,36 @@ function drawFloatingPopupsAndVignette(ctx, guide) {
   }
 }
 
+function drawTouchContact() {
+  counterInteractions.draw(trailCtx);
+}
+
 function renderVisualCometsAndTrails(dt, elapsed, guide) {
   trailCtx.clearRect(0, 0, viewportWidth, viewportHeight);
+  if (orderFlow?.active) {
+    tubOrderView.draw(trailCtx,orderFlow.snapshot,viewportWidth,viewportHeight,saveManager.lang);
+    drawVendorSpeechBubble(trailCtx, guide?.vendorBubble);
+    drawTouchContact();
+    return;
+  }
+
+  tubOrderView.drawLabels(trailCtx,viewportWidth,viewportHeight,saveManager.lang);
+  if (guide?.quiet) {
+    gestureState.trailPoints.length = 0;
+    drawVendorSpeechBubble(trailCtx, guide.vendorBubble);
+    drawTouchContact();
+    return;
+  }
 
   if (guide && guide.active) {
     drawFloatingPopupsAndVignette(trailCtx, guide);
-    guide.comets.forEach((c) => {
+    if (guide.figureEight) drawFigureEightGuide(trailCtx, guide.figureEight);
+    else guide.comets.forEach((c) => {
       drawFadingToBrightComet(trailCtx, c.points, c.color, elapsed, true);
     });
     drawTargetRings(trailCtx, guide.rings, elapsed);
     drawVendorSpeechBubble(trailCtx, guide.vendorBubble);
-  }
+  } else drawVendorSpeechBubble(trailCtx,guide?.vendorBubble);
 
   const pts = gestureState.trailPoints;
   for (let i = pts.length - 1; i >= 0; i--) {
@@ -1171,20 +1301,94 @@ function renderVisualCometsAndTrails(dt, elapsed, guide) {
 
   if (pts.length >= 2) {
     const activeTheme = pts[pts.length - 1].theme || 'green';
+    trailCtx.save();
     drawFadingToBrightComet(trailCtx, pts, activeTheme, elapsed, false);
+    trailCtx.restore();
   }
+  drawTouchContact();
 }
 
-const targetHandWorldPos = new THREE.Vector3(0.22, 1.04, 0.64);
+const targetHandWorldPos = new THREE.Vector3(0.26, 1.00, 0.42);
+const carryHandRest = new THREE.Vector3(.04,1.20,.26);
+const renderedGripTarget = new THREE.Vector3();
+const encounterCamera=new EncounterCamera(world,()=>{
+  if(pointerPresentationActive()){touchReach.begin(world.camera,viewportWidth,viewportHeight);updatePointerAim();}
+});
+world.encounterCamera=encounterCamera;
+coneIntro = new ConeIntroduction(world, {
+  onTake(){ gameAnalytics.begin(selectedStage);sound.init(); sound.playWaferSlide?.(0); requestScreenWakeLock(); },
+  onTransfer(){encounterCamera.setPhase('order');},
+  onComplete(){
+    carryHandRest.copy(world.touristHand.position);
+    director.heldItem = 'CUSTOMER_CONE';
+    beginOrderFlow();
+  },
+});
+prepareCounter();
 let prevTime = performance.now();
+let performanceProbe=null;
+if(import.meta.env.DEV && new URLSearchParams(location.search).get('perf')==='1') {
+  import('../tests/performance-probe.js').then(({attachPerformanceProbe})=>{performanceProbe=attachPerformanceProbe({world,director});});
+}
+if(import.meta.env.DEV && new URLSearchParams(location.search).get('flow-check')==='1') {
+ const probePoint=new THREE.Vector3();
+ const screenPoint=node=>{node.getWorldPosition(probePoint).project(world.camera);return[(probePoint.x+1)*viewportWidth*.5,(1-probePoint.y)*viewportHeight*.5];};
+ const projectPoint=p=>{probePoint.copy(p).project(world.camera);return[(probePoint.x+1)*viewportWidth*.5,(1-probePoint.y)*viewportHeight*.5];};
+ let detailKey='',detailTargets=[];
+ const visibleDetails=()=>{
+  const key=`${viewportWidth}:${viewportHeight}:${world.camera.position.z.toFixed(2)}:${selectedStage}`;
+  if(key!==detailKey&&!discovery.active){detailKey=key;detailTargets=[];
+   for(const record of world.culturalScene.records.values()){
+    if(record.item.venueId!==world.culturalScene.venueId)continue;
+    const p=record.root.localToWorld(record.center.clone()),[x,y]=projectPoint(p);
+    if(x<0||x>viewportWidth||y<0||y>viewportHeight)continue;
+    if(world.culturalScene.pickFromCounter(x/viewportWidth,y/viewportHeight)?.id===record.item.id)detailTargets.push({id:record.item.id,x,y});
+   }
+  }return detailTargets;
+ };
+ import('../tests/performance-probe.js').then(({attachEncounterProbe})=>{performanceProbe=attachEncounterProbe(()=>({
+  progression:{stage:director.currentStage,tempo:director.config.tempoFactor,speed:director.config.speedMult,time:director.rhythmClock?.time,beat:director.rhythmClock?.phase,musicTimer:sound.musicTimer,sharedClock:sound.rhythmClock===director.rhythmClock},
+  intro:coneIntro.phase,order:orderFlow.active?orderFlow.phase:'inactive',playing:director.active,down:gestureState.isPointerDown,
+  epoch:gestureState.pointerEpoch,cancel:gestureState.cancelEpoch,aim:[touchArmView.x,touchArmView.y],cameraZ:world.camera.position.z,
+  tip:screenPoint(world.playerAimAnchor),cone:screenPoint(world.mainConeMesh),raw:[gestureState.pointerX,gestureState.pointerY],
+  cursor:relativeTouch.initialized?{x:relativeTouch.x,y:relativeTouch.y,homeX:relativeTouch.homeX,homeY:relativeTouch.homeY,returning:relativeTouch.returning,atHome:relativeTouch.atHome}:null,
+  tubs:world.tubPositions.map((_,i)=>{const p=tubOrderView.projectedTub(i,viewportWidth,viewportHeight);return[p.x,p.y];}),
+  bells:world.bells.map(b=>projectPoint(world.getBellBodyCenter(b.index))),face:projectPoint(world.vendorHead.localToWorld(new THREE.Vector3(0,.002,.194))),details:visibleDetails(),
+  interactions:{bellHits:counterInteractions.bellHits,faceTouches:counterInteractions.faceTouches,focus:counterInteractions.focus?.id,progress:counterInteractions.intent.progress,empty:customerHandEmpty(world,director)},
+  discovery:{active:discovery.active,selected:discovery.selected},patience:{active:orderPatience.active,hits:orderPatience.hits,cycle:orderPatience.cycle},
+  audio:{enabled:sound.enabled,state:sound.ctx?.state||'not-created',unlocked:sound._iosUnlocked,music:sound.musicPlaying},
+  arm:world.playerArmState?{shoulder:world.camera.worldToLocal(world.playerArmState.shoulder.clone()).toArray(),upper:world.playerArmState.shoulder.distanceTo(world.playerArmState.elbow),forearm:world.playerArmState.elbow.distanceTo(world.playerArmState.wrist),collar:Boolean(world.playerArmState.collar?.visible)}:null,
+  orderSelection:orderFlow.active?orderFlow.snapshot:{phase:'idle',count:0,flavors:[]},handDepth:world.handSpring.target.z,
+  scoops:director.targetScoopCount,owner:world.conePivot.parent===world.heldSocket?'player':world.conePivot.parent===world.lArmRig.handGroup?'vendor':'pole'
+ }));});
+}
 
 function animate(now) {
   requestAnimationFrame(animate);
+  performanceProbe?.beginFrame(now);
 
-  const dt = Math.min(0.05, (now - prevTime) / 1000);
+  const dt = Math.max(0, Math.min(0.05, (now - prevTime) / 1000));
   prevTime = now;
   const elapsed = now / 1000;
+  gestureState.frameTime=elapsed;
+  gameAnalytics.tick(dt,{visible:!document.hidden&&!discovery?.active&&!document.querySelector('dialog[open]'),playing:director.active&&!director.roundEnded});
+  if (discovery?.active) {
+    world.updateEnvironmentAnimations(elapsed,dt,0,0,null,0);
+    world.render();trailCtx.clearRect(0,0,viewportWidth,viewportHeight);
+    discovery.update();performanceProbe?.endFrame();return;
+  }
 
+  if (pointerPresentationActive() && document.querySelector('dialog[open]')) endPointerInteraction();
+  relativeTouch.tick(dt);
+  // Released fingers keep their last cursor briefly; the return is visual only.
+  if (relativePresented() && !isControlActive(gestureState)) updatePointerAim();
+  counterInteractions.update(dt,{
+    melodyEnabled:coneIntro?.ready&&!document.hidden&&!document.querySelector('dialog[open]'),
+    active:isControlActive(gestureState)&&!orderFlow.active&&coneIntro?.phase!=='take'&&!director.roundEnded&&!document.hidden&&!document.querySelector('dialog[open]'),
+    empty:customerHandEmpty(world,director),x:((gestureState.aimNormX??gestureState.normX)+1)*viewportWidth*.5,y:(1-(gestureState.aimNormY??gestureState.normY))*viewportHeight*.5,
+    epoch:gestureState.pointerEpoch,width:viewportWidth,height:viewportHeight
+  });
+  if(discovery.active){world.render();return;}
   gestureState.lungeBoost = Math.max(0, gestureState.lungeBoost - dt * 3.5);
 
   const targetGrab =
@@ -1199,12 +1403,42 @@ function animate(now) {
     targetGrab,
     dt * 14
   );
-  gestureState.speed *= 0.85;
-  gestureState.isMoving = gestureState.speed > 0.05;
+  const velocityDecay = Math.exp(-dt * 18);
+  gestureState.vx *= velocityDecay;
+  gestureState.vy *= velocityDecay;
+  gestureState.speed *= velocityDecay;
+  gestureState.isMoving = isControlActive(gestureState) && gestureState.speed > 0.05;
 
-  if (director.roundEnded) {
+  // Judge user motion before the visual hand is attracted to a grabbed cone.
+  // The wrist-anchored aim is shared by mouse and touch; raw motion is separate.
+  const intentReach = THREE.MathUtils.clamp((gestureState.normY + 0.48) / 0.52, 0, 1);
+  if (pointerHandActive()) {
+    gestureState.intentWorldPos.copy(touchReach.target);
+  } else if (isControlActive(gestureState)) {
+    gestureState.intentWorldPos.set(
+      THREE.MathUtils.clamp(gestureState.normX * 0.54, -0.5, 0.5),
+      THREE.MathUtils.clamp(1.22 + gestureState.normY * 0.36, 0.92, 1.72),
+      THREE.MathUtils.lerp(0.48, 0.26, intentReach)
+    );
+  } else {
+    gestureState.intentWorldPos.set(0.22, 1.04, 0.64);
+  }
+
+  const introTaking = coneIntro?.phase === 'take';
+  const directTouchHand = (pointerPresentationActive() || introTaking) && !director.roundEnded && !director.isGraspingPaddleCone;
+  if (introTaking) {
+    coneIntro.handTarget(targetHandWorldPos,gestureState);
+  } else if (directTouchHand) {
+    targetHandWorldPos.copy(touchReach.target);
+  } else if ((orderFlow.active || coneIntro?.active) && isControlActive(gestureState)) {
+    const ray = new THREE.Vector3(gestureState.normX,gestureState.normY,.5).unproject(world.camera).sub(world.camera.position).normalize();
+    const distance = (.30-world.camera.position.z)/ray.z;
+    targetHandWorldPos.copy(world.camera.position).addScaledVector(ray,distance).y -= .10;
+  } else if (director.roundEnded) {
     targetHandWorldPos.set(0.05, 1.24, 0.58);
     gestureState.grabCurl = 0.92;
+  } else if (!isControlActive(gestureState) && (world.conePivot.parent === world.heldSocket || director.heldItem)) {
+    targetHandWorldPos.copy(carryHandRest);
   } else if (director.isGraspingPaddleCone) {
     targetHandWorldPos.set(
       director.coneWorldPos.x,
@@ -1226,22 +1460,59 @@ function animate(now) {
       dynamicZ
     );
   } else {
-    targetHandWorldPos.set(0.22, 1.04, 0.64);
+    targetHandWorldPos.set(0.26, 1.00, 0.42);
   }
 
-  gestureState.handWorldPos.lerp(
+  if (directTouchHand) gestureState.handWorldPos.copy(targetHandWorldPos);
+  else gestureState.handWorldPos.lerp(
     targetHandWorldPos,
     Math.min(1, dt * 18)
   );
 
+  world.setPlayerConeGrip(introTaking || director.isGraspingPaddleCone);
+  const renderedHandTarget = director.isGraspingPaddleCone && world.conePivot.parent === world.paddleGroup
+    ? poleGripRenderTarget(world, gestureState.handWorldPos, director.coneWorldPos, renderedGripTarget)
+    : gestureState.handWorldPos;
+  // Ordering uses the same hand target as play; acknowledgement never pulls
+  // the hand off its joystick cursor or changes its reach depth.
+  paperReturnHandTarget(director,renderedHandTarget,orderHandTarget);
+  if(counterInteractions.reach>0&&customerHandEmpty(world,director))orderHandTarget.z-=counterInteractions.reach;
+  world.playerPointerActive=isControlActive(gestureState);
+  world.playerPointerResting=relativePresented() && relativeTouch.atHome && !isControlActive(gestureState);
   world.updateTouristHand(
-    gestureState.handWorldPos,
+    orderHandTarget,
     gestureState.grabCurl,
     gestureState.lungeBoost,
-    dt
+    dt,
+    directTouchHand,
+    elapsed
   );
 
-  director.update(dt, elapsed, gestureState);
+  if (coneIntro.active) {
+    if(!document.hidden&&!document.querySelector('dialog[open]'))director.tickSpeech(dt);
+    coneIntro.update(dt,elapsed,gestureState,document.hidden || Boolean(document.querySelector('dialog[open]')));
+  } else if (orderFlow.active) {
+    if (!document.hidden && !document.querySelector('dialog[open]')) director.tickSpeech(dt);
+  } else if(!document.hidden)director.update(dt, elapsed, gestureState);
+  relationships.update(dt);
+  if (orderFlow.active && !document.hidden && !document.querySelector('dialog[open]')) {
+    const orderInputActive = isControlActive(gestureState);
+    const orderX = ((gestureState.aimNormX ?? gestureState.normX) + 1) * .5;
+    const orderY = (1 - (gestureState.aimNormY ?? gestureState.normY)) * .5;
+    orderFlow.update(dt, {
+      active:orderInputActive,
+      flavor:orderInputActive?tubOrderView.pickCone(orderX,orderY):null,
+      epoch:gestureState.pointerEpoch,
+      pointerX:gestureState.pointerX,
+      pointerY:gestureState.pointerY,
+    });
+    if (orderFlow.active) {
+      const nudging=orderPatience.update(dt,elapsed,orderFlow.snapshot);
+      tubOrderView.attentionText=nudging?(saveManager.lang==='tr'?'Bir lezzet seç':'Choose a flavor'):null;
+      if(!nudging)world.updateOrderPresentation?.({...orderFlow.snapshot,phase:orderFlow.phase==='order'?'flavor':orderFlow.phase,flavorIndex:orderFlow.hover>=0?orderFlow.hover:lastOrderFlavor,recognized:relationships.recognized},dt,elapsed);
+      tubOrderView.update(orderFlow.snapshot,dt);
+    }
+  }
 
   const voiceMouthOpen = sound.getVoiceMouthOpen();
   world.updateEnvironmentAnimations(
@@ -1253,11 +1524,14 @@ function animate(now) {
       sound.playBellNote(bellIdx ?? 3, bellIntensity, panX),
     voiceMouthOpen
   );
+  encounterCamera.update(dt);
+  touchArmView.update(pointerHandActive(), gestureState.pointerX, gestureState.pointerY, viewportWidth, viewportHeight,gestureState.pointerType,!introTaking&&!director.isGraspingPaddleCone&&!director.roundEnded&&!director.paperReturnPose,relativePresented()?relativeTouch:null);
   world.render();
 
   const guide = director.getGestureGuide();
   updateHUD(guide);
   renderVisualCometsAndTrails(dt, elapsed, guide);
+  performanceProbe?.endFrame();
 }
 
 requestAnimationFrame(animate);

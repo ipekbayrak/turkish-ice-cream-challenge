@@ -1,0 +1,16 @@
+<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>İmleç ve sipariş — gerçek oyun kontrolü</title>
+<style>body{margin:0;background:#1d120a;color:#f9e8c7;font:12px system-ui}iframe{border:0;width:100%;height:calc(100dvh - 110px);display:block}aside{height:110px;box-sizing:border-box;padding:8px;display:flex;gap:6px;align-content:center;align-items:center;flex-wrap:wrap}button,input,select{font:inherit;padding:6px}input{width:42px}output{width:100%}</style>
+<iframe id="game" src="/?flow-check=1" title="Gerçek oyun"></iframe>
+<aside><label>Girdi <select id="mode"><option value="mouse">Fare hover</option><option value="touch">Dokunma</option></select></label><label>X <input id="x" type="number" value="50" min="1" max="99"></label><label>Y <input id="y" type="number" value="72" min="1" max="99"></label><button id="move">İmleci götür</button><button id="leave">Bırak</button><button id="start">Külahı al</button><button id="reset">Sıfırla</button><output id="status">Yükleniyor</output></aside>
+<script type="module">
+const $=id=>document.getElementById(id),frame=$('game');let down=false;
+function send(type){const win=frame.contentWindow,doc=frame.contentDocument,canvas=doc.getElementById('game-canvas');if(!canvas)return;win.focus();const x=+$('x').value/100*win.innerWidth,y=+$('y').value/100*win.innerHeight,pointerType=$('mode').value;
+canvas.dispatchEvent(new win.PointerEvent(type,{bubbles:true,cancelable:true,isPrimary:true,pointerId:971,pointerType,button:0,buttons:pointerType==='touch'&&type!=='pointerup'?1:0,clientX:x,clientY:y}));
+$('status').textContent=`${pointerType} · ${Math.round(x)}, ${Math.round(y)} · ${win.innerWidth}×${win.innerHeight} · ${type}`;}
+$('move').onclick=()=>{if($('mode').value==='touch'){send('pointerdown');down=true;}send('pointermove');};
+$('leave').onclick=()=>{send('pointercancel');frame.contentWindow.dispatchEvent(new Event('blur'));down=false;};
+$('mode').onchange=()=>{$('leave').click();};
+$('start').onclick=()=>frame.contentDocument.getElementById('btn-start-game')?.click();
+$('reset').onclick=()=>{down=false;frame.contentWindow.location.reload();};
+frame.onload=()=>{frame.contentWindow.addEventListener('blur',()=>down=false);$('status').textContent='Gerçek oyun hazır · fare için basma gerekmiyor';};
+</script></html>

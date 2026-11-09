@@ -1,0 +1,23 @@
+<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Çubuk–dondurma teması · geliştirme</title>
+<style>body{margin:0;background:#180d08;color:#ffe9c3;font:13px system-ui}canvas{position:fixed;inset:0}aside{position:fixed;bottom:10px;left:10px;right:10px;padding:10px;background:#21170fee;border:1px solid #b18e52;border-radius:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}button,input,select{font:inherit;padding:7px}input[type=number]{width:40px}output{width:100%}</style>
+<canvas id="scene"></canvas><aside><label>Top <input id="count" aria-label="Top" type="number" min="0" max="8" value="2"></label><select id="owner" aria-label="Sunum"><option value="pole">Çubukta</option><option value="outer">İkinci külahta</option><option value="carry">Kovadan alınan top</option><option value="hand">Ustanın elinde</option></select><label>Açı <input aria-label="Açı" id="angle" type="range" min="0" max="360" value="0"></label><button id="spin">Çevir</button><button id="stop">Durdur</button><output id="status" role="status"></output></aside>
+<script type="module">
+import * as THREE from 'three';import{GameWorld}from'/src/world.js';
+const $=id=>document.getElementById(id),V=(x=0,y=0,z=0)=>new THREE.Vector3(x,y,z),w=new GameWorld($('scene'));
+let spin=false,angle=0,time=0,last=performance.now();
+function reset(){
+ w.stallEffects.clear();w.handoffCone('paddle');w.stallEffects.update(1);w.carryScoop.visible=false;
+ const count=Math.max(0,Math.min(8,+$('count').value));w.updateIceCreamScoops(count,true);w.updateServingLayout(2);w.setServingScale(count>4?1.18:1);
+ if($('owner').value==='outer'){w.handoffCone('vendor');w.handoffOuterCone('paddle',true);w.setScoopPresentation('outer');w.stallEffects.update(1);}
+ if($('owner').value==='hand'){w.handoffCone('vendor');w.stallEffects.update(1);}
+ if($('owner').value==='carry'){w.updateIceCreamScoops(0,true);w.handoffCone('vendor');w.carryScoop.visible=true;w.paddleCarryOffsetY=.066;}
+}
+$('count').onchange=reset;$('owner').onchange=reset;$('angle').oninput=()=>{spin=false;angle=+$('angle').value*Math.PI/180;};$('spin').onclick=()=>spin=true;$('stop').onclick=()=>spin=false;reset();
+function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last)/1000);last=now;time+=dt;if(spin)angle+=dt*1.2;
+ w.paddleGroup.position.set(.06,1.24,.2);const hand=$('owner').value==='hand';if(hand)w.paddleGroup.position.set(-.35,1.1,-.15);
+ w.orientPaddleAndHands(0,$('owner').value==='pole'?null:V(-.2,1.2,-.1),dt,angle,0);w.updateEnvironmentAnimations(time,dt);w.render();
+ const contact=w.paddleContact,tip=contact.bladePoint(w);const gap=contact.active?tip.distanceTo(contact.point)*1000:null;
+ const right=w.rArmRig.handGroup.getWorldPosition(V()).distanceTo(w.paddleRearGripAnchor.getWorldPosition(V()))*1000;
+ $('status').textContent=`${w.scoopMeshes.filter(mesh=>mesh.visible).length} görünür top · ${Math.round(w.conePivot.rotation.z*180/Math.PI)}° · ${contact.active?'Üst topa temas':'Serbest çubuk'} · Ayrılma: ${gap===null?'—':gap.toFixed(2)+' mm'} · Sağ kavrayış: ${right.toFixed(2)} mm`;
+}requestAnimationFrame(frame);
+</script></html>
