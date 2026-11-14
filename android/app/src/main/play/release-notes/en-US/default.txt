@@ -1,1 +1,1 @@
-v1.0.0: Official launch! Experience 3D POV Maraş ice cream tricks, empty cone & napkin traps, 3 masters with vocal synthesis, and 6 languages.
+v2.0.1: Stability & clarity update! Fixed rare gameplay freeze after idle recovery, improved mobile timer resilience, and added playful vendor banter for the wrong-flavor prank!

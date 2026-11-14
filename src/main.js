@@ -1,4 +1,5 @@
 import {paperReturnHandTarget} from './napkin-return.js';
+import {clearVendorFlourish} from './vendor-flourish.js';
 import * as THREE from 'three';
 import { isControlActive, canUseMouseHover, controlPointerType } from './pointer-controls.js';
 import { GameWorld } from './world.js';
@@ -6,14 +7,15 @@ import { SoundEngine } from './audio.js';
 import {
   CAMPAIGN_LEVELS,
   ICE_CREAM_FLAVORS,
+  TRICK_CATALOG,
   TrickDirector,
 } from './tricks.js';
-import { SaveManager } from './storage.js';
+import { SaveManager, getTrickCategory } from './storage.js';
 import { LoreJournal } from './lore-journal.js';
 import { OrderFlow } from './order-flow.js';
 import { TubOrderView, ORDER_COPY, orderAcknowledgement } from './order-view.js';
 import { VendorRelationships } from './vendor-relationships.js';
-import { MAX_SCOOPS, VENUES, getVenueForStage, getVenueProgress, getStageOrderOptions } from './venues.js';
+import { MAX_SCOOPS, VENUES, getVenueForStage, getVenueProgress, getVenueStageEntries, getStageOrderOptions } from './venues.js';
 import { loadStoryWins } from './lore-progress.js';
 import { venueIllustration } from './venue-cards.js';
 import { DiscoveryUI } from './discovery-ui.js';
@@ -165,7 +167,7 @@ function unlockGameAudio(event){
   if(event.type==='keydown'&&(event.repeat||event.ctrlKey||event.metaKey||event.altKey))return;
   sound.unlockFromGesture?.();
 }
-for(const event of ['pointerdown','pointerup','touchend','keydown'])document.addEventListener(event,unlockGameAudio,{capture:true,passive:true});
+for(const event of ['pointerdown','pointerup','touchstart','touchend','click','keydown'])document.addEventListener(event,unlockGameAudio,{capture:true,passive:true});
 
 // Screen WakeLock for uninterrupted mobile gameplay
 let wakeLockSentinel = null;
@@ -183,9 +185,16 @@ async function requestScreenWakeLock() {
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') {
+  if (document.visibilityState === 'hidden') {
+    if (sound?.ctx?.state === 'running') {
+      sound.ctx.suspend?.().catch(() => {});
+    }
+  } else if (document.visibilityState === 'visible') {
     if (sound?.enabled) {
       sound.init();
+      if (['suspended', 'interrupted'].includes(sound.ctx?.state)) {
+        sound.ctx.resume?.().catch(() => {});
+      }
     }
     if (director?.active) {
       requestScreenWakeLock();
@@ -267,34 +276,164 @@ function refreshOrderHUD() {
   }
 }
 
+const TRICK_TAB_LABELS = {
+  tr: { all: 'Tümü', acrobatics: 'Akrobasi', sleight: 'El Çabukluğu', elastic: 'Sünen & Kalıp', rhythm: 'Ritim & Çan', shows: '60 Şov', practice: '▶ Dene', locked: 'Tezgâhta oynadıkça keşfedilir.' },
+  en: { all: 'All', acrobatics: 'Acrobatics', sleight: 'Sleight', elastic: 'Elastic & Mold', rhythm: 'Rhythm & Bell', shows: '60 Shows', practice: '▶ Practice', locked: 'Play at the counter to discover this move.' },
+  ar: { all: 'الكل', acrobatics: 'بهلوانية', sleight: 'خفة اليد', elastic: 'المط والقالب', rhythm: 'إيقاع وجرس', shows: '٦٠ عرضاً', practice: '▶ جرّب', locked: 'العب عند العربة لاكتشاف هذه الخدعة.' },
+  ru: { all: 'Все', acrobatics: 'Акробатика', sleight: 'Ловкость', elastic: 'Тягучесть', rhythm: 'Ритм и звон', shows: '60 Шоу', practice: '▶ Проба', locked: 'Играйте у прилавка, чтобы открыть трюк.' },
+  de: { all: 'Alle', acrobatics: 'Akrobatik', sleight: 'Fingerfertigkeit', elastic: 'Zug & Block', rhythm: 'Takt & Glocke', shows: '60 Shows', practice: '▶ Üben', locked: 'Spiele am Stand, um diesen Trick zu entdecken.' },
+  ja: { all: 'すべて', acrobatics: 'アクロバット', sleight: '早業・コーン', elastic: '伸び・塊', rhythm: 'リズム・ベル', shows: '60ショー', practice: '▶ 試す', locked: '屋台で遊んでこの技を発見しよう。' },
+};
+let activeTrickCategory = 'all';
+
+function renderTricksCatalog(category = activeTrickCategory) {
+  activeTrickCategory = category;
+  const listEl = document.getElementById('tricks-catalog-list');
+  const progressTextEl = document.getElementById('tricks-progress-text');
+  const progressFillEl = document.getElementById('tricks-progress-fill');
+  const tabsContainer = document.getElementById('tricks-category-tabs');
+  if (!listEl) return;
+
+  const tLabels = TRICK_TAB_LABELS[saveManager.lang] || TRICK_TAB_LABELS.en;
+  if (tabsContainer) {
+    tabsContainer.querySelectorAll('.trick-tab-btn').forEach((btn) => {
+      const cat = btn.dataset.category;
+      if (tLabels[cat]) btn.textContent = tLabels[cat];
+      const isAct = cat === activeTrickCategory;
+      btn.classList.toggle('active', isAct);
+      btn.setAttribute('aria-selected', String(isAct));
+    });
+  }
+
+  const totalCount = TRICK_CATALOG.length;
+  const discoveredCount = TRICK_CATALOG.filter((t) => saveManager.isTrickDiscovered(t.id)).length;
+  if (progressTextEl) {
+    progressTextEl.textContent = `${saveManager.t('tricksFoundLabel')}: ${discoveredCount} / ${totalCount}`;
+  }
+  const tutorialBtnEl = document.getElementById('btn-tutorial-warmup');
+  if (tutorialBtnEl) {
+    tutorialBtnEl.textContent = saveManager.t('tutorialBtn');
+    tutorialBtnEl.disabled = Boolean(director?.active || orderFlow?.active);
+  }
+  const achStripEl = document.getElementById('achievements-strip');
+  if (achStripEl && typeof saveManager.getAllAchievements === 'function') {
+    achStripEl.setAttribute('aria-label', saveManager.t('achievementsLabel'));
+    achStripEl.innerHTML = '';
+    for (const ach of saveManager.getAllAchievements()) {
+      const pill = document.createElement('span');
+      pill.className = `achievement-pill${ach.unlocked ? '' : ' locked'}`;
+      pill.title = ach.desc;
+      pill.textContent = `${ach.unlocked ? ach.icon : '🔒'} ${ach.name}`;
+      achStripEl.appendChild(pill);
+    }
+  }
+  if (progressFillEl) {
+    const pct = Math.min(100, Math.round((discoveredCount / Math.max(1, totalCount)) * 100));
+    progressFillEl.style.width = `${pct}%`;
+  }
+
+  const filtered = TRICK_CATALOG.filter(
+    (t) => activeTrickCategory === 'all' || getTrickCategory(t.id) === activeTrickCategory
+  );
+  listEl.innerHTML = '';
+  for (const entry of filtered) {
+    const unlocked = saveManager.isTrickDiscovered(entry.id);
+    const info = saveManager.getTrickInfo(entry.id);
+    const row = document.createElement('div');
+    row.className = `trick-card-item${unlocked ? '' : ' locked'}`;
+    const stars = '★'.repeat(Math.max(1, Math.min(4, info.difficulty || 1)));
+    row.innerHTML = `
+      <div class="trick-card-main">
+        <span class="trick-card-icon" aria-hidden="true">${unlocked ? info.icon : '🔒'}</span>
+        <div class="trick-card-copy">
+          <div class="trick-card-title">
+            <span>${unlocked ? info.name : '???'}</span>
+            <span class="trick-card-stars">${stars}</span>
+          </div>
+          <p class="trick-card-desc">${unlocked ? info.desc : tLabels.locked}</p>
+        </div>
+      </div>
+    `;
+    if (unlocked && entry.id !== 'FINAL_PISTACHIO_CATCH') {
+      const practiceBtn = document.createElement('button');
+      practiceBtn.type = 'button';
+      practiceBtn.className = 'btn-practice-trick';
+      practiceBtn.textContent = tLabels.practice;
+      practiceBtn.addEventListener('click', () => {
+        closeTopLayer(document.getElementById('dialog-tricks'));
+        closeTopLayer(dialogSettings);
+        prepareCounter();
+        startOverlay.classList.add('hidden');
+        document.querySelector('.hud-bottom')?.setAttribute('aria-hidden', 'false');
+        director.setOrderConfig(Math.max(2, selectedScoopCount), selectedFlavors, selectedStage);
+        director.startPracticeRound(entry.id, selectedStage);
+        refreshOrderHUD();
+        encounterCamera.setPhase('play');
+      });
+      row.appendChild(practiceBtn);
+    }
+    listEl.appendChild(row);
+  }
+}
+
+function selectVenueStage(stage, venue) {
+  selectedStage = stage;
+  director.resetRound(selectedStage, false);
+  world.setVenue?.(venue);
+  coneIntro?.reset();
+  selectedScoopCount = getStageOrderOptions(selectedStage).default;
+  renderVenueSelector();
+  refreshOrderHUD();
+  closeTopLayer(document.getElementById('dialog-stages'));
+}
+
 function renderVenueSelector() {
   if (!stageSelector) return;
   stageSelector.innerHTML = '';
-  const lang=saveManager.lang==='tr'?'tr':'en';
+  const lang=saveManager.lang;
+  const scoopsWord=saveManager.t('scoopsUnit');
   for (const venue of VENUES) {
     const progress=getVenueProgress(venue,saveManager.data);
+    const stageEntries=getVenueStageEntries(venue,saveManager.data);
     const options=getStageOrderOptions(venue.lastStage);
     const selected=getVenueForStage(selectedStage).id===venue.id;
-    const card=document.createElement('button');
-    card.type='button';card.className=`venue-card${selected?' selected':''}`;card.disabled=!progress.unlocked;
-    card.setAttribute('aria-pressed',String(selected));
+    const vName=venue.name[lang]||venue.name.en;
+    const vSub=venue.subtitle[lang]||venue.subtitle.en;
+    const card=document.createElement('div');
+    card.className=`venue-card${selected?' selected':''}${!progress.unlocked?' disabled':''}`;
+    card.setAttribute('role','group');
+    card.setAttribute('aria-label',vName);
     card.style.setProperty('--venue-accent',`#${venue.palette.accent.toString(16).padStart(6,'0')}`);
-    card.innerHTML=`<span class="venue-art">${venueIllustration(venue.propTheme)}</span><span class="venue-card-head"><strong>${venue.name[lang]}</strong><span>${progress.unlocked?'':'⌑'}</span></span><small>${venue.subtitle[lang]}</small><span class="venue-card-foot"><span class="venue-stamps" aria-label="${progress.completed}/${progress.total}">${Array.from({length:progress.total},(_,i)=>`<i class="${saveManager.data.completedStages.includes(venue.firstStage+i)?'done':''}"></i>`).join('')}</span><span>${options.min}–${options.max} ${lang==='tr'?'top':'scoops'}</span></span>`;
-    card.title=progress.unlocked?`${venue.name[lang]} · ${progress.completed}/${progress.total}`:lang==='tr'?'Önce önceki mekândaki gösterileri tamamla.':'Finish the previous venue first.';
-    card.addEventListener('click',()=>{
-      selectedStage=progress.cleared&&venue===VENUES.at(-1)?saveManager.data.unlockedStage:Math.min(saveManager.data.unlockedStage,progress.nextStage);
-      director.resetRound(selectedStage,false);
-      world.setVenue?.(venue);
-      coneIntro?.reset();
-      selectedScoopCount=getStageOrderOptions(selectedStage).default;
-      renderVenueSelector();refreshOrderHUD();closeTopLayer(document.getElementById('dialog-stages'));
-    });
+    const maxDisplayScoops = venue.id === 'ustalar-avlusu' && progress.cleared ? MAX_SCOOPS : options.max;
+    card.innerHTML=`<span class="venue-art">${venueIllustration(venue.propTheme)}</span><span class="venue-card-head"><strong>${vName}</strong><span>${progress.unlocked?`${progress.stars}/${progress.maxStars} ★`:'⌑'}</span></span><small>${vSub}</small><div class="venue-stage-chips"></div><span class="venue-card-foot"><span class="venue-stamps" aria-label="${progress.completed}/${progress.total}">${Array.from({length:progress.total},(_,i)=>`<i class="${saveManager.data.completedStages.includes(venue.firstStage+i)?'done':''}"></i>`).join('')}</span><span>${options.min}–${maxDisplayScoops} ${scoopsWord}</span></span>`;
+    card.title=progress.unlocked?`${vName} · ${progress.completed}/${progress.total}`:lang==='tr'?'Önce önceki mekândaki gösterileri tamamla.':'Finish the previous venue first.';
+    const chipsRow=card.querySelector('.venue-stage-chips');
+    if (progress.unlocked && chipsRow) {
+      for (const entry of stageEntries) {
+        const chip=document.createElement('button');
+        chip.type='button';
+        const isCurrent = entry.endless ? selectedStage > 30 : selectedStage === entry.stage;
+        chip.className=`venue-stage-chip${isCurrent?' active':''}${entry.endless?' endless':''}`;
+        chip.disabled=!entry.unlocked;
+        const starLabel = entry.endless ? `∞ ${entry.stage}` : `${entry.stage}${'★'.repeat(entry.stars)}${entry.completed && entry.stars < 3 ? '☆'.repeat(3 - entry.stars) : ''}`;
+        chip.textContent=starLabel;
+        chip.addEventListener('click',(ev)=>{
+          ev.stopPropagation();
+          if (entry.unlocked) selectVenueStage(entry.stage, venue);
+        });
+        chipsRow.appendChild(chip);
+      }
+      card.addEventListener('click',()=>{
+        const targetStage=progress.cleared&&venue===VENUES.at(-1)?saveManager.data.unlockedStage:Math.min(saveManager.data.unlockedStage,progress.nextStage);
+        selectVenueStage(targetStage, venue);
+      });
+    }
     stageSelector.appendChild(card);
   }
-  playerRankBadge.textContent=`${saveManager.getPlayerRankTitle()} · ${saveManager.getTotalStars()} ★`;
+  playerRankBadge.textContent=`${saveManager.getPlayerRankTitle()} · ${saveManager.getTotalStars()}/${CAMPAIGN_LEVELS.length*3} ★`;
   const currentVenue=getVenueForStage(selectedStage);
   world.setVenue?.(currentVenue);
-  document.getElementById('home-venue-label').textContent=currentVenue.name[lang];
+  document.getElementById('home-venue-label').textContent=currentVenue.name[lang]||currentVenue.name.en;
   lore.update(selectedStage);
   discovery?.refresh();
 }
@@ -333,9 +472,11 @@ function applyLanguageUI() {
     btn.classList.toggle('active', btn.dataset.lang === saveManager.lang);
   });
 
-  valSound.textContent = sound.enabled ? 'ON' : 'OFF';
+  const onWord = saveManager.t('toggleOn');
+  const offWord = saveManager.t('toggleOff');
+  valSound.textContent = sound.enabled ? onWord : offWord;
   valSound.classList.toggle('on', sound.enabled);
-  valHaptics.textContent = saveManager.hapticsEnabled ? 'ON' : 'OFF';
+  valHaptics.textContent = saveManager.hapticsEnabled ? onWord : offWord;
   valHaptics.classList.toggle('on', saveManager.hapticsEnabled);
   const isFsActive = Boolean(
     document.fullscreenElement ||
@@ -344,11 +485,12 @@ function applyLanguageUI() {
       document.body.classList.contains('ios-immersive')
   );
   if (valFullscreen) {
-    valFullscreen.textContent = isFsActive ? 'ON' : '⛶';
+    valFullscreen.textContent = isFsActive ? onWord : '⛶';
     valFullscreen.classList.toggle('on', isFsActive);
   }
 
   renderVenueSelector();
+  renderTricksCatalog();
   refreshOrderHUD();
 }
 
@@ -376,6 +518,10 @@ const uiCallbacks = {
     resScoops.textContent = data.scoopsText;
 
     lastAdvanceUnlocked = data.canAdvance && director.currentStage<Number.MAX_SAFE_INTEGER;
+    if (btnRetryRound) {
+      btnRetryRound.hidden = !lastAdvanceUnlocked;
+      btnRetryRound.parentElement?.classList.toggle('single-secondary', !lastAdvanceUnlocked);
+    }
     const continuation = {
       tr:['Gösteriye devam','Yeni mekâna geç'], en:['Continue the show','Next place'], ar:['متابعة العرض','المكان التالي'],
       ru:['Продолжить','Следующее место'], de:['Weiter zur Show','Nächster Ort'], ja:['ショーを続ける','次の場所へ'],
@@ -384,7 +530,12 @@ const uiCallbacks = {
     btnNextRound.textContent = lastAdvanceUnlocked ? continuation[nextPlace ? 1 : 0] : saveManager.t('retryBtn');
     if (data.outcomeType === 'MASTER_CATCH') {
       const place=getVenueForStage(director.currentStage);
-      resultBadge.textContent=`${place.name[saveManager.lang==='tr'?'tr':'en']} · ${director.currentStage>30?(saveManager.lang==='tr'?'Ustalık serisi':'Master streak'):`${director.currentStage-place.firstStage+1}/5`}`;
+      const placeName=place.name[saveManager.lang]||place.name.en;
+      const recordTag = data.isNewRecord ? ` · 🏅 ${saveManager.t('bestLabel')}!` : '';
+      resultBadge.textContent=`${placeName} · ${director.currentStage>30?(saveManager.lang==='tr'?'Ustalık serisi':'Master streak'):`${director.currentStage-place.firstStage+1}/5`}${recordTag}`;
+      if (data.unlockedNewVenue) {
+        resultDesc.textContent = `${data.desc} ${saveManager.lang === 'tr' ? '✨ Yeni mekân açıldı!' : '✨ New venue unlocked!'}`;
+      }
     }
 
     if (!dialogResult.open) {
@@ -441,7 +592,15 @@ orderFlow = new OrderFlow({
     world.cancelVendorReaction?.();
     director.setOrderConfig(selectedScoopCount, selectedFlavors, selectedStage);
     refreshOrderHUD();
-    director.resetRound(selectedStage, false, {preserveCustomerCone:true});
+    const runFirstTutorial =
+      selectedStage === 1 &&
+      !saveManager.data.tutorialCompleted &&
+      (saveManager.data.completedStages?.length || 0) === 0;
+    if (runFirstTutorial) saveManager.markTutorialCompleted();
+    director.resetRound(selectedStage, false, {
+      preserveCustomerCone: true,
+      includeTutorialWarmup: runFirstTutorial,
+    });
     director.startRound({customerCone:true});
     gameAnalytics.startRound(director.currentStage);
     encounterCamera.setPhase('play');
@@ -451,7 +610,7 @@ discovery = new DiscoveryUI({
   world, save:saveManager, sound, getStage:()=>selectedStage,
   onInspect:detail=>relationships.discoverObject(detail),
   getMemory:(id,venueId)=>relationships.discoveryMemory(id,venueId),
-  canOpen:()=>!orderFlow.active && !dialogResult.open && coneIntro?.phase !== 'take' && customerHandEmpty(world,director),
+  canOpen:()=>!director.active && !orderFlow.active && !dialogResult.open && coneIntro?.phase !== 'take' && customerHandEmpty(world,director),
   onEnter(){
     discoveryHomeWasVisible=!startOverlay.classList.contains('hidden');
     dialogSettings.close();
@@ -467,6 +626,36 @@ discovery = new DiscoveryUI({
 relationships.setDiscoveredObjects(discovery.progress.ids);
 applyLanguageUI();
 
+document.getElementById('tricks-category-tabs')?.addEventListener('click', (e) => {
+  const tabBtn = e.target.closest('.trick-tab-btn');
+  if (tabBtn && tabBtn.dataset.category) {
+    renderTricksCatalog(tabBtn.dataset.category);
+  }
+});
+document.getElementById('btn-tricks-panel')?.addEventListener('click', () => {
+  renderTricksCatalog();
+});
+document.getElementById('btn-tutorial-warmup')?.addEventListener('click', () => {
+  closeTopLayer(document.getElementById('dialog-tricks'));
+  closeTopLayer(dialogSettings);
+  prepareCounter();
+  startOverlay.classList.add('hidden');
+  document.querySelector('.hud-bottom')?.setAttribute('aria-hidden', 'false');
+  director.startTutorialRound(selectedStage);
+  refreshOrderHUD();
+  encounterCamera.setPhase('play');
+});
+document.getElementById('btn-switch-usta')?.addEventListener('click', () => {
+  if (director.active || orderFlow?.active || discovery?.active || !coneIntro?.ready) return;
+  endPointerInteraction();
+  renderVenueSelector();
+  const stagesDlg = document.getElementById('dialog-stages');
+  if (stagesDlg && !stagesDlg.open) {
+    delete stagesDlg.dataset.closing;
+    stagesDlg.showModal();
+  }
+});
+
 // Settings & Language Modal Controls
 btnLang.addEventListener('click', () => {
   endPointerInteraction();
@@ -474,6 +663,8 @@ btnLang.addEventListener('click', () => {
   const atCounter = !director.active && !orderFlow.active && coneIntro?.ready;
   document.getElementById('btn-stages-panel').disabled = !atCounter;
   document.getElementById('btn-discover').disabled = !atCounter;
+  const tricksBtnEl = document.getElementById('btn-tricks-panel');
+  if (tricksBtnEl) tricksBtnEl.disabled = !atCounter;
   btnStartGame.hidden = !atCounter;
   if (!dialogSettings.open) {
     dialogSettings.showModal();
@@ -684,12 +875,15 @@ function updateNormalizedPointer(clientX, clientY, dt = 0.016, begin = false) {
 
   gestureState.normX = newX;
   gestureState.normY = newY;
+  gestureState.rawNormX = (clientX / Math.max(1, viewportWidth)) * 2 - 1;
+  gestureState.rawNormY = 1 - (clientY / Math.max(1, viewportHeight)) * 2;
   gestureState.pointerX = clientX; gestureState.pointerY = clientY;
   updatePointerAim(begin);
   gameContainer.classList.add('hand-pointer');
   gestureState.isMoving = gestureState.speed > 0.06;
 
   const isTrapActive =
+    (director.active && director.getGestureGuide?.()?.theme === 'red') ||
     director.heldItem === 'NAPKIN_CONE' ||
     (director.currentMechanic === 'GIANT_BLOCK_TEASE' &&
       director.subStep === 0) ||
@@ -766,7 +960,21 @@ gameContainer.addEventListener('pointerdown', (event) => {
 
   tapWorld.copy(touchReach.target);
 
-  if (isDoubleTap && director.active && !orderFlow.active && !coneIntro?.active) {
+  if (orderFlow?.active && orderFlow.phase === 'order' && gestureState.pointerType === 'mouse') {
+    const orderX = ((gestureState.aimNormX ?? gestureState.normX) + 1) * 0.5;
+    const orderY = (1 - (gestureState.aimNormY ?? gestureState.normY)) * 0.5;
+    const clickedFlavor = tubOrderView.pickCone(orderX, orderY);
+    if (clickedFlavor !== null && orderFlow.count < orderFlow.maxScoops) {
+      orderFlow.choose(clickedFlavor, {
+        epoch: gestureState.pointerEpoch,
+        pointerX: gestureState.pointerX,
+        pointerY: gestureState.pointerY,
+      });
+      if (orderFlow.count >= orderFlow.maxScoops) orderFlow.finish();
+    } else if (orderFlow.count > 0) {
+      orderFlow.finish();
+    }
+  } else if (isDoubleTap && director.active && !orderFlow.active && !coneIntro?.active) {
     gestureState.lungeBoost = 1.0;
     gestureState.grabCurl = 1.0;
     director.attemptSnatch(tapWorld);
@@ -973,13 +1181,21 @@ function updateHUD(guide) {
   const {cueTop}=encounterHudLayout(viewportWidth,viewportHeight,infoTopInset,(1-hudBellPoint.y)*viewportHeight*.5);
   if(hudCache.cueTop!==cueTop){hudCache.cueTop=cueTop;hudBottom.style.top=`${cueTop}px`;}
   tubOrderView.headerInset=cueTop;
+  const roundActive=Boolean(director.active&&!director.isAfkShowActive&&!orderFlow.active&&!guide?.quiet);
+  if(hudCache.roundActive!==roundActive){hudCache.roundActive=roundActive;document.body.classList.toggle('round-active',roundActive);}
   const speaking=Boolean(guide?.vendorBubble?.text)&&!orderFlow.active;
   if(hudCache.speaking!==speaking){hudCache.speaking=speaking;document.body.classList.toggle('vendor-speaking',speaking);}
+  const canSwitchUsta=Boolean(!director.active&&!orderFlow.active&&coneIntro?.ready);
+  if(hudCache.canSwitchUsta!==canSwitchUsta){
+    hudCache.canSwitchUsta=canSwitchUsta;
+    document.getElementById('btn-switch-usta')?.classList.toggle('interactive',canSwitchUsta);
+  }
   const ustaName = saveManager.getUstaName(director.levelIndex);
-  const scoopText=orderFlow?.active?`${orderFlow.count} ${saveManager.lang==='tr'?'top':'scoops'}`:`${director.scoopCount}/${director.targetScoopCount}`;
+  const scoopText=orderFlow?.active?`${orderFlow.count} ${saveManager.t('scoopsUnit')}`:`${director.scoopCount}/${director.targetScoopCount}`;
   if(scoopSummary&&hudCache.scoopText!==scoopText){hudCache.scoopText=scoopText;scoopSummary.textContent=scoopText;}
   const venue=getVenueForStage(director.currentStage);
-  const levelText = `${venue.name[saveManager.lang==='tr'?'tr':'en']} · ${ustaName}`;
+  const venueLabel=venue.name[saveManager.lang]||venue.name.en;
+  const levelText = `${venueLabel} · ${ustaName}`;
   if (hudCache.levelText !== levelText) {
     hudCache.levelText = levelText;
     hudLevel.textContent = levelText;
@@ -1183,6 +1399,7 @@ function drawTargetRings(ctx, rings, elapsed) {
   ctx.restore();
 }
 
+let speechLayoutCache = { key: '', lines: [], font: 12, lineHeight: 16, bw: 0, bh: 0 };
 function drawVendorSpeechBubble(ctx, bubble) {
   if (!bubble || !bubble.text || orderFlow.active) return;
   ctx.save();
@@ -1192,22 +1409,32 @@ function drawVendorSpeechBubble(ctx, bubble) {
   projectBellRest();
   const layout=encounterHudLayout(viewportWidth,viewportHeight,infoTopInset,(1-hudBellPoint.y)*viewportHeight*.5);
   const availableHeight=layout.captionMaxHeight;
-  let lines=[],font=12,lineHeight=16;
-  for(;font>=10;font--){
-    ctx.font=`600 ${font}px system-ui, -apple-system, sans-serif`;lines=[];let line='';lineHeight=font+4;
-    for(const word of bubble.text.split(' ')){
-      const next=line?`${line} ${word}`:word;
-      if(line&&ctx.measureText(next).width>maxWidth){lines.push(line);line=word;}else line=next;
+  const cacheKey = `${bubble.text}|${maxWidth}|${availableHeight}`;
+  let { lines, font, lineHeight, bw, bh } = speechLayoutCache;
+  if (speechLayoutCache.key !== cacheKey) {
+    lines = []; font = 12; lineHeight = 16;
+    for(;font>=10;font--){
+      ctx.font=`600 ${font}px system-ui, -apple-system, sans-serif`;lines=[];let line='';lineHeight=font+4;
+      for(const word of bubble.text.split(' ')){
+        const next=line?`${line} ${word}`:word;
+        if(line&&ctx.measureText(next).width>maxWidth){lines.push(line);line=word;}else line=next;
+      }
+      if(line)lines.push(line);
+      if(lines.length*lineHeight+14<=availableHeight)break;
     }
-    if(line)lines.push(line);
-    if(lines.length*lineHeight+14<=availableHeight)break;
+    bw = Math.min(maxWidth, Math.max(...lines.map(text => ctx.measureText(text).width))) + 24;
+    bh = lineHeight * lines.length + 14;
+    speechLayoutCache = { key: cacheKey, lines, font, lineHeight, bw, bh };
+  } else {
+    ctx.font=`600 ${font}px system-ui, -apple-system, sans-serif`;
   }
-  const bw = Math.min(maxWidth, Math.max(...lines.map(text => ctx.measureText(text).width))) + 24;
-  const bh = lineHeight * lines.length + 14;
   // Speech shares the information area instead of following the vendor's head
-  // through the bell row. In landscape the whole area uses the left margin.
-  const bx = 12;
-  const by = layout.cueTop;
+  // through the bell row. During an active round, step below .hud-bottom so
+  // trap/gesture warnings and vendor flavor speech never overlap or hide cues.
+  const roundActive = document.body.classList.contains('round-active');
+  const isRtl = document.documentElement.dir === 'rtl';
+  const bx = isRtl ? Math.max(12, viewportWidth - bw - 12) : 12;
+  const by = roundActive ? layout.cueTop + 46 : layout.cueTop;
   ctx.fillStyle = 'rgba(255, 248, 235, 0.96)';
   ctx.strokeStyle = '#dbb66b'; ctx.lineWidth = 1;
   ctx.beginPath();ctx.roundRect(bx, by, bw, bh, 12);ctx.fill();ctx.stroke();
@@ -1276,6 +1503,24 @@ function renderVisualCometsAndTrails(dt, elapsed, guide) {
   tubOrderView.drawLabels(trailCtx,viewportWidth,viewportHeight,saveManager.lang);
   if (guide?.quiet) {
     gestureState.trailPoints.length = 0;
+    if (
+      coneIntro?.ready &&
+      !director.active &&
+      (saveManager.data.completedStages?.length || 0) === 0 &&
+      !document.querySelector('dialog[open]')
+    ) {
+      const offerWorld = world.mainConeMesh
+        ? world.mainConeMesh.getWorldPosition(hudBellPoint)
+        : world.getConeOfferTarget(hudBellPoint);
+      const p = world.projectToScreen(offerWorld);
+      if (Number.isFinite(p.x) && Number.isFinite(p.y)) {
+        drawTargetRings(
+          trailCtx,
+          [{ x: p.x, y: p.y, radius: 34, color: 'green', label: saveManager.t('cue_take_cone') }],
+          elapsed
+        );
+      }
+    }
     drawVendorSpeechBubble(trailCtx, guide.vendorBubble);
     drawTouchContact();
     return;
@@ -1383,8 +1628,8 @@ function animate(now) {
   // Released fingers keep their last cursor briefly; the return is visual only.
   if (relativePresented() && !isControlActive(gestureState)) updatePointerAim();
   counterInteractions.update(dt,{
-    melodyEnabled:coneIntro?.ready&&!document.hidden&&!document.querySelector('dialog[open]'),
-    active:isControlActive(gestureState)&&!orderFlow.active&&coneIntro?.phase!=='take'&&!director.roundEnded&&!document.hidden&&!document.querySelector('dialog[open]'),
+    melodyEnabled:!director.active&&coneIntro?.ready&&!document.hidden&&!document.querySelector('dialog[open]'),
+    active:!director.active&&isControlActive(gestureState)&&!orderFlow.active&&coneIntro?.phase!=='take'&&!director.roundEnded&&!document.hidden&&!document.querySelector('dialog[open]'),
     empty:customerHandEmpty(world,director),x:((gestureState.aimNormX??gestureState.normX)+1)*viewportWidth*.5,y:(1-(gestureState.aimNormY??gestureState.normY))*viewportHeight*.5,
     epoch:gestureState.pointerEpoch,width:viewportWidth,height:viewportHeight
   });
@@ -1493,7 +1738,17 @@ function animate(now) {
     coneIntro.update(dt,elapsed,gestureState,document.hidden || Boolean(document.querySelector('dialog[open]')));
   } else if (orderFlow.active) {
     if (!document.hidden && !document.querySelector('dialog[open]')) director.tickSpeech(dt);
-  } else if(!document.hidden)director.update(dt, elapsed, gestureState);
+  } else if (!document.hidden) {
+    try {
+      director.update(dt, elapsed, gestureState);
+    } catch (err) {
+      console.error('[TrickDirector.update]', err);
+      clearVendorFlourish(director);
+      director.isAfkShowActive = false;
+      director.trickTransition = null;
+      director.pendingTrickEntry = null;
+    }
+  }
   relationships.update(dt);
   if (orderFlow.active && !document.hidden && !document.querySelector('dialog[open]')) {
     const orderInputActive = isControlActive(gestureState);

@@ -3,12 +3,13 @@
  * ipekbayrak-verse Hesap Sahibi OAuth (play-oauth-client.json + play-oauth-token.json)
  * ile Google Play Store Production yayını:
  *   1. Edit açar
- *   2. İmzalı AAB yükler ve belirtilen track'e (varsayılan: production) atar
+ *   2. İmzalı AAB (v2.0.0 / versionCode 2) yükler ve belirtilen track'e (varsayılan: production + internal) atar
  *   3. 6 dildeki (tr-TR, en-US, ar, ru-RU, de-DE, ja-JP) başlık, kısa ve tam açıklamaları yükler
- *   4. 512x512 İkon, 1024x500 Feature Graphic ve 4 adet 1080x1920 Ekran Görüntüsünü yükler
- *   5. Edit'i commit eder
+ *   4. 512x512 3D İkon, yerelleştirilmiş 1024x500 Feature Graphic, 6 adet 1080x1920 gerçek 3D Telefon Ekran Görüntüsü
+ *      ve 4 adet 1920x1080 gerçek 3D Tablet Ekran Görüntüsünü (7" + 10") yükler
+ *   5. Edit'i commit eder ve play-tracks-published.json dosyasını günceller
  */
-import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,7 +23,10 @@ const UPLOAD = 'https://androidpublisher.googleapis.com/upload/androidpublisher/
 const PKG = process.env.PLAY_PACKAGE ?? 'tr.com.ipekbayrak.turkishicecream';
 const TRACK = process.env.PLAY_TRACK ?? process.argv[2] ?? 'production';
 const DRAFT = process.argv.includes('--draft') || Boolean(process.env.PLAY_DRAFT);
-const AAB_PATH = resolve(ROOT, 'play-store-publish/releases/TurkishIceCreamChallenge-v1.0.0-release.aab');
+const AAB_V201 = resolve(ROOT, 'play-store-publish/releases/TurkishIceCreamChallenge-v2.0.1-release.aab');
+const AAB_V2 = resolve(ROOT, 'play-store-publish/releases/TurkishIceCreamChallenge-v2.0.0-release.aab');
+const AAB_V1 = resolve(ROOT, 'play-store-publish/releases/TurkishIceCreamChallenge-v1.0.0-release.aab');
+const AAB_PATH = existsSync(AAB_V201) ? AAB_V201 : existsSync(AAB_V2) ? AAB_V2 : AAB_V1;
 
 const die = (m) => { console.error(m); process.exit(1); };
 
@@ -89,14 +93,7 @@ console.log(`==> ${PKG} · AAB (${(statSync(AAB_PATH).size / 1048576).toFixed(2)
 // 1. Open Edit
 const editRes = await call(`${API}/applications/${PKG}/edits`, { method: 'POST', token, body: {} });
 if (!editRes.ok) {
-  if (editRes.status === 404) {
-    console.error(`\n⚠️  Google Play Console'da "${PKG}" paket adına sahip uygulama kaydı henüz açılmamış (HTTP 404).`);
-    console.error('   Google Play Developer API sıfırdan uygulama oluşturmaya izin vermez.');
-    console.error('   👉 https://play.google.com/console/u/0/developers/4920333877961656167 adresinde "Create app" diyerek');
-    console.error(`      ilk AAB'yi (${AAB_PATH}) bir kez yüklediğinizde bu komut tüm sürüm, 6 dil metin ve görselleri otomatik basar.\n`);
-  } else {
-    console.error(`Edit açılamadı (${editRes.status}):`, JSON.stringify(editRes.json, null, 2));
-  }
+  console.error(`Edit açılamadı (${editRes.status}):`, JSON.stringify(editRes.json, null, 2));
   process.exit(1);
 }
 
@@ -117,28 +114,28 @@ console.log(`    ✔ AAB yüklendi: versionCode ${versionCode}`);
 // 3. Assign Track (production + internal)
 const notes = parseReleaseNotes();
 const releaseObj = {
-  name: '1.0.0',
+  name: '2.0.1',
   versionCodes: [versionCode],
   status: DRAFT ? 'draft' : 'completed',
   ...(notes ? { releaseNotes: notes } : {}),
 };
 
-  const trackRes = await call(`${API}/applications/${PKG}/edits/${editId}/tracks/${TRACK}`, {
+const trackRes = await call(`${API}/applications/${PKG}/edits/${editId}/tracks/${TRACK}`, {
+  method: 'PUT',
+  token,
+  body: { track: TRACK, releases: [releaseObj] },
+});
+if (!trackRes.ok) die(`Track (${TRACK}) atama hatası (${trackRes.status}): ${JSON.stringify(trackRes.json, null, 2)}`);
+console.log(`    ✔ Track "${TRACK}" güncellendi (${DRAFT ? 'draft' : 'completed'})`);
+
+if (TRACK !== 'internal') {
+  await call(`${API}/applications/${PKG}/edits/${editId}/tracks/internal`, {
     method: 'PUT',
     token,
-    body: { track: TRACK, releases: [releaseObj] },
+    body: { track: 'internal', releases: [releaseObj] },
   });
-  if (!trackRes.ok) die(`Track (${TRACK}) atama hatası (${trackRes.status}): ${JSON.stringify(trackRes.json, null, 2)}`);
-  console.log(`    ✔ Track "${TRACK}" güncellendi (${DRAFT ? 'draft' : 'completed'})`);
-
-  if (TRACK !== 'internal') {
-    await call(`${API}/applications/${PKG}/edits/${editId}/tracks/internal`, {
-      method: 'PUT',
-      token,
-      body: { track: 'internal', releases: [releaseObj] },
-    });
-    console.log(`    ✔ Track "internal" güncellendi (${DRAFT ? 'draft' : 'completed'})`);
-  }
+  console.log(`    ✔ Track "internal" güncellendi (${DRAFT ? 'draft' : 'completed'})`);
+}
 
 // 4. Update 6-Language Store Listings
 const listingsDir = resolve(ROOT, 'play-store-publish/store-listings');
@@ -158,35 +155,79 @@ for (const [dirName, playLocale] of Object.entries(LOCALE_MAP)) {
   else console.warn(`    ⚠ Mağaza metni (${playLocale}) atlandı (${lRes.status}): ${lRes.json?.error?.message ?? ''}`);
 }
 
-// 5. Upload Icon (512x512), Feature Graphic (1024x500), and 4x 1080x1920 Phone Screenshots for tr-TR & en-US
+// 5. Upload 3D Icon (512x512), Localized Feature Graphic (1024x500), 6x 1080x1920 Phone Screenshots & 4x 1920x1080 Tablet Screenshots
 const iconBytes = readFileSync(resolve(ROOT, 'play-store-publish/graphics/icon-512x512.png'));
-const fgBytes = readFileSync(resolve(ROOT, 'play-store-publish/graphics/feature-graphic-1024x500.png'));
-const screenDir = resolve(ROOT, 'play-store-publish/graphics/screenshots');
-const screenFiles = readdirSync(screenDir).filter((f) => f.endsWith('.png')).sort();
 
 for (const playLocale of ['tr-TR', 'en-US']) {
+  const isTr = playLocale === 'tr-TR';
+  const fgPath = resolve(
+    ROOT,
+    isTr ? 'play-store-publish/graphics/feature-graphic-tr.png' : 'play-store-publish/graphics/feature-graphic-en.png'
+  );
+  const fgBytes = readFileSync(existsSync(fgPath) ? fgPath : resolve(ROOT, 'play-store-publish/graphics/feature-graphic-1024x500.png'));
+
+  const phoneDir = resolve(
+    ROOT,
+    isTr ? 'play-store-publish/graphics/screenshots-tr' : 'play-store-publish/graphics/screenshots-en'
+  );
+  const activePhoneDir = existsSync(phoneDir) ? phoneDir : resolve(ROOT, 'play-store-publish/graphics/screenshots');
+  const phoneFiles = readdirSync(activePhoneDir).filter((f) => f.endsWith('.png')).sort();
+
+  const tabletDir = resolve(
+    ROOT,
+    isTr ? 'play-store-publish/graphics/tablet-tr' : 'play-store-publish/graphics/tablet-en'
+  );
+  const activeTabletDir = existsSync(tabletDir) ? tabletDir : activePhoneDir;
+  const tabletFiles = readdirSync(activeTabletDir).filter((f) => f.endsWith('.png')).sort();
+
+  // Clear & upload icon + featureGraphic
+  await call(`${API}/applications/${PKG}/edits/${editId}/listings/${playLocale}/icon`, { method: 'DELETE', token });
   await call(`${UPLOAD}/applications/${PKG}/edits/${editId}/listings/${playLocale}/icon?uploadType=media`, {
     method: 'POST', token, raw: iconBytes, contentType: 'image/png',
   });
+
+  await call(`${API}/applications/${PKG}/edits/${editId}/listings/${playLocale}/featureGraphic`, { method: 'DELETE', token });
   await call(`${UPLOAD}/applications/${PKG}/edits/${editId}/listings/${playLocale}/featureGraphic?uploadType=media`, {
     method: 'POST', token, raw: fgBytes, contentType: 'image/png',
   });
-  for (const imgType of ['phoneScreenshots', 'sevenInchScreenshots', 'tenInchScreenshots']) {
-    await call(`${API}/applications/${PKG}/edits/${editId}/listings/${playLocale}/${imgType}`, {
+
+  // Clear & upload 6 Phone Screenshots
+  await call(`${API}/applications/${PKG}/edits/${editId}/listings/${playLocale}/phoneScreenshots`, {
+    method: 'DELETE', token,
+  });
+  for (const pf of phoneFiles) {
+    await call(`${UPLOAD}/applications/${PKG}/edits/${editId}/listings/${playLocale}/phoneScreenshots?uploadType=media`, {
+      method: 'POST', token, raw: readFileSync(resolve(activePhoneDir, pf)), contentType: 'image/png',
+    });
+  }
+
+  // Clear & upload 4 Landscape Tablet Screenshots (7" & 10")
+  for (const tabletType of ['sevenInchScreenshots', 'tenInchScreenshots']) {
+    await call(`${API}/applications/${PKG}/edits/${editId}/listings/${playLocale}/${tabletType}`, {
       method: 'DELETE', token,
     });
-    for (const sf of screenFiles) {
-      await call(`${UPLOAD}/applications/${PKG}/edits/${editId}/listings/${playLocale}/${imgType}?uploadType=media`, {
-        method: 'POST', token, raw: readFileSync(resolve(screenDir, sf)), contentType: 'image/png',
+    for (const tf of tabletFiles) {
+      await call(`${UPLOAD}/applications/${PKG}/edits/${editId}/listings/${playLocale}/${tabletType}?uploadType=media`, {
+        method: 'POST', token, raw: readFileSync(resolve(activeTabletDir, tf)), contentType: 'image/png',
       });
     }
   }
-  console.log(`    ✔ Görseller (${playLocale}: ikon, feature graphic, telefon + 7" + 10" tablet ekran görüntüleri) yüklendi`);
+
+  console.log(`    ✔ Görseller (${playLocale}: 3D ikon, feature graphic, ${phoneFiles.length} telefon + ${tabletFiles.length}x2 tablet ekran görüntüsü) yüklendi`);
 }
 
 // 6. Commit Edit
 const commitRes = await call(`${API}/applications/${PKG}/edits/${editId}:commit`, { method: 'POST', token });
 if (!commitRes.ok) die(`Commit hatası (${commitRes.status}): ${JSON.stringify(commitRes.json, null, 2)}`);
 
-console.log(`\n🎉 TAMAMLANDI! ${PKG} (versionCode ${versionCode}) "${TRACK}" kanalında yayında!`);
+// 7. Fetch & save updated tracks status
+const tracksEdit = await call(`${API}/applications/${PKG}/edits`, { method: 'POST', token, body: {} });
+if (tracksEdit.ok) {
+  const tList = await call(`${API}/applications/${PKG}/edits/${tracksEdit.json.id}/tracks`, { method: 'GET', token });
+  if (tList.ok) {
+    writeFileSync(resolve(ROOT, 'play-store-publish/play-tracks-published.json'), JSON.stringify(tList.json, null, 2) + '\n');
+  }
+}
+
+console.log(`\n🎉 TAMAMLANDI! ${PKG} (v2.0.0 / versionCode ${versionCode}) "${TRACK}" ve "internal" kanallarında yayında!`);
 console.log('   https://play.google.com/console/u/0/developers/4920333877961656167/app/publishing');

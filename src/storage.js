@@ -1,10 +1,170 @@
 import {isStageNumber,normalizeStage} from './progression.js';
 import {normalizeFlavorIndex} from './flavors.js';
 import { TRICK_CATALOG, CAMPAIGN_LEVELS, ICE_CREAM_FLAVORS } from './protocol.js';
+import { isChoreographedRoutine } from './trick-routines.js';
 import { MAX_SCOOPS } from './venues.js';
+
+const ACROBATIC_IDS = new Set([
+  'SHAFT_SPIN_360',
+  'VERTICAL_WINDMILL',
+  'MIDAIR_BLOCK_SOMERSAULT',
+  'FIGURE_EIGHT_WEAVE',
+  'OVERHEAD_CROWN_DANGLE',
+  'SPIRAL_CROWN_ASCENT',
+  'UNDER_ARM_PIROUETTE',
+  'HORIZONTAL_HELICOPTER',
+  'INFINITY_CROWN_LOOP',
+  'WAITER_TRAY_BALANCE',
+  'LOW_RAIL_SKIMMER',
+  'GRAND_FINALE_BOW_TEASE',
+  'SCOOP_TOSS_RELOAD',
+  'FINAL_PISTACHIO_CATCH',
+]);
+
+const ELASTIC_IDS = new Set([
+  'MEGA_TAFFY_SLICE',
+  'GIANT_BLOCK_TEASE',
+  'WHOLE_MOLD_ON_CONE',
+  'SCOOP_LIFT_BACK',
+  'BONUS_SCOOP_TAKEBACK',
+  'LAYERED_SERVICE_TEASE',
+  'TWIN_RIBBON_SCISSORS',
+  'ELASTIC_BUNGEE_YO_YO',
+  'MOLD_PENDULUM_HEIST',
+]);
+
+const RHYTHM_IDS = new Set([
+  'BELL_RHYTHM_FEINT',
+  'COMBO_DOUBLE_PUMP',
+  'EYE_LOCK_RHYTHM_CHASE',
+  'PENDULUM_BELL_SWING',
+  'CROWN_TAP_KISS_TEASE',
+  'TRIPLE_BELL_CRESCENDO',
+  'COUNTER_DRUM_CADENCE',
+  'SYNCOPATED_BELL_FAKE',
+  'TRIANGLE_RHYTHM_CHASE',
+  'MAGNETIC_PULL_ESCAPE',
+]);
+
+export function getTrickCategory(trickId) {
+  if (isChoreographedRoutine(trickId)) return 'shows';
+  if (ACROBATIC_IDS.has(trickId)) return 'acrobatics';
+  if (ELASTIC_IDS.has(trickId)) return 'elastic';
+  if (RHYTHM_IDS.has(trickId)) return 'rhythm';
+  return 'sleight';
+}
+
+export const ACHIEVEMENTS = [
+  {
+    id: 'first_cone',
+    icon: '🍦',
+    check: (data) => (data.conesCaught || 0) >= 1,
+    names: {
+      tr: 'İlk Külah Avı',
+      en: 'First Cone Catch',
+      ar: 'أول قمع بوظة',
+      ru: 'Первый рожок',
+      de: 'Erste Waffel gefangen',
+      ja: '初めてのコーン獲得',
+    },
+    descs: {
+      tr: 'Ustanın tezgâhından ilk tam dondurmanı başarıyla kaptın.',
+      en: 'Successfully caught your first full ice cream cone from the counter.',
+      ar: 'التقطت أول قمع بوظة كامل بنجاح من عربة المعلم.',
+      ru: 'Успешно поймали свой первый полный рожок мороженого.',
+      de: 'Du hast deine erste volle Eiswaffel am Stand gefangen.',
+      ja: '職人の屋台から初めてのフルコーンをキャッチした。',
+    },
+  },
+  {
+    id: 'trick_25',
+    icon: '🎪',
+    check: (data) => (data.discoveredTricks?.length || 0) >= 25,
+    names: {
+      tr: 'Çarşı Meraklısı',
+      en: 'Bazaar Regular',
+      ar: 'خبير السوق',
+      ru: 'Знаток базара',
+      de: 'Basar-Kenner',
+      ja: 'バザールの常連',
+    },
+    descs: {
+      tr: 'Ustanın 25 farklı dondurma numarasını ve şovunu keşfettin.',
+      en: 'Discovered 25 distinct vendor tricks and choreographed shows.',
+      ar: 'اكتشفت ٢٥ خدعة وعرضاً مختلفاً من عروض بائع البوظة.',
+      ru: 'Открыто 25 различных трюков и шоу мороженщика.',
+      de: '25 verschiedene Eismeister-Tricks und Shows entdeckt.',
+      ja: '職人の25種類の技とショーを発見した。',
+    },
+  },
+  {
+    id: 'trick_50',
+    icon: '🎗️',
+    check: (data) => (data.discoveredTricks?.length || 0) >= 50,
+    names: {
+      tr: 'Yarım Asırlık Çırak',
+      en: 'Half-Century Apprentice',
+      ar: 'تلميذ الخمسين خدعة',
+      ru: 'Ученик пятидесяти трюков',
+      de: 'Meisterlehrling der 50 Tricks',
+      ja: '五十技の見習い達人',
+    },
+    descs: {
+      tr: '50 farklı Maraş dondurma hilesini deneyimleyip ustalık defterine kaydettin.',
+      en: 'Experienced and logged 50 different Maraş ice cream tricks in your notebook.',
+      ar: 'جربت وسجلت ٥٠ خدعة مختلفة من خدع بوظة مرعش في دفترك.',
+      ru: 'Испытали и записали 50 различных трюков марашского мороженого.',
+      de: '50 verschiedene Maraş-Eistricks erlebt und im Notizbuch verzeichnet.',
+      ja: '50種類のマラシュアイスの技を体験して図鑑に記録した。',
+    },
+  },
+  {
+    id: 'trick_100',
+    icon: '👑',
+    check: (data) => (data.discoveredTricks?.length || 0) >= 100,
+    names: {
+      tr: 'Yüz Numaralı Maraş Ustası',
+      en: 'Centurion Maraş Master',
+      ar: 'أستاذ مرعش المئوي',
+      ru: 'Мастер ста трюков Мараша',
+      de: 'Hundertfacher Maraş-Großmeister',
+      ja: '百技のマラシュ大親方',
+    },
+    descs: {
+      tr: '100’den fazla dondurma numarasını ve koreografiyi çözerek tezgâhın efsanesi oldun!',
+      en: 'Mastered over 100 ice cream tricks and choreographies to become a counter legend!',
+      ar: 'أتقنت أكثر من ١٠٠ خدعة ورقصة بوظة لتصبح أسطورة العربة!',
+      ru: 'Освоили более 100 трюков и хореографий, став легендой прилавка!',
+      de: 'Über 100 Eistricks und Choreografien gemeistert und zur Stand-Legende geworden!',
+      ja: '100以上の技とショーを見破り、屋台の伝説となった！',
+    },
+  },
+  {
+    id: 'venue_master',
+    icon: '🏛️',
+    check: (data) => (data.completedStages?.length || 0) >= 30,
+    names: {
+      tr: 'Altı Mekân Gezgini',
+      en: 'Six-Venue Traveler',
+      ar: 'رحّالة الأماكن الستة',
+      ru: 'Путешественник шести мест',
+      de: 'Reisender der sechs Orte',
+      ja: '六つの名所の旅人',
+    },
+    descs: {
+      tr: 'Tüm 30 sahneyi ve altı tezgâhı başarıyla tamamladın.',
+      en: 'Completed all 30 campaign stages across all six venues.',
+      ar: 'أكملت جميع المراحل الثلاثين عبر الأماكن الستة بنجاح.',
+      ru: 'Успешно пройдены все 30 уровней во всех шести местах.',
+      de: 'Alle 30 Stufen an allen sechs Orten erfolgreich abgeschlossen.',
+      ja: '全6会場・30ステージをすべてクリアした。',
+    },
+  },
+];
 
 // Keep the key: an existing ten-encounter save expands in place.
 const STORAGE_KEY = 'turkish_ice_cream_save_v6';
+const VALID_TRICK_IDS = new Set(TRICK_CATALOG.map((t) => t.id));
 const validStage = isStageNumber;
 const boundedScoops = value => Math.max(1, Math.min(MAX_SCOOPS, Math.round(Number(value) || 3)));
 const boundedFlavors = values => values.slice(0, MAX_SCOOPS).map(normalizeFlavorIndex);
@@ -25,7 +185,7 @@ export const I18N = {
     nextUsta: '▶ SONRAKİ SEVİYE',
     retryBtn: '🔄 TEKRAR DENE',
     menuBtn: '🏠 MENÜ',
-    tricksBtn: '🎪 Hileler',
+    tricksBtn: '🎪 111 Hile',
     tutorialBtn: '🎓 Öğretici',
     scoreLabel: 'Puan',
     bestLabel: 'Rekor',
@@ -33,7 +193,7 @@ export const I18N = {
     stageLabel: 'Seviye',
     tricksFoundLabel: 'Keşfedilen Hile',
     settingsTitle: 'Dil ve Ayarlar',
-    tricksModalTitle: '🎪 Dondurmacı Hile Listesi (16 Hile)',
+    tricksModalTitle: '🎪 Ustanın Hile Ansiklopedisi (111 Hile)',
     soundLabel: 'Ses ve Müzik',
     hapticsLabel: 'Titreşim (Haptic)',
     fullscreenLabel: 'Tam Ekran',
@@ -123,6 +283,13 @@ export const I18N = {
     speech_double_cone: 'ÇİFT KÜLAH OYUNU! 🍦🍦',
     speech_giant: 'KALIBIYLA GELDİ! 🧊',
     speech_flip: 'HAVADA TAKLA! 🤸',
+    speech_yakala: 'YAKALA BAKALIM! 🍦',
+    speech_afiyet: 'AFİYET OLSUN! 😋🥜',
+    cue_take_cone: '🤚 KÜLAHI AL!',
+    toggleOn: 'AÇIK',
+    toggleOff: 'KAPALI',
+    achievementsLabel: 'Başarımlar',
+    scoopsUnit: 'top',
 
     // Endings
     end_hearts_badge: 'SABIR BİTTİ (0 ❤️)',
@@ -153,7 +320,7 @@ export const I18N = {
     nextUsta: '▶ NEXT STAGE',
     retryBtn: '🔄 RETRY',
     menuBtn: '🏠 MENU',
-    tricksBtn: '🎪 15 Tricks',
+    tricksBtn: '🎪 111 Tricks',
     tutorialBtn: '🎓 Tutorial',
     scoreLabel: 'Score',
     bestLabel: 'Best',
@@ -161,7 +328,7 @@ export const I18N = {
     stageLabel: 'Stage',
     tricksFoundLabel: 'Tricks Found',
     settingsTitle: 'Language & Settings',
-    tricksModalTitle: '🎪 Master Vendor Trick List (15 Tricks)',
+    tricksModalTitle: '🎪 Master Vendor Trick Encyclopedia (111 Tricks)',
     soundLabel: 'Sound & Music',
     hapticsLabel: 'Vibration (Haptics)',
     fullscreenLabel: 'Fullscreen',
@@ -247,6 +414,13 @@ export const I18N = {
     speech_double_cone: 'DOUBLE CONE TRICK! 🍦🍦',
     speech_giant: 'WHOLE BLOCK! 🧊',
     speech_flip: 'MID-AIR FLIP! 🤸',
+    speech_yakala: 'CATCH IT NOW! 🍦',
+    speech_afiyet: 'ENJOY YOUR CONE! 😋🥜',
+    cue_take_cone: '🤚 TAKE THE CONE!',
+    toggleOn: 'ON',
+    toggleOff: 'OFF',
+    achievementsLabel: 'Achievements',
+    scoopsUnit: 'scoops',
 
     end_hearts_badge: 'OUT OF HEARTS (0 ❤️)',
     end_hearts_title: 'BAMBOOZLED BY THE MASTER!',
@@ -276,7 +450,7 @@ export const I18N = {
     nextUsta: '▶ المرحلة التالية',
     retryBtn: '🔄 إعادة',
     menuBtn: '🏠 القائمة',
-    tricksBtn: '🎪 ١٥ خدعة',
+    tricksBtn: '🎪 ١١١ خدعة',
     tutorialBtn: '🎓 تعليم',
     scoreLabel: 'النقاط',
     bestLabel: 'الأفضل',
@@ -284,7 +458,7 @@ export const I18N = {
     stageLabel: 'المرحلة',
     tricksFoundLabel: 'الخدع المكتشفة',
     settingsTitle: 'اللغة والإعدادات',
-    tricksModalTitle: '🎪 قائمة خدع بائع البوظة (١٥ خدعة)',
+    tricksModalTitle: '🎪 موسوعة خدع المعلم (١١١ خدعة)',
     soundLabel: 'الصوت والموسيقى',
     hapticsLabel: 'الاهتزاز',
     fullscreenLabel: 'ملء الشاشة',
@@ -329,6 +503,12 @@ export const I18N = {
     cue_bell_feint: 'إيقاع الأجراس: امسك عند ٣!',
     cue_overhead: 'انتظر نزول القمع وامسك!',
     cue_double_pump: 'خدعة مزدوجة! امسك الثانية!',
+    cue_eyelock_hold: 'اثبت في المنتصف الأخضر (تواصل بصري)! 👀',
+    cue_eyelock_rhythm: 'اتبع الإيقاع يميناً ويساراً! ↔️',
+    cue_afk_stir: 'المعلم يقلّب البوظة',
+    cue_afk_table: 'حرّك يدك للمتابعة',
+    cue_afk_bells: 'استمع لإيقاع الأجراس',
+    cue_afk_wave: 'مدّ يدك',
     cue_swap_watch: 'راقب اليدين!',
     cue_swap_pick: 'امسك الحقيقي!',
     cue_pull_back: 'اسحب يدك! فخ!',
@@ -344,12 +524,18 @@ export const I18N = {
     tag_trap: '✕ فخ! تراجع!',
     tag_on_paddle: '🍦 القمع الداخلي',
     tag_slice: '✂️ اقطع هنا',
+    tag_eyelock: '👀 اثبت هنا',
+    tag_rhythm_go: '🎯 اتبع الإيقاع!',
 
     speech_hmm: 'همممم...؟ 🤔🍦',
     speech_hirr: 'هرررر! 🦁🌀',
     speech_eeeh: 'إيييه-هيهي! 😜',
     speech_cik: 'تؤ تؤ تؤ! ☝️',
     speech_hoppa: 'هوبااا! 🌀',
+    speech_hophop: 'هوب! هوب! تغيّر الاتجاه! 🔀',
+    speech_afk_table: 'طق طق! استيقظ! 🥄💥',
+    speech_afk_bells: 'رن رن! البوظة تذوب! 🔔🎶',
+    speech_afk_wave: 'هيه! مدّ يدك! 👋😄',
     speech_laugh: 'هاهاها! 🧻',
     speech_taunt: 'أووو-هوب! 👀',
     speech_cheer: 'أحسنت! 🏆',
@@ -358,6 +544,13 @@ export const I18N = {
     speech_double_cone: 'خدعة القمعين! 🍦🍦',
     speech_giant: 'القالب كامل! 🧊',
     speech_flip: 'شقلبة بالهواء! 🤸',
+    speech_yakala: 'امسكها الآن! 🍦',
+    speech_afiyet: 'صحة وعافية! 😋🥜',
+    cue_take_cone: '🤚 خُذ القمع!',
+    toggleOn: 'مفعّل',
+    toggleOff: 'مغلق',
+    achievementsLabel: 'الإنجازات',
+    scoopsUnit: 'كرات',
 
     end_hearts_badge: 'نفد الصبر (٠ ❤️)',
     end_hearts_title: 'خدعك المعلم!',
@@ -387,7 +580,7 @@ export const I18N = {
     nextUsta: '▶ СЛЕД. УРОВЕНЬ',
     retryBtn: '🔄 ЗАНОВО',
     menuBtn: '🏠 МЕНЮ',
-    tricksBtn: '🎪 15 Трюков',
+    tricksBtn: '🎪 111 Трюков',
     tutorialBtn: '🎓 Обучение',
     scoreLabel: 'Очки',
     bestLabel: 'Рекорд',
@@ -395,7 +588,7 @@ export const I18N = {
     stageLabel: 'Уровень',
     tricksFoundLabel: 'Открыто трюков',
     settingsTitle: 'Язык и Настройки',
-    tricksModalTitle: '🎪 Список трюков мастера (15 трюков)',
+    tricksModalTitle: '🎪 Энциклопедия трюков мастера (111 трюков)',
     soundLabel: 'Звук и Музыка',
     hapticsLabel: 'Вибрация',
     fullscreenLabel: 'Полный экран',
@@ -440,6 +633,12 @@ export const I18N = {
     cue_bell_feint: 'РИТМ: ЛОВИ НА 3-Й ЗВОН!',
     cue_overhead: 'ЖДИ СПУСКА СВЕРХУ!',
     cue_double_pump: 'ДВОЙНОЙ ВЫПАД! ЛОВИ 2-Й!',
+    cue_eyelock_hold: 'ДЕРЖИ В ЗЕЛЕНОМ ЦЕНТРЕ (ВЗГЛЯД)! 👀',
+    cue_eyelock_rhythm: 'СЛЕДУЙ РИТМУ ВЛЕВО-ВПРАВО! ↔️',
+    cue_afk_stir: 'МАСТЕР ПЕРЕМЕШИВАЕТ МОРОЖЕНОЕ',
+    cue_afk_table: 'ПОДВИГАЙ РУКОЙ, ЧТОБЫ ПРОДОЛЖИТЬ',
+    cue_afk_bells: 'СЛУШАЙ РИТМ КОЛОКОЛЬЧИКОВ',
+    cue_afk_wave: 'ПРОТЯНИ РУКУ',
     cue_swap_watch: 'СЛЕДИ ЗА РУКАМИ!',
     cue_swap_pick: 'БЕРИ НАСТОЯЩИЙ!',
     cue_pull_back: 'УБЕРИ РУКУ! ЛОВУШКА!',
@@ -455,12 +654,18 @@ export const I18N = {
     tag_trap: '✕ ЛОВУШКА!',
     tag_on_paddle: '🍦 ВНУТРЕННИЙ',
     tag_slice: '✂️ РЕЖЬ ТУТ',
+    tag_eyelock: '👀 ДЕРЖИ ЗДЕСЬ',
+    tag_rhythm_go: '🎯 В РИТМ!',
 
     speech_hmm: 'ХММММ...? 🤔🍦',
     speech_hirr: 'ХРРРРР! 🦁🌀',
     speech_eeeh: 'ЭЭЭХ-ХЕХЕ! 😜',
     speech_cik: 'ЦК-ЦК-ЦК! ☝️',
     speech_hoppa: 'ХОППАА! 🌀',
+    speech_hophop: 'ХОП! ХОП! СМЕНА СТОРОНЫ! 🔀',
+    speech_afk_table: 'ТУК-ТУК! НЕ СПИ! 🥄💥',
+    speech_afk_bells: 'ДИНЬ-ДИНЬ! МОРОЖЕНОЕ ТАЕТ! 🔔🎶',
+    speech_afk_wave: 'ЭЙ! ПРОТЯНИ РУКУ! 👋😄',
     speech_laugh: 'ХА-ХА-ХА! 🧻',
     speech_taunt: 'ООО-ХОП! 👀',
     speech_cheer: 'МОЛОДЕЦ! 🏆',
@@ -469,6 +674,13 @@ export const I18N = {
     speech_double_cone: 'ДВОЙНОЙ РОЖОК! 🍦🍦',
     speech_giant: 'ЦЕЛЫЙ БЛОК! 🧊',
     speech_flip: 'САЛЬТО! 🤸',
+    speech_yakala: 'ЛОВИ СКОРЕЕ! 🍦',
+    speech_afiyet: 'ПРИЯТНОГО АППЕТИТА! 😋🥜',
+    cue_take_cone: '🤚 ВОЗЬМИ РОЖОК!',
+    toggleOn: 'ВКЛ',
+    toggleOff: 'ВЫКЛ',
+    achievementsLabel: 'Достижения',
+    scoopsUnit: 'шар.',
 
     end_hearts_badge: 'НЕТ ПОПЫТОК (0 ❤️)',
     end_hearts_title: 'МАСТЕР ПЕРЕХИТРИЛ ВАС!',
@@ -498,7 +710,7 @@ export const I18N = {
     nextUsta: '▶ NÄCHSTES LEVEL',
     retryBtn: '🔄 NOCHMAL',
     menuBtn: '🏠 MENÜ',
-    tricksBtn: '🎪 15 Tricks',
+    tricksBtn: '🎪 111 Tricks',
     tutorialBtn: '🎓 Tutorial',
     scoreLabel: 'Punkte',
     bestLabel: 'Rekord',
@@ -506,7 +718,7 @@ export const I18N = {
     stageLabel: 'Level',
     tricksFoundLabel: 'Tricks entdeckt',
     settingsTitle: 'Sprache & Optionen',
-    tricksModalTitle: '🎪 Trickliste des Eismeisters (15 Tricks)',
+    tricksModalTitle: '🎪 Trick-Enzyklopädie des Meisters (111 Tricks)',
     soundLabel: 'Ton & Musik',
     hapticsLabel: 'Vibration',
     fullscreenLabel: 'Vollbild',
@@ -551,6 +763,12 @@ export const I18N = {
     cue_bell_feint: 'GLOCKEN-TAKT: BEI 3 GREIFEN!',
     cue_overhead: 'WARTEN BIS ES SINKT!',
     cue_double_pump: 'DOPPEL-FINTE! BEIM 2. MAL!',
+    cue_eyelock_hold: 'IN DER GRÜNEN MITTE HALTEN (BLICKKONTAKT)! 👀',
+    cue_eyelock_rhythm: 'FOLGE DEM TAKT LINKS & RECHTS! ↔️',
+    cue_afk_stir: 'DER MEISTER RÜHRT DAS EIS',
+    cue_afk_table: 'BEWEGE DEINE HAND ZUM FORTFAHREN',
+    cue_afk_bells: 'HÖR AUF DEN GLOCKENTAKT',
+    cue_afk_wave: 'STRECK DIE HAND AUS',
     cue_swap_watch: 'HÄNDE BEOBACHTEN!',
     cue_swap_pick: 'ECHTES GREIFEN!',
     cue_pull_back: 'HAND ZURÜCK! FALLE!',
@@ -566,12 +784,18 @@ export const I18N = {
     tag_trap: '✕ FALLE! ZURÜCK!',
     tag_on_paddle: '🍦 INNENWAFFEL',
     tag_slice: '✂️ HIER SCHNEIDEN',
+    tag_eyelock: '👀 HIER HALTEN',
+    tag_rhythm_go: '🎯 IM TAKT!',
 
     speech_hmm: 'HMMMMM...? 🤔🍦',
     speech_hirr: 'HRRRRR! 🦁🌀',
     speech_eeeh: 'EEEEH-HEHE! 😜',
     speech_cik: 'TSK TSK TSK! ☝️',
     speech_hoppa: 'HOPPAAA! 🌀',
+    speech_hophop: 'HOP! HOP! RICHTUNGSWECHSEL! 🔀',
+    speech_afk_table: 'KLOPF KLOPF! AUFWACHEN! 🥄💥',
+    speech_afk_bells: 'BIMMEL! DAS EIS SCHMILZT! 🔔🎶',
+    speech_afk_wave: 'HEY! GREIF DOCH ZU! 👋😄',
     speech_laugh: 'HAHAHA! 🧻',
     speech_taunt: 'OOO-HOP! 👀',
     speech_cheer: 'BRAVO! 🏆',
@@ -580,6 +804,13 @@ export const I18N = {
     speech_double_cone: 'DOPPELWAFFEL! 🍦🍦',
     speech_giant: 'GANZER BLOCK! 🧊',
     speech_flip: 'LUFT-SALTO! 🤸',
+    speech_yakala: 'FANG ES JETZT! 🍦',
+    speech_afiyet: 'GUTEN APPETIT! 😋🥜',
+    cue_take_cone: '🤚 NIMM DIE WAFFEL!',
+    toggleOn: 'AN',
+    toggleOff: 'AUS',
+    achievementsLabel: 'Erfolge',
+    scoopsUnit: 'Kugeln',
 
     end_hearts_badge: 'KEINE HERZEN (0 ❤️)',
     end_hearts_title: 'VOM MEISTER AUSGETRICKST!',
@@ -609,7 +840,7 @@ export const I18N = {
     nextUsta: '▶ 次のステージへ',
     retryBtn: '🔄 もう一度',
     menuBtn: '🏠 メニュー',
-    tricksBtn: '🎪 15の技',
+    tricksBtn: '🎪 111の技',
     tutorialBtn: '🎓 練習',
     scoreLabel: 'スコア',
     bestLabel: '最高記録',
@@ -617,7 +848,7 @@ export const I18N = {
     stageLabel: 'ステージ',
     tricksFoundLabel: '発見した技',
     settingsTitle: '言語と設定',
-    tricksModalTitle: '🎪 トルコアイス職人の技リスト (全15種)',
+    tricksModalTitle: '🎪 トルコアイス職人の技図鑑 (全111種)',
     soundLabel: 'サウンド・音楽',
     hapticsLabel: '振動 (ハプティクス)',
     fullscreenLabel: '全画面表示',
@@ -662,6 +893,12 @@ export const I18N = {
     cue_bell_feint: 'ベルのリズム：3回目で掴め！',
     cue_overhead: '頭上から降りたら掴め！',
     cue_double_pump: '二段フェイント！2回目で掴め！',
+    cue_eyelock_hold: '緑の中央でキープ（アイコンタクト）！ 👀',
+    cue_eyelock_rhythm: 'リズムに合わせて左右へ！ ↔️',
+    cue_afk_stir: '職人がアイスを練っています',
+    cue_afk_table: '手を動かして再開',
+    cue_afk_bells: 'ベルのリズムを聴こう',
+    cue_afk_wave: '手を伸ばして',
     cue_swap_watch: '両手をよく見て！',
     cue_swap_pick: '本物を掴め！',
     cue_pull_back: '手を引け！罠だ！',
@@ -677,12 +914,18 @@ export const I18N = {
     tag_trap: '✕ 罠だ！引け！',
     tag_on_paddle: '🍦 内側コーン',
     tag_slice: '✂️ ここを切る',
+    tag_eyelock: '👀 ここでキープ',
+    tag_rhythm_go: '🎯 リズムに乗れ！',
 
     speech_hmm: 'フムムム…？ 🤔🍦',
     speech_hirr: 'ガルルルッ！ 🦁🌀',
     speech_eeeh: 'エ〜ッヘヘ！ 😜',
     speech_cik: 'チッチッチッ！ ☝️',
     speech_hoppa: 'ホッパー！🌀',
+    speech_hophop: 'ホップ！ホップ！方向転換！ 🔀',
+    speech_afk_table: 'カンカン！起きてるかい！ 🥄💥',
+    speech_afk_bells: 'リンリン！アイスが溶けるぞ！ 🔔🎶',
+    speech_afk_wave: 'おーい！手を伸ばしてごらん！ 👋😄',
     speech_laugh: 'ハハハ！🧻',
     speech_taunt: 'おっと！👀',
     speech_cheer: 'お見事！🏆',
@@ -691,6 +934,13 @@ export const I18N = {
     speech_double_cone: '二重コーンの技！🍦🍦',
     speech_giant: '塊ごと来たぞ！🧊',
     speech_flip: '空中大回転！🤸',
+    speech_yakala: 'さあ掴んで！🍦',
+    speech_afiyet: '召し上がれ！😋🥜',
+    cue_take_cone: '🤚 コーンを取ろう！',
+    toggleOn: 'ON',
+    toggleOff: 'OFF',
+    achievementsLabel: '実績バッジ',
+    scoopsUnit: '段',
 
     end_hearts_badge: 'ハート切れ (0 ❤️)',
     end_hearts_title: '職人に完全に騙された！',
@@ -784,7 +1034,9 @@ export class SaveManager {
           }
         }
         if (Array.isArray(parsed.discoveredTricks)) {
-          this.data.discoveredTricks = Array.from(new Set(parsed.discoveredTricks));
+          this.data.discoveredTricks = Array.from(
+            new Set(parsed.discoveredTricks.filter((id) => VALID_TRICK_IDS.has(id)))
+          );
         }
         if (typeof parsed.tutorialCompleted === 'boolean') {
           this.data.tutorialCompleted = parsed.tutorialCompleted;
@@ -862,7 +1114,12 @@ export class SaveManager {
   }
 
   t(key) {
-    return (I18N[this.lang] && I18N[this.lang][key]) || I18N.tr[key] || key;
+    return (
+      (I18N[this.lang] && I18N[this.lang][key]) ||
+      (this.lang !== 'tr' && I18N.en[key]) ||
+      I18N.tr[key] ||
+      key
+    );
   }
 
   getUstaName(vendorIdx) {
@@ -871,23 +1128,67 @@ export class SaveManager {
 
   getFlavorName(flavorIdx) {
     const fl = ICE_CREAM_FLAVORS[flavorIdx % ICE_CREAM_FLAVORS.length];
-    return (fl && (fl.names[this.lang] || fl.names.tr)) || '';
+    return (
+      (fl &&
+        (fl.names[this.lang] ||
+          (this.lang !== 'tr' && fl.names.en) ||
+          fl.names.tr)) ||
+      ''
+    );
   }
 
   getTrickInfo(trickId) {
     const found = TRICK_CATALOG.find((t) => t.id === trickId);
-    if (!found) return { name: trickId, desc: '', icon: '🍦', difficulty: 1 };
+    if (!found) return { name: trickId, desc: '', icon: '🍦', difficulty: 1, category: 'sleight' };
     return {
       id: found.id,
       icon: found.icon,
       difficulty: found.difficulty,
-      name: found.names[this.lang] || found.names.tr,
-      desc: found.descs[this.lang] || found.descs.tr,
+      category: getTrickCategory(found.id),
+      name:
+        found.names[this.lang] ||
+        (this.lang !== 'tr' && found.names.en) ||
+        found.names.tr,
+      desc:
+        found.descs[this.lang] ||
+        (this.lang !== 'tr' && found.descs.en) ||
+        found.descs.tr,
     };
   }
 
+  getUnlockedAchievements() {
+    return ACHIEVEMENTS.filter((ach) => ach.check(this.data)).map((ach) => ({
+      id: ach.id,
+      icon: ach.icon,
+      name:
+        ach.names[this.lang] ||
+        (this.lang !== 'tr' && ach.names.en) ||
+        ach.names.tr,
+      desc:
+        ach.descs[this.lang] ||
+        (this.lang !== 'tr' && ach.descs.en) ||
+        ach.descs.tr,
+    }));
+  }
+
+  getAllAchievements() {
+    return ACHIEVEMENTS.map((ach) => ({
+      id: ach.id,
+      icon: ach.icon,
+      unlocked: Boolean(ach.check(this.data)),
+      name:
+        ach.names[this.lang] ||
+        (this.lang !== 'tr' && ach.names.en) ||
+        ach.names.tr,
+      desc:
+        ach.descs[this.lang] ||
+        (this.lang !== 'tr' && ach.descs.en) ||
+        ach.descs.tr,
+    }));
+  }
+
   discoverTrick(trickId) {
-    if (!trickId) return;
+    if (!trickId || !VALID_TRICK_IDS.has(trickId)) return;
     if (!this.data.discoveredTricks.includes(trickId)) {
       this.data.discoveredTricks.push(trickId);
       this.save();
@@ -904,9 +1205,9 @@ export class SaveManager {
 
   getPlayerRankTitle() {
     const stars = this.getTotalStars();
-    if (stars >= 22) return this.t('rank_3');
-    if (stars >= 12) return this.t('rank_2');
-    if (stars >= 4) return this.t('rank_1');
+    if (stars >= 66) return this.t('rank_3');
+    if (stars >= 36) return this.t('rank_2');
+    if (stars >= 12) return this.t('rank_1');
     return this.t('rank_0');
   }
 

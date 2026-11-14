@@ -513,7 +513,7 @@ export class CulturalScene {
     const venueCounts = new Map();
     for (const item of catalog) {
       if (!item.id || this.records.has(item.id)) throw new Error(`Duplicate cultural detail: ${item.id}`);
-      if (!this.venueGroups.has(item.venueId)) { const group = new THREE.Group(); group.name = `culture-${item.venueId}`; group.visible = false; this.root.add(group); this.venueGroups.set(item.venueId, group); }
+      if (!this.venueGroups.has(item.venueId)) { const group = new THREE.Group(); group.name = `culture-${item.venueId}`; group.visible = false; this.venueGroups.set(item.venueId, group); }
       const index = venueCounts.get(item.venueId) || 0; venueCounts.set(item.venueId, index + 1);
       if (index >= 18) throw new Error(`More than eighteen details in ${item.venueId}`);
       const section = item.section ?? Math.floor(index / 6), slot = item.slot ?? index % 6;
@@ -537,7 +537,11 @@ export class CulturalScene {
     if (id === this.venueId) return;
     this.restoreFocusedImmediately();
     this.venueId = id; this.section = 0;
-    for (const [key, group] of this.venueGroups) group.visible = key === id;
+    for (const [key, group] of this.venueGroups) {
+      group.visible = key === id;
+      if (key === id) this.root.add(group);
+      else group.removeFromParent();
+    }
     if (this.enabled) this.setSection(0);
     this.updateMarkers();
   }
@@ -833,7 +837,9 @@ export class CulturalScene {
     if (this.disposed) return;
     this.reset();
     const geometries = new Set(), materials = new Set(), textures = new Set();
-    this.root.traverse((node) => { if (node.isMesh) { geometries.add(node.geometry); for (const material of Array.isArray(node.material) ? node.material : [node.material]) { materials.add(material); for(const key of ['map','bumpMap','roughnessMap','normalMap'])if(material[key])textures.add(material[key]); } } });
+    const collect = (node) => { if (node.isMesh) { geometries.add(node.geometry); for (const material of Array.isArray(node.material) ? node.material : [node.material]) { materials.add(material); for(const key of ['map','bumpMap','roughnessMap','normalMap'])if(material[key])textures.add(material[key]); } } };
+    this.root.traverse(collect);
+    for (const group of this.venueGroups.values()) group.traverse(collect);
     Object.values(this.materials).forEach((material) => {materials.add(material);for(const key of ['map','bumpMap','roughnessMap','normalMap'])if(material[key])textures.add(material[key]);});
     geometries.forEach((g) => g.dispose()); materials.forEach((m) => m.dispose()); textures.forEach((t) => t.dispose());
     this.root.removeFromParent(); this.focusRoot.removeFromParent(); this.light.removeFromParent(); this.records.clear(); this.venueGroups.clear(); this.savedLanterns = null; this.disposed = true;

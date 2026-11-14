@@ -3,7 +3,7 @@ import {beginTrickEntry,finishTrickEntry,updateTrickTransition,joinAuthoredPose,
 import {createIdleBellPhrase,idleBellPhraseAt} from './idle-bell-phrase.js';
 import {updateFlavorRefusal} from './flavor-refusal.js';
 import {FLAVOR_FEINT_ID,createFlavorFeintPlan,displayedFlavorIndex} from './flavor-feint-plan.js';
-import {activateFlavorFeint,enterFlavorFeint,updateFlavorFeint,flavorFeintCue,clearFlavorFeint} from './flavor-feint-show.js';
+import {activateFlavorFeint,enterFlavorFeint,updateFlavorFeint,flavorFeintCue,clearFlavorFeint,announceFlavorPrank,flavorPrankTitle} from './flavor-feint-show.js';
 import {RhythmClock} from './rhythm-clock.js';
 import {normalizeStage} from './progression.js';
 import {getStageConfig} from './protocol.js';
@@ -14,7 +14,7 @@ import * as THREE from 'three';
 import { CUSTOMER_SERVICE_IDS, CUSTOMER_MOLD, CUSTOMER_SCOOP, customerServicePlaying, customerOpeningRoutine } from './customer-service.js';
 import { getShellTargets, classifyShellPick } from './shell-targeting.js';
 import { StretchCutGesture, stretchCutGuide, STRETCH_CUT_COPY } from './stretch-cut.js';
-import { enterChoreography, advanceChoreography, updateChoreographyBridge, clearChoreography, choreographyGuide, selectRoutineSlots, isChoreographedRoutine } from './trick-routines.js';
+import { enterChoreography, advanceChoreography, updateChoreographyBridge, clearChoreography, choreographyGuide, selectRoutineSlots, isChoreographedRoutine, getChoreographedRoutine } from './trick-routines.js';
 import { axialReachX } from './reach-offer.js';
 import { scoopPath, moldPath, bellPath, surfaceStrikePath } from './trick-motion.js';
 import { MAX_SCOOPS, getStageOrderOptions } from './venues.js';
@@ -79,6 +79,7 @@ export class TrickDirector {
     this.targetScoopCount = this.save?.data?.preferredScoopCount || 3;
     this.selectedFlavors = (this.save?.data?.preferredFlavors || [0, 1, 2, 3]).slice();
     this.forceTutorialNext = false;
+    this.includeTutorialWarmupNext = false;
 
     this.floatingPopups = [];
     this.vignetteFlash = { color: 'green', alpha: 0 };
@@ -173,22 +174,85 @@ export class TrickDirector {
    * Builds a dynamic, semi-randomized & progressive routine for the given stage (1..10)
    * so no two rounds play identically!
    */
+  setPracticeTrick(trickId) {
+    this.practiceTrickId = trickId || null;
+  }
+
+  startPracticeRound(trickId, stageNumber = this.currentStage) {
+    if (!trickId || trickId === 'FINAL_PISTACHIO_CATCH') return false;
+    this.setPracticeTrick(trickId);
+    this.resetRound(stageNumber, false);
+    this.isPracticeRound = true;
+    this.startRound({ customerCone: false });
+    return true;
+  }
+
+  startTutorialRound(stageNumber = this.currentStage) {
+    this.setPracticeTrick(null);
+    this.resetRound(stageNumber, false, { includeTutorialWarmup: true });
+    this.isPracticeRound = true;
+    this.startRound({ customerCone: false });
+    return true;
+  }
+
   _buildDynamicRoutineForStage(stageCfg) {
     const seq = []; // Start directly at the cart; no automatic tutorial step.
+    if (this.includeTutorialWarmupNext) {
+      seq.push('TUTORIAL_WARMUP');
+      this.includeTutorialWarmupNext = false;
+    }
 
     // Always start by scraping the 1st chosen flavor & introducing the signature Double Cone or Giant Block
     seq.push('SCRAPE_FLAVOR_SCOOP');
 
+    const discoveredSet = Array.isArray(this.save?.data?.discoveredTricks)
+      ? new Set(this.save.data.discoveredTricks)
+      : null;
+    const recentSet = this._recentTricks instanceof Set ? this._recentTricks : null;
     const pool = shuffleArray(stageCfg.trickPool || []);
+    if (discoveredSet || recentSet) {
+      const rank = (id) => {
+        if (discoveredSet && !discoveredSet.has(id) && !recentSet?.has(id)) return 0;
+        if (!recentSet?.has(id)) return 1;
+        return 2;
+      };
+      pool.sort((a, b) => rank(a) - rank(b));
+    }
     const count = Math.max(3, stageCfg.trickCount || 4);
     // Compound shows occupy the original slot budget, with at most 1/2/3 per
     // early/middle/late round so a larger repertoire does not lengthen every turn.
-    const chosenTricks = shuffleArray(selectRoutineSlots(pool, count, stageCfg.stage || this.currentStage || 1));
+    const selectedSlots = selectRoutineSlots(pool, count, stageCfg.stage || this.currentStage || 1);
 
     // Guarantee EYE_LOCK_RHYTHM_CHASE appears in the routine so the eye-contact & green-line rhythm mechanic is always experienced
-    if (!chosenTricks.includes('EYE_LOCK_RHYTHM_CHASE')) {
-      const baseSlot = chosenTricks.findIndex((id, index) => index > 0 && !isChoreographedRoutine(id));
-      chosenTricks[baseSlot >= 0 ? baseSlot : 0] = 'EYE_LOCK_RHYTHM_CHASE';
+    if (!selectedSlots.includes('EYE_LOCK_RHYTHM_CHASE')) {
+      let replaceIdx = -1;
+      for (let i = selectedSlots.length - 1; i >= 0; i--) {
+        if (!isChoreographedRoutine(selectedSlots[i])) {
+          replaceIdx = i;
+          break;
+        }
+      }
+      selectedSlots[replaceIdx >= 0 ? replaceIdx : 0] = 'EYE_LOCK_RHYTHM_CHASE';
+    }
+    const chosenTricks = shuffleArray(selectedSlots);
+
+    if (this.practiceTrickId && this.practiceTrickId !== 'FINAL_PISTACHIO_CATCH') {
+      const pid = this.practiceTrickId;
+      this.practiceTrickId = null;
+      const existingIdx = chosenTricks.indexOf(pid);
+      if (existingIdx > 0) {
+        chosenTricks.splice(existingIdx, 1);
+        chosenTricks.unshift(pid);
+      } else if (existingIdx < 0) {
+        if (chosenTricks[0] === 'EYE_LOCK_RHYTHM_CHASE' && chosenTricks.length > 1) {
+          chosenTricks[1] = 'EYE_LOCK_RHYTHM_CHASE';
+        }
+        chosenTricks[0] = pid;
+      }
+    }
+
+    if (this && typeof this === 'object') {
+      this._recentTricks = new Set(chosenTricks);
     }
 
     // Interleave scoop additions across the routine until reaching targetScoopCount
@@ -200,11 +264,18 @@ export class TrickDirector {
 
     chosenTricks.forEach((trickId, idx) => {
       seq.push(trickId);
+      const comps = getChoreographedRoutine(trickId)?.componentIds || [trickId];
+      let addedByTrick = false;
+      for (const comp of comps) {
+        if (comp === 'GIANT_BLOCK_TEASE' || comp === 'MEGA_TAFFY_SLICE') {
+          addedByTrick = true;
+          if (scoopsScheduled < this.targetScoopCount) scoopsScheduled++;
+        }
+      }
       if (
+        !addedByTrick &&
         scoopsScheduled < this.targetScoopCount &&
-        (idx + 1) % interval === 0 &&
-        trickId !== 'GIANT_BLOCK_TEASE' &&
-        trickId !== 'MEGA_TAFFY_SLICE'
+        (idx + 1) % interval === 0
       ) {
         seq.push('SCRAPE_FLAVOR_SCOOP');
         scoopsScheduled++;
@@ -224,7 +295,7 @@ export class TrickDirector {
     return seq;
   }
 
-  resetRound(stageNumber = this.currentStage, runTutorial = false, { preserveCustomerCone = false } = {}) {
+  resetRound(stageNumber = this.currentStage, runTutorial = false, { preserveCustomerCone = false, includeTutorialWarmup = false } = {}) {
     clearFlavorFeint(this);
     const keepCustomerCone = preserveCustomerCone && this.world.conePivot.parent === this.world.heldSocket;
     const clampedStage = normalizeStage(stageNumber);
@@ -265,6 +336,8 @@ export class TrickDirector {
     this.eyeLockHoldTimer = 0;
     this.rhythmBeatsCompleted = 0;
     this.rhythmBeatTimer = 0;
+    this.rhythmMissCount = 0;
+    this.snatchBurstTimer = 0;
     this.rhythmSide = 1;
     this.rhythmTargetPos = new THREE.Vector3(0, 1.22, 0.27);
     this.midpointHoverTimer = 0;
@@ -283,6 +356,7 @@ export class TrickDirector {
       ? this.world.paddleGroup.position.clone()
       : new THREE.Vector3(0, 1.24, 0.22);
     this.coneTargetPos = this.coneWorldPos.clone();
+    if (!keepCustomerCone) this.world.paddleGroup.position.copy(this.coneWorldPos);
     this.world.coneSpring.pos.copy(this.coneWorldPos);
     this.world.coneSpring.target.copy(this.coneTargetPos);
     this.world.coneSpring.vel.set(0, 0, 0);
@@ -293,6 +367,7 @@ export class TrickDirector {
     this.leftHandCustomTarget = null;
 
     this.forceTutorialNext = false;
+    this.includeTutorialWarmupNext = Boolean(includeTutorialWarmup);
     this.pendingTrickAdvance = 0;
     clearTrickTransition(this);
     this.world.collectedCones?.reset();
@@ -312,6 +387,7 @@ export class TrickDirector {
     this.lastSpeechContext = '';
     this.lastSpeechType = '';
     this.captionLockUntil = 0;
+    this.isPracticeRound = Boolean(this.practiceTrickId);
     this.routine = this._buildDynamicRoutineForStage(this.config);
 
     this._hideAllProps();
@@ -397,6 +473,8 @@ export class TrickDirector {
       taunt: 'taunt',
       cheer: 'cheer',
       shock: 'shock',
+      yakala: 'hoppa',
+      afiyet: 'cheer',
     };
     const soundType = soundMap[type] || 'hoppa';
     // Voice belongs to the vendor, not to the moving ice cream/paddle.
@@ -423,6 +501,8 @@ export class TrickDirector {
       afk_table: 'speech_afk_table',
       afk_bells: 'speech_afk_bells',
       afk_wave: 'speech_afk_wave',
+      yakala: 'speech_yakala',
+      afiyet: 'speech_afiyet',
     };
     if (now >= (this.captionLockUntil || 0)) {
       this.vendorBubbleText = this.save.t(keyMap[type] || 'speech_hoppa');
@@ -501,6 +581,8 @@ export class TrickDirector {
     this.eyeLockHoldTimer = 0;
     this.rhythmBeatsCompleted = 0;
     this.rhythmBeatTimer = 0;
+    this.rhythmMissCount = 0;
+    this.snatchBurstTimer = 0;
     this.rhythmSide = Math.random() < 0.5 ? -1 : 1;
     this.rhythmTargetPos = new THREE.Vector3(0, 1.22, 0.27);
     this.midpointHoverTimer = 0;
@@ -534,8 +616,10 @@ export class TrickDirector {
 
     if (!enterExtraTrick(this)) switch (this.currentMechanic) {
       case 'TUTORIAL_WARMUP': {
-        this.scoopCount = 1;
-        this.world.updateIceCreamScoops(1, false);
+        if (this.scoopCount < 1) {
+          this.scoopCount = 1;
+          this.world.updateIceCreamScoops(1, false);
+        }
         this.coneTargetPos.set(0, 1.22, 0.27);
         this._triggerVendorSpeech('hmm');
         break;
@@ -564,10 +648,9 @@ export class TrickDirector {
 
       case 'GIANT_BLOCK_TEASE': {
         // Lift the entire 5-KILO GIANT ICE CREAM BLOCK out of the selected flavor tub!
-        const flav = this._getFlavorForScoop(Math.min(MAX_SCOOPS - 1, this.scoopCount));
-        const tubPos = this._getTubWorldPosForScoop(
-          Math.min(MAX_SCOOPS - 1, this.scoopCount)
-        );
+        const blockIdx = Math.min(Math.max(0, this.targetScoopCount - 1), this.scoopCount);
+        const flav = this._getFlavorForScoop(blockIdx);
+        const tubPos = this._getTubWorldPosForScoop(blockIdx);
         this.world.setGiantBlockColor(flav.colorHex);
         this.world.giantBlockGroup.visible = false;
         this.world.giantBlockGroup.position.copy(tubPos);
@@ -615,6 +698,7 @@ export class TrickDirector {
 
       case 'FAKE_DROP_PANIC': {
         this.coneTargetPos.set(0, 1.36, 0.24);
+        this.sound.playWhoosh(0.85, 0);
         this.world.setVendorMood('shock');
         this._triggerVendorSpeech('eeeh');
         break;
@@ -626,6 +710,9 @@ export class TrickDirector {
           this.scoopCount++;
           this.world.updateIceCreamScoops(this.scoopCount, false);
         }
+        const taffyIdx = Math.max(0, Math.min(this.targetScoopCount - 1, this.scoopCount - 1));
+        const taffyFlavor = this._getFlavorForScoop(taffyIdx);
+        const taffyTubPos = this._getTubWorldPosForScoop(taffyIdx);
         this.world.triggerScoopJiggle(1.25);
         this.sound.playPaddleClank(0.1);
         this.sound.playScoopAdded();
@@ -633,9 +720,9 @@ export class TrickDirector {
         this.conePitchX = -0.28;
         this.world.sliceCueGroup.visible = false; // One projected guide follows the real strand.
         this.world.stretchyStrand.attach(
-          currentTubPos,
+          taffyTubPos,
           this.coneWorldPos,
-          currentFlavor.colorHex,
+          taffyFlavor.colorHex,
           true
         );
         this._triggerVendorSpeech('scrape');
@@ -710,6 +797,7 @@ export class TrickDirector {
       }
 
       case 'FINAL_PISTACHIO_CATCH': {
+        this._pistachioSprinkled = false;
         this.scoopCount = this.targetScoopCount;
         this.world.updateIceCreamScoops(this.scoopCount, true);
         this.world.setServingNapkin?.({ owner: 'vendor', peel: 0, visible: true });
@@ -717,7 +805,7 @@ export class TrickDirector {
         this.sound.playBell(0.88, 0.2);
         this.world.ringBells(0.75);
         this.coneTargetPos.set(0, 1.22, 0.26);
-        this.leftHandCustomTarget = new THREE.Vector3(0.24, 1.92, -0.12);
+        this.leftHandCustomTarget = new THREE.Vector3(0.24, 1.66, -0.10);
         this._triggerVendorSpeech('hoppa');
         break;
       }
@@ -764,6 +852,10 @@ export class TrickDirector {
     if (!this.active || this.roundEnded) return;
     if (['NAPKIN_CONE', 'NAPKIN', 'EMPTY_CONE'].includes(this.heldItem)) return;
     this.idleSeconds = 0;
+    if (handWorldPos) {
+      this.snatchBurstTimer = 0.16;
+      (this.snatchWorldPos ||= new THREE.Vector3()).copy(handWorldPos);
+    }
 
     this.protocol.emitCommand(PLAYER_ROLES.CUSTOMER, 'ATTEMPT_SNATCH', {
       pos: handWorldPos.toArray(),
@@ -784,9 +876,16 @@ export class TrickDirector {
     if(this.active&&!this.roundEnded&&this.rhythmClock){
       const previous=this.rhythmClock.time;
       const notes=this.rhythmClock.advance(dt);
-      gameDt=this.rhythmClock.time-previous;
+      const clockDt=this.rhythmClock.time-previous;
       this.sound.playRhythmNotes?.(notes);
-      time=this.rhythmClock.time;
+      if(clockDt>0||dt<=0){
+        gameDt=clockDt;
+        this._fallbackRhythmTime=this.rhythmClock.time;
+        time=this.rhythmClock.time;
+      }else{
+        this._fallbackRhythmTime=(this._fallbackRhythmTime??this.rhythmClock.time)+gameDt;
+        time=this._fallbackRhythmTime;
+      }
       this.world.vendorBeatPhase=((this.rhythmClock.step-1+this.rhythmClock.phase)/8)%1;
     }
     tickIdleGuide(this);
@@ -871,6 +970,9 @@ export class TrickDirector {
       this.stepCooldown = Math.max(0, this.stepCooldown - dt);
     }
 
+    if (this.snatchBurstTimer > 0) {
+      this.snatchBurstTimer = Math.max(0, this.snatchBurstTimer - dt);
+    }
     // Validate raw intent, never the hand that presentation may snap to the cone.
     const handPos = gestureState.handWorldPos;
     const intentPos = gestureState.intentWorldPos || handPos;
@@ -880,7 +982,14 @@ export class TrickDirector {
     const shellWindow = this.currentMechanic === 'SHELL_SWAP_DUEL' ? (this.stageTimer >= 1.2 ? 'choice' : 'shuffle') : '';
     const opportunity = `${this.routineIndex}:${this.currentMechanic}:${this.subStep}:${this.heldItem || ''}:${this.bellBeatsDone}:${this.rhythmBeatsCompleted}:${rhythmRequest}:${shellWindow}`;
     this.gestureValidation.update(gestureState, dt, opportunity);
-    const validReach = (radius = 0.28) => this.gestureValidation.reach('reach', distToCone, radius, dt);
+    const validReach = (radius = 0.28) => {
+      if (this.gestureValidation.reach('reach', distToCone, radius, dt)) return true;
+      if (this.snatchBurstTimer > 0 && this.snatchWorldPos && this.snatchWorldPos.distanceTo(this.coneWorldPos) < radius) {
+        this.snatchBurstTimer = 0;
+        return true;
+      }
+      return false;
+    };
     const validSlice = (near = true) => this.gestureValidation.slice('slice', near);
     const validPull = () => this.gestureValidation.pull('pull');
 
@@ -968,6 +1077,7 @@ export class TrickDirector {
       (gestureState.isPointerDown || gestureState.isMouseHover) && distToMidpoint < 0.24 && distToCone >= 0.26 && intentPos.z < 0.51;
 
     if (
+      !this.choreography &&
       isAtGreenMidpoint &&
       this.gestureValidation.reach('midpoint', distToMidpoint, 0.24, dt) &&
       (this.currentMechanic === 'SHAFT_SPIN_360' ||
@@ -992,6 +1102,7 @@ export class TrickDirector {
         this.sound.playBellNote(3, 0.85, 0);
         this.world.strikeBell(3, 0.8);
         this._triggerVendorSpeech('hmm');
+        this.score += 120;
         this._spawnScorePopup(120, greenLineMidpoint, '👀');
       }
     } else {
@@ -999,10 +1110,12 @@ export class TrickDirector {
     }
 
     // Passive timeout & Multi-Scenario AFK Show Director check
-    const watchingNewPresentation = isTimedVendorShow(this) || researchedServicePlaying(this) || customerServicePlaying(this) || servicePresentationPlaying(this) || (this.currentMechanic === 'WHOLE_MOLD_ON_CONE' && this.subStep === 0) ||
+    const watchingNewPresentation = isTimedVendorShow(this) || researchedServicePlaying(this) || customerServicePlaying(this) || servicePresentationPlaying(this) || extraTrickCue(this)?.kind === 'wait' || (this.currentMechanic === 'WHOLE_MOLD_ON_CONE' && this.subStep === 0) ||
       (this.currentMechanic === 'SCOOP_LIFT_BACK' && (this.subStep === 0 || (this.subStep === 2 && this.stageTimer < 0.55)));
     if (
       watchingNewPresentation ||
+      this.heldItem === 'FULL_CONE_TUG' ||
+      this.isGraspingPaddleCone ||
       gestureState.isMoving ||
       gestureState.isPointerDown ||
       (this.currentMechanic === 'EYE_LOCK_RHYTHM_CHASE' &&
@@ -1129,7 +1242,7 @@ export class TrickDirector {
           ) {
             this.world.stretchyStrand.detach();
             this.world.sliceCueGroup.visible = false;
-            this.save.markTutorialCompleted();
+            this.save?.markTutorialCompleted?.();
             this.sound.playWhoosh(1.25, 0);
             this.score += 220;
             this._spawnScorePopup(220, strandMid, '🎓 3/3');
@@ -1158,7 +1271,10 @@ export class TrickDirector {
         const deposit = this.world.getScoopAnchor(nextScoopIdx);
         this.scrapeBladeStart ||= scrapeBladePoint(this.world);
         scrapeServing(this,{progress:p,start:this.scrapeBladeStart,tub:tubPos,deposit,color:flav.colorHex,radius:this.world.scoopMeshes[nextScoopIdx].geometry?.parameters.radius*this.world.scoopMeshes[nextScoopIdx].scale.y||.064});
-        if(p>=.92)this.world.updateIceCreamScoops(Math.min(this.targetScoopCount,this.scoopCount+1),false);
+        if(p>=.92){
+          this.world.updateIceCreamScoops(Math.min(this.targetScoopCount,this.scoopCount+1),false);
+          if(this.flavorFeint?.status==='active'&&this.flavorFeint.index===nextScoopIdx)announceFlavorPrank(this,'prep');
+        }
         if(p>=.30&&p<=.69)this.world.churnTubIceCream(flav.index,dt*3.8);
         if (p >= 0.30 && p < 0.51 && this.stageTimer - this.lastScrapeClankTime > 0.16) {
           this.lastScrapeClankTime = this.stageTimer;
@@ -1190,7 +1306,7 @@ export class TrickDirector {
       // 3. GIANT 5-KILO BLOCK EXTRACTION (`GIANT_BLOCK_TEASE` - Kalıptan Kocaman Dondurma)
       // =========================================================================
       case 'GIANT_BLOCK_TEASE': {
-        const scoopIdx = Math.min(MAX_SCOOPS - 1, this.scoopCount);
+        const scoopIdx = Math.min(Math.max(0, this.targetScoopCount - 1), this.scoopCount);
         const flav = this._getFlavorForScoop(scoopIdx);
         const tubPos = this._getTubWorldPosForScoop(scoopIdx);
 
@@ -1608,6 +1724,10 @@ export class TrickDirector {
       // 11. TWO-HAND CONE SHELL GAME (`SHELL_SWAP_DUEL`)
       // =========================================================================
       case 'SHELL_SWAP_DUEL': {
+        if (this.heldItem !== 'NAPKIN_CONE' && this.world.napkinConeProp) {
+          this.world.napkinConeProp.visible = true;
+        }
+        const leftTarget = (this.leftHandCustomTarget ||= new THREE.Vector3());
         if (this.stageTimer < 1.2) {
           const p = this.stageTimer / 1.2;
           const angle = p * Math.PI * 2;
@@ -1615,13 +1735,13 @@ export class TrickDirector {
           const rz = 0.18 + Math.sin(angle) * 0.09;
           const ry = 1.24 + Math.sin(angle * 2) * 0.08;
           this.coneTargetPos.set(rx, ry, rz);
-          this.leftHandCustomTarget.set(-rx, 2.48 - ry, 0.36 - rz);
+          leftTarget.set(-rx, 2.48 - ry, 0.36 - rz);
           this.shaftRoll = angle;
           this.conePitchX = Math.sin(angle) * 0.3;
         } else {
           const realX = -0.28 * this.swapSide;
           this.coneTargetPos.set(realX, 1.24, 0.24);
-          this.leftHandCustomTarget.set(-realX, 1.24, 0.24);
+          leftTarget.set(-realX, 1.24, 0.24);
           this.conePitchX = 0.08;
 
           if (this.stepCooldown <= 0 && gestureState.isReaching) {
@@ -1844,7 +1964,7 @@ export class TrickDirector {
       // 16. EYE-LOCK MIDPOINT & RHYTHMIC GREEN-LINE CHASE (`EYE_LOCK_RHYTHM_CHASE`)
       // =========================================================================
       case 'EYE_LOCK_RHYTHM_CHASE': {
-        this.rhythmBeatTimer += dt * speedMult;
+        this.rhythmBeatTimer += dt * Math.min(1.45, speedMult);
 
         if (this.subStep === 0) {
           // SubStep 0: Bring hand to the MIDDLE of the green line and hold while locking eyes with the vendor!
@@ -1919,11 +2039,14 @@ export class TrickDirector {
             this.rhythmTargetPos.z
           );
 
+          const beatKey = `beat:${this.rhythmTargetPos.x.toFixed(3)}:${this.rhythmTargetPos.y.toFixed(3)}`;
           const matchedRhythm =
             this.stepCooldown <= 0 &&
-            this.gestureValidation.follow(`beat:${this.rhythmTargetPos.x.toFixed(3)}:${this.rhythmTargetPos.y.toFixed(3)}`, this.rhythmTargetPos, dt);
+            (this.gestureValidation.follow(beatKey, this.coneWorldPos, dt) ||
+             this.gestureValidation.follow(`${beatKey}:raw`, this.rhythmTargetPos, dt));
 
           if (matchedRhythm) {
+            this.rhythmMissCount = 0;
             this.rhythmBeatsCompleted++;
             this.rhythmBeatTimer = 0;
             this.stepCooldown = 0.32;
@@ -1987,6 +2110,10 @@ export class TrickDirector {
       // =========================================================================
       case 'FINAL_PISTACHIO_CATCH': {
         if (this.subStep === 0) {
+          if (this.stageTimer >= 0.22 && !this._pistachioSprinkled) {
+            this._pistachioSprinkled = true;
+            this.world.spawnBurst(this.coneWorldPos, 0x80ed99, 14);
+          }
           this.coneTargetPos.set(
             Math.sin(time * 2.2) * 0.14,
             1.22 + Math.cos(time * 2.8) * 0.04,
@@ -2000,6 +2127,7 @@ export class TrickDirector {
             this.tugTimer = 0.36;
             this.heldItem = 'FULL_CONE_TUG';
             this.world.handoffCone('player');
+            this.world.vendorPoleFree = true;
             // The filled cone is already in the customer's hand. The empty
             // paddle releases it; no chocolate-colored rope joins it to the man.
             this.world.stretchyStrand.detach();
@@ -2024,6 +2152,7 @@ export class TrickDirector {
         } else if (this.subStep === 1) {
           this.tugTimer -= dt;
           const pulledFree = validPull();
+          this.world.vendorPoleFree = true;
           this.world.stretchyStrand.detach();
           const releaseProgress = THREE.MathUtils.clamp((.36 - this.tugTimer) / .36, 0, 1);
           this.finalReleaseStart ||= this.coneWorldPos.clone();
@@ -2221,7 +2350,7 @@ export class TrickDirector {
       if(!this.vendorFlourish){
         if(!this._prepareIdleServing(dt))return;
         const prep=this.flourishPreparation;
-        if(prep.abort){this.afkRejoin=new VendorPoleRejoin(this.world,prep.stageTimer);return;}
+        if(prep.abort){this.flourishPreparation=null;this.afkRejoin=new VendorPoleRejoin(this.world,prep.stageTimer);return;}
         this.vendorFlourish=new VendorFlourish(this.world,prep.stageTimer);
       }
       setFlourishPose(this,this.vendorFlourish.step(dt));
@@ -2238,13 +2367,13 @@ export class TrickDirector {
     this.presentationExact=true;this.shaftRoll=this.conePitchX=this.coneFlipZ=0;
     w.scene.updateMatrixWorld(true);
     const grip=w.lArmRig.handGroup.localToWorld(new THREE.Vector3(0,.11,.035)),cone=w.conePivot.getWorldPosition(new THREE.Vector3());
-    if(prep.age<.44||grip.distanceTo(cone)>.04)return false;
+    if(prep.age<.44||(grip.distanceTo(cone)>.04&&prep.age<1.1))return false;
     w.setConeInVendorHand(true);w.vendorConeReceiveProgress=null;w.vendorConeReceiveFrom=null;return true;
   }
 
   getGestureGuide() {
-    const w = Math.max(1, window.visualViewport?.width || window.innerWidth);
-    const h = Math.max(1, window.visualViewport?.height || window.innerHeight);
+    const w = Math.max(1, globalThis.window?.visualViewport?.width || globalThis.window?.innerWidth || this.world.canvas?.clientWidth || 400);
+    const h = Math.max(1, globalThis.window?.visualViewport?.height || globalThis.window?.innerHeight || this.world.canvas?.clientHeight || 800);
     const handScreen = this.world.projectToScreen(
       this.world.playerAimAnchor
         ? this.world.playerAimAnchor.getWorldPosition(this.guideHandPoint ||= new THREE.Vector3())
@@ -2270,7 +2399,7 @@ export class TrickDirector {
       theme: 'green',
       icon: '🤚⬆️',
       badgeText: this.save.t('cue_reach'),
-      trickTitle: trickInfo.name || '',
+      trickTitle: flavorPrankTitle(this) || trickInfo.name || '',
       routineProgress,
       stageProgress: 0.5,
       comets: [],
@@ -2398,12 +2527,13 @@ export class TrickDirector {
       const target = extraCue.screen || this.world.projectToScreen(extraCue.target);
       const pull = extraCue.kind === 'pull';
       const waiting = extraCue.kind === 'wait';
-      guide.theme = pull ? 'red' : waiting ? 'amber' : 'green';
-      guide.icon = pull ? '🤚⬇️' : waiting ? '👀' : extraCue.kind === 'return' ? '🍦⬆️' : '✊';
-      guide.badgeText = extraCue.badgeText || this.save.t(pull ? 'cue_pull_back' : waiting ? 'cue_swap_watch' : extraCue.kind === 'return' ? 'cue_return_cone' : 'cue_reach');
+      const trapWait = waiting && Boolean(extraCue.trap);
+      guide.theme = (pull || trapWait) ? 'red' : waiting ? 'amber' : 'green';
+      guide.icon = (pull || trapWait) ? '🤚⬇️' : waiting ? '👀' : extraCue.kind === 'return' ? '🍦⬆️' : '✊';
+      guide.badgeText = extraCue.badgeText || this.save.t((pull || trapWait) ? 'cue_pull_back' : waiting ? 'cue_swap_watch' : extraCue.kind === 'return' ? 'cue_return_cone' : 'cue_reach');
       guide.stageProgress = THREE.MathUtils.clamp(extraCue.progress, 0, 1);
       if (!waiting) guide.comets.push({ color: guide.theme, points: buildCurvedScreenPath(pull ? target : handScreen, pull ? safePullScreen : target, pull ? 18 : -24) });
-      if (!extraCue.quiet) guide.rings.push({ x: target.x, y: target.y, radius: extraCue.radius||38, color: guide.theme, label: waiting ? '👀' : pull ? '↓' : extraCue.kind==='return'?'↑':'✊' });
+      if (!extraCue.quiet) guide.rings.push({ x: target.x, y: target.y, radius: extraCue.radius||38, color: guide.theme, label: trapWait ? this.save.t('tag_trap') : waiting ? '👀' : pull ? '↓' : extraCue.kind==='return'?'↑':'✊' });
       return choreographyGuide(this, guide);
     }
 
@@ -2788,8 +2918,9 @@ export class TrickDirector {
 
       case 'EYE_LOCK_RHYTHM_CHASE': {
         const greenPath = buildCurvedScreenPath(handScreen, coneScreen, -22);
-        const midPt =
-          greenPath[Math.floor(greenPath.length * 0.5)] || coneScreen;
+        const midPt = this.world.projectToScreen(
+          new THREE.Vector3(this.coneWorldPos.x * 0.5, 1.15, 0.41)
+        );
 
         if (this.subStep === 0) {
           guide.theme = 'green';
@@ -2867,24 +2998,42 @@ export class TrickDirector {
   _applyKinematics(dt, time, gestureState) {
     joinAuthoredPose(this,dt);
     this.world.beginPoseFrame?.();
-    this.world.presentationAxialSpin=this.active&&!this.isAfkShowActive&&this.currentMechanic==='SHAFT_SPIN_360';
+    this.world.trickActive=this.active&&!this.isAfkShowActive;
+    this.world.customerScoopSpin=this.world.trickActive&&this.currentMechanic==='CUSTOMER_SCOOP_SHOW'&&this.subStep===4;
+    this.world.presentationAxialSpin=this.world.trickActive&&(
+      this.currentMechanic==='SHAFT_SPIN_360'||
+      this.currentMechanic==='VERTICAL_WINDMILL'||
+      this.currentMechanic==='UNDER_ARM_PIROUETTE'||
+      this.currentMechanic==='HORIZONTAL_HELICOPTER'||
+      this.currentMechanic==='TRIANGLE_RHYTHM_CHASE'||
+      this.currentMechanic==='LOW_RAIL_SKIMMER'||
+      this.currentMechanic==='GRAND_FINALE_BOW_TEASE'||
+      this.currentMechanic==='SPIRAL_CROWN_ASCENT'||
+      this.currentMechanic==='CROWN_TAP_KISS_TEASE'||
+      (this.currentMechanic==='CUSTOMER_SCOOP_SHOW'&&this.subStep!==4)
+    );
     const servingTarget = (this.servingPoseTarget ||= new THREE.Vector3()).copy(this.coneTargetPos);
     if((this.presentationStrikeTip||this.presentationSurface)&&poleHasFood(this.world)){
       this.presentationStrikeTip=null;this.presentationSurface=null;this.presentationExact=false;
       servingTarget.y=Math.max(servingTarget.y,1.28);
     }
     // Bigger orders stay big, but an ordinary offer sits lower so the master remains visible.
-    // Exact scraping/impact trajectories and customer-owned cones retain their physical anchors.
+    // Smooth height & upright ramps avoid 18cm cliff jumps and keep inverted cones above the marble.
     if (this.active && !this.isAfkShowActive && !this.presentationExact && this.scoopCount > 4 &&
-        this.world.conePivot.parent === this.world.paddleGroup && servingTarget.y >= 1.12 && servingTarget.y <= 1.36) {
+        this.world.conePivot.parent === this.world.paddleGroup && servingTarget.y > 1.00 && servingTarget.y < 1.48) {
       const near = THREE.MathUtils.clamp((servingTarget.z - .04) / .16, 0, 1);
+      const yBand = THREE.MathUtils.smoothstep(servingTarget.y, 1.00, 1.16) *
+        (1 - THREE.MathUtils.smoothstep(servingTarget.y, 1.32, 1.48));
+      const tiltMag = Math.max(Math.abs(this.coneFlipZ || 0), Math.abs(this.conePitchX || 0));
+      const upright = 1 - THREE.MathUtils.smoothstep(tiltMag, 0.45, 0.95);
+      const weight = near * yBand * upright;
       const drop = .06 + Math.min(3, this.scoopCount - 5) * .04;
       // The napkin is pinched below the rim: keep it above the lower gesture HUD,
       // and offer slightly beside the face instead of pushing the paper offscreen.
       if (this.currentMechanic === 'NAPKIN_CONE_FAKEOUT') {
-        servingTarget.x += .12 * near;
-        servingTarget.y -= Math.min(.06, drop) * near;
-      } else if(this.currentMechanic!=='SHAFT_SPIN_360') servingTarget.y -= drop * near;
+        servingTarget.x += .12 * weight;
+        servingTarget.y -= Math.min(.06, drop) * weight;
+      } else if(this.currentMechanic!=='SHAFT_SPIN_360') servingTarget.y -= drop * weight;
       // Axial offers already reserve room for the cluster horizontally. Keep
       // their authored height: lowering them hides the wafer on short phones.
     }
@@ -2907,7 +3056,7 @@ export class TrickDirector {
 
     this.world.vendorHead.rotation.y = this.coneWorldPos.x * 0.28;
     this.world.fezTassel.rotation.z =
-      -0.35 - this.coneWorldPos.x * 0.35 + Math.sin(time * 3.5) * 0.05;
+      0.28 - this.coneWorldPos.x * 0.35 + Math.sin(time * 3.5) * 0.05;
 
     this.world.paddleCarryOffsetY = this.carryScoopOffsetY ?? 0.035;
     this.world.orientPaddleAndHands(
@@ -3003,11 +3152,8 @@ export class TrickDirector {
         canAdvance: false,
       };
     } else if (outcomeType === 'PASSIVE_BORING') {
-      this.world.heldSocket.add(this.world.conePivot);
-      this.world.conePivot.position.set(0, 0.05, 0);
-      this.world.conePivot.rotation.set(0, 0, 0);
-      this.world.setServingNapkin?.({ owner: 'vendor', peel: 0, visible: true });
-
+      this._reattachConeToPaddle();
+      this.world.setVendorMood('smile');
       this.sound.playPenalty();
       this._vibrate(80);
       this.save.recordStageResult(this.currentStage, 0, 0, false);
@@ -3036,7 +3182,7 @@ export class TrickDirector {
       this._triggerVendorSpeech('laugh');
       this._vibrate([80, 40, 80, 40, 120]);
       const penalizedScore = Math.max(0, Math.round(this.score * 0.4));
-      this.save.recordStageResult(this.currentStage, penalizedScore, 1, false);
+      this.save.recordStageResult(this.currentStage, penalizedScore, 0, false);
 
       resultData = {
         outcomeType,
@@ -3044,7 +3190,7 @@ export class TrickDirector {
         icon: '🧻',
         title: this.save.t('end_overtime_title'),
         desc: this.save.t('end_overtime_desc'),
-        stars: '⭐☆☆',
+        stars: '☆☆☆',
         score: penalizedScore,
         bestScore: this.save.getStageBestScore(this.currentStage),
         scoopsText: this.save.t('end_overtime_scoop'),
@@ -3068,6 +3214,10 @@ export class TrickDirector {
       const finalScore = Math.round(
         this.score + 750 + this.hearts * 150 + this.targetScoopCount * 100
       );
+      const prevBest = this.save.getStageBestScore(this.currentStage);
+      const wasStageCompleted =
+        Array.isArray(this.save.data?.completedStages) &&
+        this.save.data.completedStages.includes(this.currentStage);
       const starNum =
         this.hearts >= 3 ? 3 : this.hearts === 2 ? 2 : 1;
       this.save.recordStageResult(
@@ -3076,6 +3226,11 @@ export class TrickDirector {
         starNum,
         true
       );
+      const isNewRecord = finalScore > prevBest && prevBest > 0;
+      const unlockedNewVenue =
+        !wasStageCompleted &&
+        this.currentStage % 5 === 0 &&
+        this.currentStage <= 30;
 
       resultData = {
         outcomeType,
@@ -3093,6 +3248,8 @@ export class TrickDirector {
         bestScore: this.save.getStageBestScore(this.currentStage),
         scoopsText: `${this.targetScoopCount} 🍦 + 🥜`,
         canAdvance: true,
+        isNewRecord,
+        unlockedNewVenue,
       };
     }
 

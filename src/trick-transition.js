@@ -9,7 +9,7 @@ export function captureTrickPose(d){
  const w=d.world;
  return{position:d.coneWorldPos.clone(),roll:w.paddleAngularMotion?.shaft?.value??d.shaftRoll??0,
   pitch:w.paddleAngularMotion?.pitch?.value??d.conePitchX??0,flip:w.paddleAngularMotion?.flip?.value??d.coneFlipZ??0,
-  left:(d.leftHandCustomTarget||w.leftPropSpring?.pos)?.clone()||null};
+  left:d.leftHandCustomTarget?.clone()||null,leftSpring:(d.leftHandCustomTarget||w.leftPropSpring?.pos)?.clone()||null};
 }
 /** Entry clears/ownership changes must not move a serving in world space. */
 export function beginTrickEntry(d){
@@ -68,7 +68,7 @@ export class TrickPoseTransition {
    d.coneTargetPos.copy(t<.65?a.position:above).lerp(t<.65?above:b.position,v);
   }else d.coneTargetPos.copy(a.position).lerp(b.position,u);
   d.shaftRoll=MathUtils.lerp(a.roll,b.roll,u);d.conePitchX=MathUtils.lerp(a.pitch,b.pitch,u);d.coneFlipZ=MathUtils.lerp(a.flip,b.flip,u);
-  if(b.left)d.leftHandCustomTarget=(a.left||b.left).clone().lerp(b.left,u);
+  if(b.left)d.leftHandCustomTarget=(a.left||a.leftSpring||b.left).clone().lerp(b.left,u);
   else d.leftHandCustomTarget=null; // Existing support-hand recovery retains its physical path.
   d.presentationExact=true;d.presentationStrikeTip=null;d.presentationSurface=null;d.presentationBell=null;
   this.done=t>=1;

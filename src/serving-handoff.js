@@ -42,6 +42,6 @@ export class ServingHandoff {
   w.scene.updateMatrixWorld(true);const target=w.heldSocket.localToWorld(V(0,.05,0)),actual=w.conePivot.getWorldPosition(V());
   const offset=actual.clone().sub(d.coneWorldPos),u=MathUtils.smoothstep(this.age,0,.42);
   d.coneTargetPos.copy(this.from).lerp(target.clone().sub(offset),u);d.shaftRoll=d.conePitchX=d.coneFlipZ=0;
-  if(this.age>=.42&&actual.distanceTo(target)<.035){w.handoffCone('player');return true;}return false;
+  if(this.age>=.42&&(actual.distanceTo(target)<.035||this.age>=1.1)){w.handoffCone('player');return true;}return false;
  }
 }

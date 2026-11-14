@@ -123,6 +123,7 @@
       <h2 id="settings-title" class="result-title">Dil ve Ayarlar</h2>
       <div class="menu-options-row settings-shortcuts">
         <button type="button" id="btn-stages-panel" class="menu-option-button" aria-haspopup="dialog"><span class="menu-symbol" aria-hidden="true">◇</span><span data-ui-label="stages">Mekânlar</span><span aria-hidden="true">›</span></button>
+        <button type="button" id="btn-tricks-panel" class="menu-option-button" aria-haspopup="dialog"><span class="menu-symbol" aria-hidden="true">🎪</span><span data-ui-label="tricks">Ustanın numaraları</span><span aria-hidden="true">›</span></button>
         <button type="button" id="btn-discover" class="menu-option-button"><span class="menu-symbol" aria-hidden="true">⌕</span><span id="discovery-home-label">Etrafa bak</span></button>
       </div>
 
@@ -174,7 +175,7 @@
 
       <div class="settings-footer-links">
         <a href="./privacy-policy.html" target="_blank" rel="noopener" id="link-privacy" class="privacy-link">
-          🔒 Privacy Policy • v2.0.0
+          🔒 Privacy Policy • v2.1.0
         </a>
       </div>
       <div class="start-actions-row options-start-action"><button type="button" id="btn-start-game" class="play-giant-btn">▶ ŞOVA BAŞLA</button></div>
@@ -240,7 +241,7 @@
   <dialog id="dialog-stages" aria-labelledby="stages-panel-title">
     <div class="modal-card interface-panel">
       <div class="panel-heading"><h2 id="stages-panel-title" data-ui-label="stages">Mekânlar</h2><button type="button" class="panel-dismiss" data-dismiss="dialog-stages" aria-label="Kapat">×</button></div>
-          <div class="rank-pill" id="player-rank-badge">🏅 Acemi Turist • ⭐ 0/30</div>
+          <div class="rank-pill" id="player-rank-badge">🏅 Acemi Turist • ⭐ 0/90</div>
         <!-- 10-Stage Campaign Progression Grid -->
         <div class="venue-grid" id="stage-selector" role="group" aria-label="Mekânlar"></div>
         <div class="stage-story"><strong id="stage-story-title"></strong><p id="stage-story-entry"></p><div><small id="story-progress"></small><button type="button" id="btn-open-story" aria-haspopup="dialog">Defteri aç</button></div></div>
@@ -250,6 +251,35 @@
   </dialog>
 
   <dialog id="dialog-story" aria-labelledby="story-dialog-title"><div class="modal-card interface-panel"><div class="panel-heading"><h2 id="story-dialog-title">Kartpostalın hikâyesi</h2><button type="button" class="panel-dismiss" data-dismiss="dialog-story" aria-label="Kapat">×</button></div><div id="story-book"></div></div></dialog>
+
+  <dialog id="dialog-tricks" closedby="any" aria-labelledby="tricks-panel-title">
+    <div class="modal-card interface-panel tricks-modal-panel">
+      <div class="panel-heading">
+        <h2 id="tricks-panel-title" data-ui-label="tricks">Ustanın numaraları</h2>
+        <button type="button" class="panel-dismiss" data-dismiss="dialog-tricks" aria-label="Kapat">×</button>
+      </div>
+      <div class="tricks-progress-summary">
+        <div class="tricks-progress-head">
+          <span id="tricks-progress-text">Keşfedilen Hile: 2 / 111</span>
+          <button type="button" id="btn-tutorial-warmup" class="btn-practice-trick">🎓 Öğretici</button>
+        </div>
+        <div class="tricks-progress-bar" aria-hidden="true">
+          <div class="tricks-progress-fill" id="tricks-progress-fill"></div>
+        </div>
+      </div>
+      <div class="achievements-strip" id="achievements-strip" aria-label="Başarımlar"></div>
+      <div class="tricks-filter-tabs" id="tricks-category-tabs" role="tablist">
+        <button type="button" class="trick-tab-btn active" data-category="all" role="tab" aria-selected="true">Tümü</button>
+        <button type="button" class="trick-tab-btn" data-category="acrobatics" role="tab" aria-selected="false">Akrobasi</button>
+        <button type="button" class="trick-tab-btn" data-category="sleight" role="tab" aria-selected="false">El Çabukluğu</button>
+        <button type="button" class="trick-tab-btn" data-category="elastic" role="tab" aria-selected="false">Sünen &amp; Kalıp</button>
+        <button type="button" class="trick-tab-btn" data-category="rhythm" role="tab" aria-selected="false">Ritim &amp; Çan</button>
+        <button type="button" class="trick-tab-btn" data-category="shows" role="tab" aria-selected="false">60 Şov</button>
+      </div>
+      <div class="tricks-catalog-list" id="tricks-catalog-list" role="region" aria-live="polite"></div>
+      <button type="button" class="play-giant-btn" data-dismiss="dialog-tricks" data-ui-label="done">Tamam</button>
+    </div>
+  </dialog>
   <script type="module" src="/src/main.js"></script>
   <script type="module" src="/src/interface.js"></script>
 </body>

@@ -1,12 +1,26 @@
 import {Vector3} from 'three';
 import { ICE_CREAM_FLAVORS } from './protocol.js';
 
+function formatArScoops(n) {
+ if (n === 1) return 'كرة واحدة';
+ if (n === 2) return 'كرتان';
+ if (n >= 3 && n <= 10) return `${n} كرات`;
+ return `${n} كرة`;
+}
+function formatRuScoops(n) {
+ const mod100 = Math.abs(n) % 100, mod10 = Math.abs(n) % 10;
+ if (mod100 >= 11 && mod100 <= 14) return `${n} шариков`;
+ if (mod10 === 1) return `${n} шарик`;
+ if (mod10 >= 2 && mod10 <= 4) return `${n} шарика`;
+ return `${n} шариков`;
+}
+
 export const ORDER_COPY = {
  tr:{ask:'Hangisinden olsun?',confirm:n=>`Tamam, ${n} top.`,empty:'Bir sade hazırlayayım.'},
  en:{ask:'Which flavors?',confirm:n=>`All right, ${n} ${n===1?'scoop':'scoops'}.`,empty:'One scoop, then.'},
- ar:{ask:'أي نكهة تريد؟',confirm:n=>`حسنًا، ${n} كرات.`,empty:'كرة واحدة إذًا.'},
+ ar:{ask:'أي نكهة تريد؟',confirm:n=>`حسنًا، ${formatArScoops(n)}.`,empty:'كرة واحدة إذًا.'},
  de:{ask:'Welche Sorten?',confirm:n=>`Gut, ${n} ${n===1?'Kugel':'Kugeln'}.`,empty:'Dann eine Kugel.'},
- ru:{ask:'Какие вкусы?',confirm:n=>`Хорошо, ${n} шариков.`,empty:'Тогда один шарик.'},
+ ru:{ask:'Какие вкусы?',confirm:n=>`Хорошо, ${formatRuScoops(n)}.`,empty:'Тогда один шарик.'},
  ja:{ask:'どの味にする？',confirm:n=>`${n}個ですね。`,empty:'では、1個。'},
 };
 const shortTr=['sade','fıstıklı','kakaolu','Urmu dutlu'];
@@ -15,9 +29,9 @@ const shortEn=['Plain','Pistachio','Cocoa','Mulberry'];
 const ORDER_HINT={
  tr:{choose:'Bir top seç',hold:'Kovada bekle · bir top',finish:'Sabit tut · tamam',confirm:'Tamam',count:n=>`${n} top`},
  en:{choose:'Choose a scoop',hold:'Hold over a tub · one scoop',finish:'Hold still · done',confirm:'All set',count:n=>`${n} ${n===1?'scoop':'scoops'}`},
- ar:{choose:'اختر كرة',hold:'انتظر فوق النكهة',finish:'ثبّت يدك · تم',confirm:'تم',count:n=>`${n} كرات`},
+ ar:{choose:'اختر كرة',hold:'انتظر فوق النكهة',finish:'ثبّت يدك · تم',confirm:'تم',count:n=>formatArScoops(n)},
  de:{choose:'Eine Kugel wählen',hold:'Über der Sorte halten',finish:'Still halten · fertig',confirm:'Fertig',count:n=>`${n} ${n===1?'Kugel':'Kugeln'}`},
- ru:{choose:'Выбери шарик',hold:'Задержи руку над вкусом',finish:'Замри · готово',confirm:'Готово',count:n=>`${n} шариков`},
+ ru:{choose:'Выбери шарик',hold:'Задержи руку над вкусом',finish:'Замри · готово',confirm:'Готово',count:n=>formatRuScoops(n)},
  ja:{choose:'味を選ぶ',hold:'容器の上で待つと1個',finish:'手を止めて決定',confirm:'決まり',count:n=>`${n}個`},
 };
 

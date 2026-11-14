@@ -15,25 +15,51 @@ export class PoleContact {
     this.bareGoal=new Quaternion();
     this.active = false; this.scoop = null;
     this.bareSeconds=0;
+    this.attachSeconds=0;
+    this.wasBare=false;
   }
 
   beginPoseFrame(world,dt){
     this.frameScoop=this.active?this.scoop:null;
-    world.paddleRollGroup.getWorldQuaternion(this.frameRotation ||= new Quaternion());
+    if(this.lastWorldQuat)(this.frameRotation ||= new Quaternion()).copy(this.lastWorldQuat);
+    else world.paddleRollGroup.getWorldQuaternion(this.frameRotation ||= new Quaternion());
+    if(this.lastWorldPos)(this.framePosition ||= new Vector3()).copy(this.lastWorldPos);
+    else world.paddleRollGroup.getWorldPosition(this.framePosition ||= new Vector3());
     this.turnBudget=world.vendorPoleForwardHint?Infinity:Math.max(0,dt)*5;
+    this.attachTurnBudget=world.vendorPoleForwardHint?Infinity:Math.max(0,dt)*6.5;
+    this.moveBudget=world.vendorPoleForwardHint?Infinity:Math.max(0,dt)*2.8;
     this.bareSeconds=Math.max(0,this.bareSeconds-Math.max(0,dt));
+    this.attachSeconds=Math.max(0,this.attachSeconds-Math.max(0,dt));
   }
 
   bare(world,shaftRoll){
     const root=world.paddleGroup,shaft=world.paddleRollGroup;
-    if(this.wasAttached)this.bareSeconds=.35;
+    this.wasBare=true;
+    this.attachSeconds=0;
+    if(this.wasAttached){
+      this.bareSeconds=.85;
+      this.barePosActive=Boolean(world.trickActive&&this.frameScoop&&this.frameScoop!==world.carryScoop);
+    }
     if(this.bareSeconds>0&&this.frameRotation&&Number.isFinite(this.turnBudget)){
+      root.updateWorldMatrix(true,false);
       root.getWorldQuaternion(this.parentRotation);
       this.bareGoal.setFromAxisAngle(Z,shaftRoll).premultiply(this.parentRotation);
       this.rotation.copy(this.frameRotation).rotateTowards(this.bareGoal,this.turnBudget);
       shaft.quaternion.copy(this.parentRotation.invert()).multiply(this.rotation);
+      if(this.barePosActive&&this.framePosition&&Number.isFinite(this.moveBudget)){
+        root.getWorldPosition(this.local);
+        const delta=this.offset.copy(this.local).sub(this.framePosition),len=delta.length();
+        if(len>this.moveBudget){
+          this.local.copy(this.framePosition).addScaledVector(delta,this.moveBudget/len);
+          shaft.position.copy(root.worldToLocal(this.local));
+        }else this.barePosActive=false;
+      }
+      if(this.rotation.angleTo(this.bareGoal)<1e-3&&!this.barePosActive)this.bareSeconds=0;
     }
-    shaft.updateWorldMatrix(true,true);return false;
+    shaft.updateWorldMatrix(true,true);
+    shaft.getWorldQuaternion(this.lastWorldQuat ||= new Quaternion());
+    shaft.getWorldPosition(this.lastWorldPos ||= new Vector3());
+    return false;
   }
 
   highestVisible(world) {
@@ -89,13 +115,35 @@ export class PoleContact {
     }
     if (!this.scoop?.geometry?.parameters?.radius) return this.bare(world,shaftRoll);
     this.poseForScoop(world,this.scoop);
+    if(world.trickActive&&this.attachTurnBudget>0){
+      if(!this.wasAttached&&this.wasBare){
+        this.attachSeconds=.85;
+        this.attachPosActive=Boolean(this.scoop&&this.scoop!==world.carryScoop);
+      }
+      if(this.attachSeconds>0&&this.frameRotation&&Number.isFinite(this.attachTurnBudget)){
+        this.bareGoal.copy(this.rotation);
+        this.rotation.copy(this.frameRotation).rotateTowards(this.bareGoal,this.attachTurnBudget);
+      }
+    }else{
+      this.attachSeconds=0;
+      this.attachPosActive=false;
+    }
+    this.wasBare=false;
     root.updateWorldMatrix(true, false);
     root.getWorldQuaternion(this.parentRotation).invert();
     shaft.quaternion.copy(this.parentRotation).multiply(this.rotation);
     this.offset.set(BLADE_CONTACT.x, BLADE_CONTACT.y, BLADE_CONTACT.z).applyQuaternion(this.rotation);
     this.local.copy(this.point).sub(this.offset);
+    if(this.attachSeconds>0&&this.attachPosActive&&this.framePosition&&Number.isFinite(this.moveBudget)){
+      const delta=this.offset.copy(this.local).sub(this.framePosition),len=delta.length();
+      if(len>this.moveBudget)this.local.copy(this.framePosition).addScaledVector(delta,this.moveBudget/len);
+      else this.attachPosActive=false;
+    }
+    if(this.attachSeconds>0&&this.rotation.angleTo(this.bareGoal)<1e-3&&!this.attachPosActive)this.attachSeconds=0;
     shaft.position.copy(root.worldToLocal(this.local));
     shaft.updateWorldMatrix(true, true);
+    shaft.getWorldQuaternion(this.lastWorldQuat ||= new Quaternion());
+    shaft.getWorldPosition(this.lastWorldPos ||= new Vector3());
     this.active = true;
     return true;
   }
@@ -115,6 +163,12 @@ export class PoleContact {
     // A blade sits tangent to the crown, so its shaft cannot run through the
     // scoops or the wafer when the same cone turns upside down.
     this.forward.copy(this.point).sub(this.chest);
+    const spinRoll = world.customerScoopSpin ? Math.abs(Math.sin((world._displayedPaddleRoll || 0) * 0.5)) : 0;
+    if (spinRoll > 0) {
+      this.forward.x *= 1 - spinRoll * 0.72;
+      this.forward.y *= 1 - spinRoll * 0.72;
+      this.forward.z += spinRoll * 0.65;
+    }
     this.forward.addScaledVector(this.normal, -this.forward.dot(this.normal));
     if (this.forward.lengthSq() < 1e-6) {
       this.forward.set(0, 0, 1).addScaledVector(this.normal, -this.normal.z);

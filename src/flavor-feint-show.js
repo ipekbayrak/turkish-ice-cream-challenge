@@ -5,6 +5,61 @@ const V=(x=0,y=0,z=0)=>new Vector3(x,y,z),Y=V(0,1,0);
 const ease=t=>{const p=MathUtils.clamp(t,0,1);return p*p*(3-2*p);};
 const HOLD=V(.25,1.20,-.235),REST=V(-.25,1.28,-.12);
 
+function flavorLabel(index,lang='en'){
+ const item=ICE_CREAM_FLAVORS[index];
+ return item?.names?.[lang]||item?.names?.en||'';
+}
+
+export function announceFlavorPrank(d,mode='prep'){
+ const plan=d?.flavorFeint;
+ if(!plan||plan.status!=='active'||plan.rejected)return;
+ const lang=d.save?.lang||'en';
+ const req=flavorLabel(plan.requested,lang),off=flavorLabel(plan.offered,lang);
+ if(mode==='prep'){
+  if(plan.prepAnnounced)return;
+  plan.prepAnnounced=true;
+  const prepCopy={
+   tr:`${req} istedin ama şakasına ${off} koydum! 😜`,
+   en:`Ordered ${req}? Just kidding—I put ${off}! 😜`,
+   ar:`طلبت ${req}؟ أمزح معك، وضعت ${off}! 😜`,
+   ru:`Просил ${req}? Шучу — положил ${off}! 😜`,
+   de:`${req} bestellt? Nur Spaß — ich hab ${off} draufgelegt! 😜`,
+   ja:`${req}をご注文？冗談で${off}を乗せたよ！😜`,
+  };
+  d.sayLine?.(prepCopy[lang]||prepCopy.en,'taunt',2.8);
+ }else if(mode==='offer'){
+  if(plan.offerAnnounced)return;
+  plan.offerAnnounced=true;
+  const offerCopy={
+   tr:`Şaka şaka, bu ${off}! İstemiyorsan sağa–sola salla! 😜`,
+   en:`Maraş prank! That's ${off}, not ${req}! Wave NO! 😜`,
+   ar:`مقلب مرعش! هذه ${off} وليست ${req}! لوّح بالرفض! 😜`,
+   ru:`Шутка мастера! Это ${off}, а не ${req}! Помаши «НЕТ»! 😜`,
+   de:`Maraş-Streich! Das ist ${off} statt ${req}! Winke NEIN! 😜`,
+   ja:`イタズラだよ！${req}じゃなくて${off}！左右に振って拒否しよう！😜`,
+  };
+  d.sayLine?.(offerCopy[lang]||offerCopy.en,'taunt',3.0);
+ }
+}
+
+export function flavorPrankTitle(d){
+ const plan=d?.flavorFeint;
+ if(!plan)return '';
+ const visiblePrep=plan.status==='active'&&d.routineIndex===plan.prepareAt&&Boolean(d.world?.scoopMeshes?.[plan.index]?.visible);
+ if(d.currentMechanic!==FLAVOR_FEINT_ID&&!visiblePrep)return '';
+ const lang=d.save?.lang||'en';
+ const req=flavorLabel(plan.requested,lang),off=flavorLabel(plan.offered,lang);
+ const titles={
+  tr:`😜 Şaka: ${req} yerine ${off}!`,
+  en:`😜 Prank: ${off} instead of ${req}!`,
+  ar:`😜 مقلب: ${off} بدلاً من ${req}!`,
+  ru:`😜 Шутка: ${off} вместо ${req}!`,
+  de:`😜 Streich: ${off} statt ${req}!`,
+  ja:`😜 イタズラ：${req}の代わりに${off}！`,
+ };
+ return titles[lang]||titles.en;
+}
+
 export function activateFlavorFeint(d,index){
  const plan=d.flavorFeint;
  if(!plan||plan.status!=='planned'||index!==plan.prepareAt)return;
@@ -36,6 +91,7 @@ export function enterFlavorFeint(d){
  const scale=mesh.getWorldScale(V()),radius=mesh.geometry.parameters.radius*scale.y;
  d.flavorFeintShow={phase:plan.rejected?0:-1,age:0,offerAge:0,rejectionPause:0,from:d.coneWorldPos.clone(),point:V(),radius,carryScale:scale.multiplyScalar(mesh.geometry.parameters.radius/w.carryScoop.geometry.parameters.radius),receive:null,blade:w.getPaddleStrikePoint(V())};
  w.carryScoop.visible=false;d.heldItem=null;
+ if(!plan.rejected)announceFlavorPrank(d,'offer');
  return true;
 }
 
@@ -43,7 +99,7 @@ export function enterFlavorFeint(d){
  * Lower scoops keep their layout throughout; no saved order or score is changed. */
 export function updateFlavorFeint(d,dt,input){
  const s=d.flavorFeintShow;if(!s)return false;
- const w=d.world,plan=d.flavorFeint;
+ const w=d.world,plan=d.flavorFeint,lang=d.save?.lang||'en';
  s.age+=Math.max(0,dt)*(d.config?.speedMult||1)*1.22;
  d.idleSeconds=0;d.isAfkShowActive=false;d.shaftRoll=d.coneFlipZ=d.conePitchX=0;
  d.gestureValidation.update(input,dt,`flavor-feint:${d.routineIndex}`);
@@ -52,7 +108,18 @@ export function updateFlavorFeint(d,dt,input){
  if(s.phase===-1){
   s.offerAge+=Math.max(0,dt);d.coneTargetPos.copy(s.from);d.conePitchX=-.06*ease(s.offerAge/.3);d.presentationExact=true;
   if(plan.rejected){s.rejectionPause+=dt;if(s.rejectionPause>=.35)phase(d,0);}
-  else if(s.offerAge>=4){d.sayLine?.(d.save.lang==='tr'?'Şakaydı! Seninki geliyor.':'Just teasing! Yours is coming.','taunt',1.5);phase(d,0);}
+  else if(s.offerAge>=2.8){
+   const req=flavorLabel(plan.requested,lang);
+   const tease={
+    tr:`Şakaydı! Gerçek ${req} geliyor! 😄`,
+    en:`Just teasing! Your real ${req} is coming! 😄`,
+    ar:`كنت أمزح! ${req} الحقيقية قادمة! 😄`,
+    ru:`Это была шутка! Сейчас будет твоё ${req}! 😄`,
+    de:`War nur Spaß! Dein echtes ${req} kommt! 😄`,
+    ja:`冗談だよ！本物の${req}をどうぞ！😄`,
+   };
+   d.sayLine?.(tease[lang]||tease.en,'taunt',1.8);phase(d,0);
+  }
  }else if(s.phase===0){
   const beat=Math.min(1,Math.floor(t/.8)),u=Math.min(1,(t-beat*.8)/.8),pulse=Math.sin(u*Math.PI);
   if(s.feintBeat!==beat){s.feintBeat=beat;d.sound.syncMusicBeat?.();d.sound.playWhoosh?.(.65,(beat?1:-1)*.14);}
@@ -63,13 +130,13 @@ export function updateFlavorFeint(d,dt,input){
   const receive=s.receive;receive.age+=dt;w.vendorConeReceiveProgress=Math.min(1,receive.age/.25);
   d.leftHandCustomTarget=HOLD.clone();d.coneTargetPos.copy(receive.from).lerp(V(.25,1.31,-.20),ease(receive.age/.44));d.presentationExact=true;
   w.scene.updateMatrixWorld(true);const grip=w.lArmRig.handGroup.localToWorld(V(0,.11,.035)),cone=worldPoint(w,w.conePivot);
-  if(receive.age>=.44&&grip.distanceTo(cone)<.04){w.setConeInVendorHand(true);w.vendorConeReceiveProgress=null;w.vendorConeReceiveFrom=null;w.vendorPoleFree=true;phase(d,2);}
+  if(receive.age>=.44&&(grip.distanceTo(cone)<.04||receive.age>=1.1)){w.setConeInVendorHand(true);w.vendorConeReceiveProgress=null;w.vendorConeReceiveFrom=null;w.vendorPoleFree=true;phase(d,2);}
  }else if(s.phase===2){
   const mesh=w.scoopMeshes[plan.index],scale=mesh.getWorldScale(V());
   s.radius=mesh.geometry.parameters.radius*scale.y;s.carryScale.copy(scale).multiplyScalar(mesh.geometry.parameters.radius/w.carryScoop.geometry.parameters.radius);
   const center=sourceCenter(d),contact=center.clone().addScaledVector(Y,s.radius);
   bareAt(d,p.copy(s.blade).lerp(contact,ease(t/.45)));
-  if(t>=.45&&w.getPaddleStrikePoint(V()).distanceTo(contact)<.035){
+  if(t>=.45&&(w.getPaddleStrikePoint(V()).distanceTo(contact)<.035||t>=1.1)){
    w.scoopMeshes[plan.index].visible=false;w.carryScoop.material.color.setHex(ICE_CREAM_FLAVORS[plan.offered].colorHex);w.carryScoop.scale.copy(s.carryScale);carryAt(d,center);
    phase(d,3);s.from.copy(center);
   }
@@ -79,7 +146,16 @@ export function updateFlavorFeint(d,dt,input){
   if(t>.6)w.churnTubIceCream?.(plan.offered,dt*.7);
   if(t>=.8){
    w.carryScoop.visible=false;w.vendorPoleFree=true;plan.status='restoring';w.applySelectedFlavorColors(d.selectedFlavors);phase(d,4);
-   d.sayLine?.(d.save.lang==='tr'?'Tamam, istediğin geliyor.':'Here comes the one you ordered.','hmm',1.5);
+   const req=flavorLabel(plan.requested,lang);
+   const restoreCopy={
+    tr:`Tamam tamam, istediğin ${req} geliyor!`,
+    en:`All right, here comes the ${req} you ordered!`,
+    ar:`حسناً، ها هي ${req} التي طلبتها!`,
+    ru:`Ладно-ладно, вот твоё ${req}!`,
+    de:`Schon gut, hier kommt dein bestelltes ${req}!`,
+    ja:`よしよし、注文の${req}を乗せるよ！`,
+   };
+   d.sayLine?.(restoreCopy[lang]||restoreCopy.en,'hmm',1.8);
   }
  }else if(s.phase===4){
   const tub=w.tubPositions[plan.requested].worldPos,inside=tub.clone().add(V(0,-.025,0));
@@ -98,7 +174,7 @@ export function updateFlavorFeint(d,dt,input){
   }
  }else if(s.phase===7){
   const contact=highestCrown(w);bareAt(d,p.copy(s.blade).lerp(contact,ease(t/.5)));
-  if(t>=.5&&w.getPaddleStrikePoint(V()).distanceTo(contact)<.035){w.handoffCone('paddle');w.vendorPoleFree=false;d.heldItem=null;phase(d,8);}
+  if(t>=.5&&(w.getPaddleStrikePoint(V()).distanceTo(contact)<.035||t>=1.1)){w.handoffCone('paddle');w.vendorPoleFree=false;d.heldItem=null;phase(d,8);}
  }else{
   d.coneTargetPos.copy(s.from).lerp(REST,ease(t/.6));d.presentationExact=true;w.vendorPoleFree=false;
   if(t>=.6){plan.status='done';d.flavorFeintShow=null;d.carryScoopOffsetY=null;d._enterRoutineStep(d.routineIndex+1);}
@@ -108,6 +184,25 @@ export function updateFlavorFeint(d,dt,input){
 
 export function flavorFeintCue(d){
  const s=d.flavorFeintShow;if(!s)return null;
- if(s.phase===-1&&!d.flavorFeint?.rejected)return{kind:'reject',quiet:false,progress:d.flavorFeint?.refusalGesture?.progress||0,text:d.save.lang==='tr'?'SAĞA–SOLA SALLA':'WAVE LEFT–RIGHT'};
- return{quiet:true,progress:Math.max(0,Math.min(1,(s.phase+Math.min(1,s.age))/9)),text:d.save.lang==='tr'?'USTAYI İZLE':'WATCH THE VENDOR'};
+ const lang=d.save?.lang||'en';
+ if(s.phase===-1&&!d.flavorFeint?.rejected){
+  const rejectCue={
+   tr:'YANLIŞ LEZZET ŞAKASI! SAĞA–SOLA SALLA',
+   en:'WRONG FLAVOR PRANK! WAVE LEFT–RIGHT',
+   ar:'مقلب النكهة! لوّح يميناً ويساراً',
+   ru:'ШУТКА СО ВКУСОМ! ПОМАШИ ВЛЕВО–ВПРАВО',
+   de:'SORTEN-STREICH! LINKS–RECHTS WINKEN',
+   ja:'味のイタズラ！左右に振って拒否',
+  };
+  return{kind:'reject',quiet:false,progress:d.flavorFeint?.refusalGesture?.progress||0,text:rejectCue[lang]||rejectCue.en};
+ }
+ const swapCue={
+  tr:'ŞAKAYDI! SENİNKİYLE DEĞİŞTİRİYOR...',
+  en:'JUST KIDDING! SWAPPING TO YOURS...',
+  ar:'مجرد مزحة! يستبدلها بنكهتك...',
+  ru:'ЭТО ШУТКА! МЕНЯЕТ НА ТВОЁ...',
+  de:'NUR SPASS! TAUSCHT GEGEN DEINS...',
+  ja:'冗談だよ！注文の味と交換中...',
+ };
+ return{quiet:true,progress:Math.max(0,Math.min(1,(s.phase+Math.min(1,s.age))/9)),text:swapCue[lang]||swapCue.en};
 }

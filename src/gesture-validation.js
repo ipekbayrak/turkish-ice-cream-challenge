@@ -24,10 +24,14 @@ export class GestureValidation {
   update(state, dt, scope) {
     this.time += Math.max(0, Math.min(dt, 0.1));
     this.previous = this.current;
+    const normX = Number.isFinite(state.normX) ? state.normX : 0;
+    const normY = Number.isFinite(state.normY) ? state.normY : 0;
     this.current = {
       time: this.time,
-      x: Number.isFinite(state.normX) ? state.normX : 0,
-      y: Number.isFinite(state.normY) ? state.normY : 0,
+      x: normX,
+      y: normY,
+      rawX: Number.isFinite(state.rawNormX) ? state.rawNormX : normX,
+      rawY: Number.isFinite(state.rawNormY) ? state.rawNormY : normY,
       world: point(state.intentWorldPos),
       down: isControlActive(state),
       epoch: state.pointerEpoch || 0,
@@ -92,9 +96,13 @@ export class GestureValidation {
       if (elapsed < 0.035 || elapsed > 0.8) continue;
       const dx = s.x - start.x;
       const dy = s.y - start.y;
+      const rawDx = s.rawX - start.rawX;
+      const rawDy = s.rawY - start.rawY;
       const deliberate = direction === 'horizontal'
-        ? Math.abs(dx) >= 0.20 && Math.abs(dx) > Math.abs(dy) * 1.4
-        : -dy >= 0.18 && -dy > Math.abs(dx) * 1.15;
+        ? (Math.abs(dx) >= 0.20 && Math.abs(dx) > Math.abs(dy) * 1.4) ||
+          (Math.abs(rawDx) >= 0.20 && Math.abs(rawDx) > Math.abs(rawDy) * 1.4)
+        : (-dy >= 0.18 && -dy > Math.abs(dx) * 1.15) ||
+          (-rawDy >= 0.18 && -rawDy > Math.abs(rawDx) * 1.15);
       if (deliberate) { w.done = true; return true; }
     }
     return false;

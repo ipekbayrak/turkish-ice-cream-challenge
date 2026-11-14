@@ -252,14 +252,18 @@ export class StallEffects {
   updateNapkinSurface() {
     const vertices = this.napkinGeometry.attributes.position, uv = this.napkinGeometry.attributes.uv;
     const p = this.napkinPeel;
+    const cone=this.napkinOwner==='outer'?this.w.outerConeMesh:this.w.mainConeMesh;
+    const geometry=cone?.geometry?.parameters;
+    const height=geometry?.height*Math.abs(cone?.scale?.y??1);
+    const coneRadius=geometry?.radius*Math.max(Math.abs(cone?.scale?.x??1),Math.abs(cone?.scale?.z??1));
+    const tip=(cone?.position?.y??-.06)-height*.5;
+    const surfaceKey = p < 1e-7 ? `${this.napkinOwner}:${this.napkinRest.y}:${height}:${coneRadius}:${tip}` : null;
+    if (surfaceKey && this._lastNapkinSurfaceKey === surfaceKey) return;
+    this._lastNapkinSurfaceKey = surfaceKey;
     for (let i = 0; i < vertices.count; i++) {
       const u = uv.getX(i), v = uv.getY(i), theta = (u * 2 - 1) * Math.PI * .82;
       const wrapY = (v - .5) * .12;
-      const cone=this.napkinOwner==='outer'?this.w.outerConeMesh:this.w.mainConeMesh;
-      const geometry=cone?.geometry?.parameters;
-      const height=geometry?.height*Math.abs(cone?.scale?.y??1);
-      const coneRadius=geometry?.radius*Math.max(Math.abs(cone?.scale?.x??1),Math.abs(cone?.scale?.z??1));
-      const y=this.napkinRest.y+wrapY,tip=(cone?.position?.y??-.06)-height*.5;
+      const y=this.napkinRest.y+wrapY;
       // The old fixed sleeve was narrower than the outer wafer and disappeared
       // inside it. Follow the actual taper with a small physical clearance.
       const radius=height>0?Math.max(.004,coneRadius*(y-tip)/height+.003):.012+.038*v;

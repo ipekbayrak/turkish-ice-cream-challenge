@@ -3,7 +3,7 @@ import {Vector3,MathUtils} from 'three';
 const V=(x=0,y=0,z=0)=>new Vector3(x,y,z);
 const REST=V(.22,1.20,-.235);
 const WRAP_WORK_POSITION=V(.18,1.31,-.16);
-const worldPoint=(w,o,p=V())=>{w.scene.updateMatrixWorld(true);return o.localToWorld(p);};
+const worldPoint=(w,o,p=V())=>{o.updateWorldMatrix(true,false);return o.localToWorld(p);};
 
 /** The existing sheet is picked up at real hand contact, carried to the cone,
  * and folded around its base. No tossed replacement and no timed teleport. */
@@ -58,7 +58,7 @@ export class NapkinReturn {
    this.waiting=target.x<-.62||target.x>.62||target.y<.98||target.y>1.67||target.z>.48;
    const distance=this.aim(d,target,dt);
    // The sheet stays in the customer's fingers throughout the approach.
-   if(this.age>=.06&&distance<.035){
+   if(this.age>=.06&&(distance<.035||(!this.waiting&&this.age>=1.1))){
     w.setServingNapkin({owner:'vendor-hand',peel:1});d.heldItem=null;
     d.sound.playPaperRustle?.();this.next(this.retrieveOnly?'retreat':'carry');
    }
@@ -68,14 +68,14 @@ export class NapkinReturn {
    if(oneHand)d.leftHandCustomTarget=this.hand.clone();else this.aim(d,collar,dt);
    // In one hand the sheet's edge already overlaps the wafer; fold its nearby
    // pinched edge around the base without chasing that same hand indefinitely.
-   if(this.age>=.08&&worldPoint(w,paper).distanceTo(collar)<(oneHand?.055:.035)){
+   if(this.age>=.08&&(worldPoint(w,paper).distanceTo(collar)<(oneHand?.055:.035)||this.age>=1.1)){
     w.setServingNapkin({owner:this.wrapOwner,peel:0});this.next('wrap');
     d.sound.playPaperRustle?.();
    }
   }else if(this.phase==='wrap'){
    this.aim(d,worldPoint(w,this.wrapObject,V(0,this.collarOffset,0)),dt);
    if(w.stallEffects)w.stallEffects.napkinPeel*=Math.exp(-dt*32);
-   if(this.age>=.08&&(w.stallEffects?.napkinPeel??0)<.04){
+   if(this.age>=.08&&((w.stallEffects?.napkinPeel??0)<.04||this.age>=1.1)){
     if(w.stallEffects)w.stallEffects.napkinRecovered=true;
     this.next(this.retreat?'retreat':'done');
    }

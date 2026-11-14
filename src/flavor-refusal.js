@@ -16,7 +16,16 @@ export function updateFlavorRefusal(d,dt,input){
   const show=d.flavorFeintShow;show.phase=-1;show.age=0;show.offerAge=0;show.rejectionPause=0;show.from=d.coneWorldPos.clone();show.feintBeat=undefined;
  }
  w.playVendorReaction('refusal');d.sound.syncMusicBeat?.();
- const lines=d.save.lang==='tr'?['Hah! Dikkatlisin sen!','Tamam tamam, seni deniyordum!','Peki peki! Önce bir numara daha…']:['Ha! You caught me!','All right, I was testing you!','Okay, okay! One more trick first…'];
+ const lang=d.save?.lang||'en';
+ const linesByLang={
+  tr:['Hah! Şakayı yakaladın!','Tamam tamam, seni deniyordum!','Gözünden kaçmadı! Hemen değiştiriyorum!'],
+  en:['Ha! You caught my prank!','All right, I was testing you!','Sharp eyes! Swapping it right back!'],
+  ar:['ها! كشفت مقلبي!','حسناً حسناً، كنت أختبرك!','عينك صقر! سأبدلها فوراً!'],
+  ru:['Ха! Раскусил мою шутку!','Ладно-ладно, я проверял тебя!','Не проведёшь! Уже меняю!'],
+  de:['Ha! Streich durchschaut!','Schon gut, ich wollte dich testen!','Adlerauge! Ich tausche es sofort!'],
+  ja:['ハハッ、イタズラを見抜いたね！','わかったわかった、試しただけさ！','さすが！すぐ注文の味に変えるよ！'],
+ };
+ const lines=linesByLang[lang]||linesByLang.en;
  d.sayLine?.(lines[(plan.offered+(d.levelIndex||0))%lines.length],'laugh',1.8);
  return true;
 }

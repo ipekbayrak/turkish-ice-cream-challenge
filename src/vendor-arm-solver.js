@@ -188,9 +188,9 @@ export class VendorArmSolver {
       const low=this.presentation?Math.max(0,(mode==='back'?.96:1.08)-this.candidate.y):0;
       const raised=this.presentation?Math.max(0,this.candidate.y-Math.max(origin.y,wrist.y)-.035):0;
       const drop=this.presentation?this.candidate.y-(Math.min(origin.y,wrist.y)-.15):0;
-      const wide=this.presentation?Math.max(0,this.local.copy(this.candidate).sub(origin).dot(sideAxis)-.22):0;
+      const wide=this.presentation?Math.max(0,this.local.copy(this.candidate).sub(origin).dot(sideAxis)-.12):0;
       const behind=this.presentation?Math.max(0,.12-this.local.copy(this.candidate).sub(origin).dot(frontAxis)):0;
-      const score=(pen>1e-8?1000+pen*10000:0)+counterApproach*counterApproach*80+continuity*(this.presentation?1.8:.7)+preference+wristPreference+elbowPreference+outside*outside*1.8+low*low*12+raised*raised*40+drop*drop*2+wide*wide*3+behind*behind*.8;
+      const score=(pen>1e-8?1000+pen*10000:0)+counterApproach*counterApproach*80+continuity*(this.presentation?1.8:.7)+preference+wristPreference+elbowPreference+outside*outside*1.8+low*low*12+raised*raised*40+drop*drop*2+wide*wide*18+behind*behind*.8;
       if(score<bestScore){bestScore=score;bestPen=pen;bestAngle=angle;elbow.copy(this.candidate);}
       if(fast&&pen<1e-8)break;
     }

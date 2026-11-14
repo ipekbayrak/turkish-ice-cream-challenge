@@ -108,7 +108,7 @@ export class VendorFlourish {
 export function setFlourishPose(d,pose) {
   const w=d.world;
   d.coneTargetPos.copy(pose.tip);d.presentationExact=true;
-  d.leftHandCustomTarget=V(.25,1.20,-.23);
+  d.leftHandCustomTarget=V(.18,1.20,-.23);
   d.shaftRoll=d.conePitchX=d.coneFlipZ=0;
   w.vendorArmMode=pose.armMode;w.vendorBodyYawHint=pose.bodyYaw;
   w.vendorPoleForwardHint=pose.forward;w.vendorRearGripHint=pose.rearGrip??.67;
@@ -122,6 +122,11 @@ export function canRejoinVendorCone(w){
 function foodContactPose(w){
   w.scene.updateMatrixWorld(true);
   const top=w.paddleContact.highestVisible(w);
+  if(!top){
+    const crown=w.conePivot.getWorldPosition(V()).add(V(0,.06,0));
+    const forward=crown.clone().sub(V(-.06,1.22,-.64)).normalize();
+    return{tip:crown,forward,crown};
+  }
   const contact=w.paddleContact.poseForScoop(w,top),crown=contact.point.clone();
   const bladeOffset=V(BLADE_CONTACT.x,BLADE_CONTACT.y,BLADE_CONTACT.z).applyQuaternion(contact.rotation);
   return{tip:crown.clone().sub(bladeOffset),forward:contact.forward.clone(),crown};
@@ -145,6 +150,7 @@ export class VendorPoleRejoin {
   }
   get inContact(){
     if(this.age<.40)return false;
+    if(this.age>=1.1)return true;
     return this.world.paddleContact.bladePoint(this.world).distanceTo(foodContactPose(this.world).crown)<.025;
   }
 }

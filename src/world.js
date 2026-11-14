@@ -100,7 +100,7 @@ export class GameWorld {
     // Smooth, natural-weight 3D Physics Solvers
     this.handSpring = new SpringVec3(0.22, 1.08, 0.62, 135, 18);
     this.coneSpring = new SpringVec3(0, 1.24, 0.22, 72, 15);
-    this.scoopJiggleSpring = new SpringVec3(0, 0, 0, 220, 14);
+    this.scoopJiggleSpring = new SpringVec3(0, 0, 0, 140, 26);
     this.leftPropSpring = new SpringVec3(0.24, 1.22, -0.25, 88, 16);
     this.prevConePos = new THREE.Vector3(0, 1.24, 0.22);
 
@@ -133,6 +133,7 @@ export class GameWorld {
       setTimeout(() => this.onResize(), 80);
     });
     window.visualViewport?.addEventListener('resize', () => this.onResize());
+    this.attachContextLifecycle();
     this.onResize();
   }
 
@@ -1171,6 +1172,23 @@ export class GameWorld {
     this.giantBlockGroup.add(moldTop);
 
 
+    // Sculpted Maraş churned crown swirls on top so docked tubs retain rich peaks
+    for (let s = 0; s < 3; s++) {
+      const angle = (s / 3) * Math.PI * 2 + 0.35;
+      const crownSwirl = new THREE.Mesh(
+        new THREE.TorusGeometry(0.042 - s * 0.007, 0.014, 10, 18, Math.PI * 1.35),
+        this.giantBlockMat
+      );
+      crownSwirl.rotation.x = Math.PI / 2 + 0.16;
+      crownSwirl.rotation.z = angle;
+      crownSwirl.position.set(
+        Math.cos(angle) * 0.02,
+        this.giantBlockHeight * 0.5 + 0.008 + s * 0.004,
+        Math.sin(angle) * 0.02
+      );
+      this.giantBlockGroup.add(crownSwirl);
+    }
+
     // Organic sculpted ridges & stretchy lobes on the 5-kilo ice cream mass
     [-0.09, 0, 0.09].forEach((bx, idx) => {
       const lobe = new THREE.Mesh(
@@ -1325,11 +1343,21 @@ export class GameWorld {
     this.orientPaddleAndHands(0, hand, dt, 0, 0);
     const requestedCount = THREE.MathUtils.clamp(Number(order.count) || (phase === 'count' && order.hover > 0 ? order.hover : order.choices?.at(-1)) || 2, 1, MAX_SCOOPS);
     const countPart = requestedCount > 4 && Math.floor((time - (this._orderCountStarted || 0)) / .8) % 2 === 1 ? requestedCount - 4 : Math.min(4, requestedCount);
-    this._setVendorOpenHand(this.lArmRig, phase === 'count' ? countPart : phase === 'flavor' ? 1 : 4);
+    this._setVendorOpenHand(this.lArmRig, phase === 'count' ? countPart : phase === 'flavor' ? 1 : 4, true);
+    const desiredHandQuat = (this._orderHandGoalQuat ||= new THREE.Quaternion());
     if (phase === 'flavor') {
       const direction = tub.worldPos.clone().sub(this.lArmRig.handGroup.position).normalize();
-      this.lArmRig.handGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
-    } else this.lArmRig.handGroup.rotation.set(-.18, -.15, -.12);
+      desiredHandQuat.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+    } else {
+      desiredHandQuat.setFromEuler((this._orderHandEuler ||= new THREE.Euler(-.18, -.15, -.12)));
+    }
+    if (!this._orderHandQuat) {
+      this._orderHandQuat = desiredHandQuat.clone();
+    } else {
+      this._orderHandQuat.rotateTowards(desiredHandQuat, Math.max(0.01, dt) * 14);
+    }
+    this.lArmRig.handGroup.quaternion.copy(this._orderHandQuat);
+    this._fitArmToHand(this.lArmRig);
   }
 
   /** Change only the existing cone's owner; preserve its world pose at handoff. */
@@ -1773,11 +1801,11 @@ export class GameWorld {
     this.fezGroup.add(this.grandmasterSash);
 
     this.fezTassel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.008, 0.024, 0.15, 10),
+      new THREE.CylinderGeometry(0.008, 0.024, 0.15, 10).translate(0, -0.075, 0),
       new THREE.MeshStandardMaterial({ color: 0x111111 })
     );
-    this.fezTassel.position.set(0.13, 0.19, 0.02);
-    this.fezTassel.rotation.z = -0.35;
+    this.fezTassel.position.set(0.108, 0.255, 0.015);
+    this.fezTassel.rotation.z = 0.28;
     this.fezGroup.add(this.fezTassel);
 
     // Apprentice Cap (for Çırak Kadir)
@@ -1930,12 +1958,13 @@ export class GameWorld {
       root.rotation.y = cfg.x < 0 ? 0.45 : -0.45;
       this.scene.add(root);
 
+      const shirtMat = new THREE.MeshStandardMaterial({
+        color: cfg.shirtColor,
+        roughness: 0.65,
+      });
       const torso = new THREE.Mesh(
         new THREE.CylinderGeometry(0.17, 0.15, 0.52, 14),
-        new THREE.MeshStandardMaterial({
-          color: cfg.shirtColor,
-          roughness: 0.65,
-        })
+        shirtMat
       );
       torso.position.y = 0.96;
       torso.castShadow = true;
@@ -1945,6 +1974,51 @@ export class GameWorld {
         color: cfg.skinColor,
         roughness: 0.5,
       });
+      const trouserMat = new THREE.MeshStandardMaterial({
+        color: 0x2b3648,
+        roughness: 0.82,
+      });
+      const shoeMat = new THREE.MeshStandardMaterial({
+        color: 0x231a16,
+        roughness: 0.62,
+      });
+
+      const neck = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.052, 0.062, 0.12, 10),
+        skinMat
+      );
+      neck.position.set(0, 1.24, 0);
+      root.add(neck);
+
+      const hips = new THREE.Mesh(
+        new THREE.SphereGeometry(0.152, 12, 10),
+        trouserMat
+      );
+      hips.scale.set(1.02, 0.56, 0.92);
+      hips.position.set(0, 0.69, 0);
+      root.add(hips);
+
+      const legGeo = new THREE.CylinderGeometry(0.058, 0.044, 0.64, 10);
+      const leftLeg = new THREE.Mesh(legGeo, trouserMat);
+      leftLeg.position.set(-0.078, 0.36, 0);
+      leftLeg.castShadow = true;
+      root.add(leftLeg);
+
+      const rightLeg = new THREE.Mesh(legGeo, trouserMat);
+      rightLeg.position.set(0.078, 0.36, 0);
+      rightLeg.castShadow = true;
+      root.add(rightLeg);
+
+      const shoeGeo = new THREE.BoxGeometry(0.098, 0.052, 0.19);
+      const leftShoe = new THREE.Mesh(shoeGeo, shoeMat);
+      leftShoe.position.set(-0.078, 0.026, 0.032);
+      leftShoe.castShadow = true;
+      root.add(leftShoe);
+
+      const rightShoe = new THREE.Mesh(shoeGeo, shoeMat);
+      rightShoe.position.set(0.078, 0.026, 0.032);
+      rightShoe.castShadow = true;
+      root.add(rightShoe);
 
       const head = new THREE.Group();
       head.position.set(0, 1.38, 0);
@@ -2049,17 +2123,51 @@ export class GameWorld {
       rightHand.position.set(0.18, 1.05, 0.14);
       root.add(rightHand);
 
+      const armGeo = new THREE.CylinderGeometry(0.038, 0.032, 1, 10);
+      const leftArm = new THREE.Mesh(armGeo, shirtMat);
+      leftArm.castShadow = true;
+      root.add(leftArm);
+
+      const rightArm = new THREE.Mesh(armGeo, shirtMat);
+      rightArm.castShadow = true;
+      root.add(rightArm);
+
+      const leftShoulder = new THREE.Vector3(-0.155, 1.15, 0.02);
+      const rightShoulder = new THREE.Vector3(0.155, 1.15, 0.02);
+      this._spanSpectatorArm(leftArm, leftShoulder, leftHand.position);
+      this._spanSpectatorArm(rightArm, rightShoulder, rightHand.position);
+
       this.spectators.push({
         root,
         head,
+        neck,
         mouth,
         leftHand,
         rightHand,
+        leftArm,
+        rightArm,
+        leftShoulder,
+        rightShoulder,
+        leftLeg,
+        rightLeg,
+        leftShoe,
+        rightShoe,
         baseX: cfg.x,
         baseY: 0,
         phase: cfg.phase,
       });
     });
+  }
+
+  _spanSpectatorArm(armMesh, shoulder, handPos) {
+    const dir = (this._specArmDir ||= new THREE.Vector3()).copy(handPos).sub(shoulder);
+    const len = Math.max(0.04, dir.length());
+    armMesh.position.copy(shoulder).add(handPos).multiplyScalar(0.5);
+    armMesh.scale.set(1, len, 1);
+    armMesh.quaternion.setFromUnitVectors(
+      this._specArmUp ||= new THREE.Vector3(0, 1, 0),
+      dir.multiplyScalar(1 / len)
+    );
   }
 
   triggerSpectatorReaction(type = 'cheer') {
@@ -2098,11 +2206,12 @@ export class GameWorld {
     lowerGroup.add(lowerMesh);
 
     const cuffMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.05, 0.05, 0.18, 12),
+      new THREE.CylinderGeometry(0.048, 0.044, 0.20, 12),
       this.vendorShirtMat
     );
+    cuffMesh.name = 'vendor-wrist-cuff';
     cuffMesh.rotation.x = Math.PI / 2;
-    cuffMesh.position.z = 0.18;
+    cuffMesh.position.z = 0.86;
     lowerGroup.add(cuffMesh);
 
     const handGroup = new THREE.Group();
@@ -2157,55 +2266,94 @@ export class GameWorld {
     this._applyVendorArmPose(rig,pose);
   }
 
-  _safeShaftGrip(tip,backward,shoulder,min,max,preferred,side) {
+  _safeShaftGrip(tip,backward,shoulder,min,max,preferred,side,windowRadius=Infinity) {
     const solver=this._vendorArmSolver||(this._vendorArmSolver=new VendorArmSolver(this.vendorTorso,{presentation:true,counter:Boolean(this.basinDeckGroup)}));
     solver.prepare();
     const rig=side<0?this.rArmRig:this.lArmRig;
     const direction=backward.clone().negate(),elbow=(rig.previousFrameElbow||rig.armPose?.elbow)?.clone()||shoulder.clone().add(new THREE.Vector3(side*.15,-.25,.06));
     const roll=Math.sin(this._displayedPaddleRoll||0)*(side<0?.18:.14),local=canonicalPoleHandRotation(rig.handRig.side),frames=new Map();
     const wristOffset=distance=>{
-      const contact=tip.clone().addScaledVector(backward,distance);
-      const frame=poleContactRotation(rig.handRig.side,direction,contact,elbow,roll,new THREE.Quaternion(),rig.poleFrameStart,this._handPoseDt*6);
-      frames.set(distance,frame);
+      let frame=frames.get(distance);
+      if(!frame){
+        const contact=tip.clone().addScaledVector(backward,distance);
+        frame=poleContactRotation(rig.handRig.side,direction,contact,elbow,roll,new THREE.Quaternion(),rig.poleFrameStart,this._handPoseDt*6);
+        frames.set(distance,frame);
+      }
       return handGripCenter('pole',distance>.74?.027:.014).applyQuaternion(local).negate().applyQuaternion(frame);
     };
+    const prevDist=side<0?(this._frameStartRearGrip??this._rearGripDistance):(this._frameStartFrontGrip??this._frontGripDistance);
+    if(Number.isFinite(windowRadius)&&prevDist!=null&&this._handPoseDt>0&&max-min>windowRadius){
+      const localMin=Math.max(min,prevDist-windowRadius),localMax=Math.min(max,prevDist+windowRadius);
+      if(localMax>=localMin){
+        const localPref=THREE.MathUtils.clamp(preferred,localMin,localMax);
+        const localSel=solver.shaftGrip(tip,backward,shoulder,localMin,localMax,localPref,{side,mode:this.vendorArmMode||'front',wristOffset});
+        localSel.handFrame=frames.get(localSel.distance);
+        return localSel;
+      }
+    }
     const selected=solver.shaftGrip(tip,backward,shoulder,min,max,preferred,{side,mode:this.vendorArmMode||'front',wristOffset});
     selected.handFrame=frames.get(selected.distance);return selected;
   }
 
   _resolveVendorGrips(right,left,preferred=.82) {
-    const read=()=>{
+    const refRear=this._frameStartRearGrip??this._rearGripDistance;
+    const localStep=refRear!=null&&this._handPoseDt>0?Math.max(.075,this._handPoseDt*3.8):Infinity;
+    const read=(radius=localStep)=>{
       const tip=this.paddleRollGroup.getWorldPosition(new THREE.Vector3());
       const backward=new THREE.Vector3(0,0,-1).applyQuaternion(this.paddleRollGroup.getWorldQuaternion(new THREE.Quaternion()));
-      const rear=this._safeShaftGrip(tip,backward,right,.14,1.01,this.vendorRearGripHint??this._bareRearGrip??this._rearGripDistance??preferred,-1);
+      const rear=this._safeShaftGrip(tip,backward,right,.14,1.01,this.vendorRearGripHint??this._bareRearGrip??this._rearGripDistance??preferred,-1,radius);
       return{tip,backward,rear};
     };
-    let selected=read();
+    let selected=read(localStep);
     // The blade can swivel tangent to the ice crown without moving the food.
     // Select the nearest safe handle lane when a large/inverted cone blocks it.
     if(!selected.rear.safe&&this.paddleContact?.active&&!this._resolvingVendorStance){
-      const initial=this.paddleTangentOffset||0;let best=initial,bestScore=selected.rear.score;
-      for(const delta of[.10,-.10,.17,-.17,.22,-.22,.45,-.45,.8,-.8,1.2,-1.2,1.7,-1.7]){
+      const initial=this._handPoseDt>0&&this._frameStartTangent!=null?this._frameStartTangent:(this.paddleTangentOffset||0);
+      let best=initial,bestScore=selected.rear.score,foundSafe=false;
+      for(const delta of[.03,-.03,.06,-.06,.09,-.09]){
         this.paddleTangentOffset=initial+delta;this.paddleContact.update(this,this._displayedPaddleRoll||0);
-        const candidate=read();
+        const candidate=read(localStep);
         if(candidate.rear.score<bestScore){bestScore=candidate.rear.score;best=this.paddleTangentOffset;}
-        if(candidate.rear.safe){best=this.paddleTangentOffset;break;}
+        if(candidate.rear.safe){best=this.paddleTangentOffset;foundSafe=true;break;}
       }
-      this.paddleTangentOffset=best;this.paddleContact.update(this,this._displayedPaddleRoll||0);selected=read();
+      if(!foundSafe&&!this.trickActive){
+        this.paddleTangentOffset=initial;this.paddleContact.update(this,this._displayedPaddleRoll||0);
+        const wideInitial=read(Infinity);
+        if(wideInitial.rear.safe&&Math.abs(wideInitial.rear.distance-(this._rearGripDistance??wideInitial.rear.distance))<=.14){
+          selected=wideInitial;foundSafe=true;
+        }else{
+          best=initial;bestScore=wideInitial.rear.score;
+          for(const delta of[.05,-.05,.10,-.10,.17,-.17,.22,-.22,.45,-.45,.8,-.8,1.2,-1.2,1.7,-1.7]){
+            this.paddleTangentOffset=initial+delta;this.paddleContact.update(this,this._displayedPaddleRoll||0);
+            const candidate=read(Infinity);
+            if(candidate.rear.score<bestScore){bestScore=candidate.rear.score;best=this.paddleTangentOffset;}
+            if(candidate.rear.safe){best=this.paddleTangentOffset;foundSafe=true;break;}
+          }
+          this.paddleTangentOffset=best;this.paddleContact.update(this,this._displayedPaddleRoll||0);selected=read(Infinity);
+        }
+      }else{
+        this.paddleTangentOffset=best;this.paddleContact.update(this,this._displayedPaddleRoll||0);selected=read(localStep);
+      }
+    }else if(!selected.rear.safe&&!this.trickActive){
+      selected=read(Infinity);
     }
     const {tip,backward,rear}=selected;
-    const front=this._safeShaftGrip(tip,backward,left,.12,rear.distance-.10,this._frontGripDistance??rear.distance-.30,1);
-    front.safe=front.safe&&rear.distance-front.distance>=.099;
-    this._rearGripDistance=rear.distance;this._frontGripDistance=front.distance;
+    const frontStep=this._leftHandOnShaft&&this._handPoseDt>0?Math.min(localStep,Math.max(.020,this._handPoseDt*1.25)):localStep;
+    const front=this._safeShaftGrip(tip,backward,left,.12,rear.distance-.10,this._frontGripDistance??rear.distance-.30,1,frontStep);
+    const frontFinal=(front.safe||this._leftHandOnShaft&&this._handPoseDt>0)?front:this._safeShaftGrip(tip,backward,left,.12,rear.distance-.10,this._frontGripDistance??rear.distance-.30,1,Infinity);
+    frontFinal.safe=frontFinal.safe&&rear.distance-frontFinal.distance>=.099;
+    this._rearGripDistance=rear.distance;this._frontGripDistance=frontFinal.distance;
     if(!rear.safe&&this.vendorTorso&&this.vendorGroup&&!this._resolvingVendorStance&&!Number.isFinite(this.vendorBodyYawHint)){
       const baseYaw=this._bodyTargetYaw??this.vendorTorso.rotation.y;
-      const initial={yaw:this.vendorTorso.rotation.y,tangent:this.paddleTangentOffset||0,rear:this._rearGripDistance,front:this._frontGripDistance};
+      const startYaw=this._handPoseDt>0&&this._frameStartTorsoYaw!=null?this._frameStartTorsoYaw:this.vendorTorso.rotation.y;
+      const startTangent=this._handPoseDt>0&&this._frameStartTangent!=null?this._frameStartTangent:(this.paddleTangentOffset||0);
+      const initial={yaw:startYaw,tangent:startTangent,rear:this._rearGripDistance,front:this._frontGripDistance};
       const heldForward=this.paddleRollGroup.getWorldDirection(new THREE.Vector3());
-      let best={...initial,result:{rear,front},score:rear.score};
+      let best={...initial,result:{rear,front:frontFinal},score:rear.score};
       const sign=rear.wrist.x>=right.x?1:-1;
       const testedYaw=new Set([initial.yaw]);
       this._resolvingVendorStance=true;
-      for(const turn of[.08,.16,.24]){
+      for(const turn of(this.trickActive?[.03,.06]:[.04,.08,.16,.24])){
         const candidateYaw=THREE.MathUtils.clamp(initial.yaw+turn*sign,Math.max(-.65,baseYaw-.30),Math.min(.65,baseYaw+.30));
         if(testedYaw.has(candidateYaw))continue;testedYaw.add(candidateYaw);
         this.vendorTorso.rotation.y=candidateYaw;
@@ -2227,11 +2375,12 @@ export class GameWorld {
         heldForward.addScaledVector(normal,-heldForward.dot(normal)).normalize();
         this.paddleTangentOffset=Math.atan2(normal.dot(new THREE.Vector3().crossVectors(base,heldForward)),base.dot(heldForward));
         this.paddleContact.update(this,this._displayedPaddleRoll||0);
+        this._stanceAdjustedPaddle=true;
       }
       this._resolvingVendorStance=false;
       return best.result;
     }
-    return{rear,front};
+    return{rear,front:frontFinal};
   }
 
   _fitHandToShaft(rig, distance, wristRoll,selectedFrame=null) {
@@ -2372,10 +2521,29 @@ export class GameWorld {
     this.touristForearm.castShadow = true;
     this.touristHand.add(this.touristForearm);
 
+    const sleeveMat = new THREE.MeshStandardMaterial({ color: 0x1d3557, roughness: 0.7 });
     const sleeve = new THREE.Mesh(
       new THREE.CylinderGeometry(0.055, 0.059, PLAYER_UPPER_ARM_LENGTH, 14),
-      new THREE.MeshStandardMaterial({ color: 0x1d3557, roughness: 0.7 })
+      sleeveMat
     );
+    const sleeveCuff = new THREE.Mesh(
+      new THREE.TorusGeometry(0.054, 0.008, 10, 18),
+      new THREE.MeshStandardMaterial({ color: 0x2b4c7e, roughness: 0.65 })
+    );
+    sleeveCuff.name = 'player-sleeve-cuff';
+    sleeveCuff.rotation.x = Math.PI / 2;
+    sleeveCuff.position.y = PLAYER_UPPER_ARM_LENGTH * 0.5;
+    sleeve.add(sleeveCuff);
+
+    const sleeveCap = new THREE.Mesh(
+      new THREE.SphereGeometry(0.058, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.5),
+      new THREE.MeshStandardMaterial({ color: 0x122238, roughness: 0.85 })
+    );
+    sleeveCap.name = 'player-sleeve-cap';
+    sleeveCap.rotation.x = Math.PI;
+    sleeveCap.position.y = -PLAYER_UPPER_ARM_LENGTH * 0.5;
+    sleeve.add(sleeveCap);
+
     sleeve.quaternion.copy(this.touristForearm.quaternion);
     sleeve.position.copy(armEnd).addScaledVector(armAxis, 0.025);
     this.touristHand.add(sleeve);
@@ -2477,8 +2645,8 @@ export class GameWorld {
   }
 
   projectToScreen(worldVec) {
-    const w = Math.max(1, window.visualViewport?.width || window.innerWidth);
-    const h = Math.max(1, window.visualViewport?.height || window.innerHeight);
+    const w = Math.max(1, globalThis.window?.visualViewport?.width || globalThis.window?.innerWidth || this.canvas?.clientWidth || 390);
+    const h = Math.max(1, globalThis.window?.visualViewport?.height || globalThis.window?.innerHeight || this.canvas?.clientHeight || 844);
     const v = worldVec.clone().project(this.camera);
     return {
       x: (v.x * 0.5 + 0.5) * w,
@@ -2550,14 +2718,34 @@ export class GameWorld {
     );
   }
 
-  ringBells(power = 1.0) {
+  ringBells(power = 1.0, arrayPower = 0.85) {
+    if (!this.bells || !this.bells.length) return;
+    if (Array.isArray(power)) {
+      const safeP = Number.isFinite(Number(arrayPower)) ? Number(arrayPower) : 0.85;
+      for (const rawIdx of power) {
+        const idx = Math.abs(Math.round(Number(rawIdx) || 0)) % this.bells.length;
+        if (typeof this.strikeBell === 'function' && typeof this.getBellBodyCenter === 'function') {
+          this.strikeBell(idx, safeP);
+        } else {
+          const b = this.bells[idx];
+          if (!b) continue;
+          const dir = idx % 2 === 0 ? 1 : -1;
+          b.velZ += dir * 11.0 * safeP;
+          b.velX += (Math.random() - 0.5) * 6.5 * safeP;
+          b.clapperVelZ += -dir * 18.0 * safeP;
+          b.shimmerTimer = Math.max(b.shimmerTimer || 0, 0.36 * safeP);
+        }
+      }
+      return;
+    }
+    const safePower = Number.isFinite(Number(power)) ? Number(power) : 1.0;
     this.bells.forEach((b, i) => {
       const sign = i % 2 === 0 ? 1 : -1;
-      b.velZ += sign * (8.5 + Math.random() * 5) * power;
-      b.velX += (Math.random() - 0.5) * 6.5 * power;
-      b.clapperVelZ += -sign * (15 + Math.random() * 8) * power;
-      b.clapperVelX += (Math.random() - 0.5) * 10 * power;
-      b.shimmerTimer = Math.max(b.shimmerTimer, 0.36 * power);
+      b.velZ += sign * (8.5 + Math.random() * 5) * safePower;
+      b.velX += (Math.random() - 0.5) * 6.5 * safePower;
+      b.clapperVelZ += -sign * (15 + Math.random() * 8) * safePower;
+      b.clapperVelX += (Math.random() - 0.5) * 10 * safePower;
+      b.shimmerTimer = Math.max(b.shimmerTimer, 0.36 * safePower);
     });
   }
 
@@ -2749,7 +2937,7 @@ export class GameWorld {
     this._leftHandOnShaft = false;
     this._leftSupportRecovery=null;
     this._vendorGripYawOffset=0;this._resolvingVendorStance=false;
-    this.paddleTangentOffset=0;this._rearGripDistance=this._frontGripDistance=this._bareRearGrip=null;
+    this.paddleTangentOffset=0;this._rearGripDistance=this._frontGripDistance=this._bareRearGrip=this._frameStartRearGrip=this._frameStartFrontGrip=this._frameStartTorsoYaw=null;
     if(this.rArmRig)this.rArmRig.armPose=null;
     if(this.lArmRig)this.lArmRig.armPose=null;
     if(this.rArmRig)this.rArmRig.previousFrameElbow=null;
@@ -2769,7 +2957,7 @@ export class GameWorld {
     }
   }
 
-  beginPoseFrame(){this._poseFrameManaged=true;this._poseFramePending=true;}
+  beginPoseFrame(){this._poseFrameManaged=true;this._poseFramePending=true;this._ikSolvedThisFrame=false;}
 
   /**
    * True 3D Paddle & Cone Orientation!
@@ -2792,10 +2980,13 @@ export class GameWorld {
       ?this.conePivot.getWorldQuaternion(this._heldConeStart ||= new THREE.Quaternion()):null;
     const advance=!this._poseFrameManaged||this._poseFramePending;this._poseFramePending=false;
     if(advance){
-      this._handPoseDt=dt;this.paddleContact?.beginPoseFrame(this,dt);
+      this._handPoseDt=dt;this._frameStartTangent=this.paddleTangentOffset||0;
+      this._frameStartRearGrip=this._rearGripDistance;this._frameStartFrontGrip=this._frontGripDistance;
+      this.paddleContact?.beginPoseFrame(this,dt);
       for(const rig of[this.rArmRig,this.lArmRig])rig.poleFrameStart=rig.handRig.getWorldQuaternion(rig.poleFrameStart||new THREE.Quaternion());
     }else{
       dt=0; // Exact strike/contact refits do not advance animation a second time.
+      this._handPoseDt=0;
     }
     if (!this.paddleAngularMotion) this.resetPaddleOrientation();
     const displayedRoll = this.paddleAngularMotion.shaft.step(shaftRoll, dt);
@@ -2860,6 +3051,7 @@ export class GameWorld {
       THREE.MathUtils.clamp(bodyYaw,-.65,.65),
       bodyBlend
     );
+    if(advance)this._frameStartTorsoYaw=this.vendorTorso.rotation.y;
     this.vendorTorso.rotation.x = THREE.MathUtils.lerp(
       this.vendorTorso.rotation.x,
       THREE.MathUtils.clamp((1.28-bodyWorkY)*.18+Math.max(0,tipPos.z)*.12+largeStance*.20,-.14,.42),
@@ -2882,6 +3074,7 @@ export class GameWorld {
     const shaftRotation = this.paddleRollGroup.getWorldQuaternion(new THREE.Quaternion());
     const distToChest = shaftTipPos.distanceTo(vendorChestCenter);
     const preferredRear = Math.min(0.94, Math.max(0.56, distToChest * 0.92));
+    this._preferredRearGrip = preferredRear;
 
     const rShoulderWorld = new THREE.Vector3();
     const lShoulderWorld = new THREE.Vector3();
@@ -2893,10 +3086,11 @@ export class GameWorld {
     const backward = new THREE.Vector3(0, 0, -1).applyQuaternion(shaftRotation);
     const previous=this._rearGripDistance??.45;
     this._bareRearGrip=poleHasFood(this)?null:previous+THREE.MathUtils.clamp(.45-previous,-dt*.65,dt*.65);
-    if(!this.paddleContact?.active&&!this.vendorPoleForwardHint){
+    if(!this.paddleContact?.active&&!this.vendorPoleForwardHint&&!this.trickActive){
       const trial=this._safeShaftGrip(shaftTipPos,backward,rShoulderWorld,.14,1.01,this._rearGripDistance??preferredRear,-1);
       if(!trial.safe){this.paddleGroup.lookAt(awayFromChest);this.paddleGroup.updateMatrixWorld(true);}
     }
+    this._stanceAdjustedPaddle=false;
     const {rear,front}=this._resolveVendorGrips(rShoulderWorld,lShoulderWorld,preferredRear);
     this.paddleRearGripAnchor.position.set(0, 0, -rear.distance);
     this.paddleFrontGripAnchor.position.set(0, 0, -front.distance);
@@ -2906,6 +3100,8 @@ export class GameWorld {
     const frontGripWorld = new THREE.Vector3();
     this.paddleRearGripAnchor.getWorldPosition(rearGripWorld);
     this.paddleFrontGripAnchor.getWorldPosition(frontGripWorld);
+    (this._prevRearGripWorld ||= new THREE.Vector3()).copy(rearGripWorld);
+    (this._prevFrontGripWorld ||= new THREE.Vector3()).copy(frontGripWorld);
 
     this._solveArmIK(
       this.rArmRig,
@@ -2925,7 +3121,7 @@ export class GameWorld {
     const legacyPaper = this.napkinProp?.visible&&this.napkinProp.parent===this.lArmRig.handGroup ? this.napkinProp : null;
     let leftPresentationTarget = leftHandCustomTarget || (vendorHoldsCone ? new THREE.Vector3(.18, 1.22, -.20) : null);
     const releasedSupport=!leftPresentationTarget&&!front.safe;
-    if(releasedSupport){leftPresentationTarget=this.vendorTorso.localToWorld(new THREE.Vector3(.36,.25,.34));leftPresentationTarget.y=Math.max(1.15,leftPresentationTarget.y);}
+    if(releasedSupport){leftPresentationTarget=this.vendorTorso.localToWorld(new THREE.Vector3(.08,.24,.36));leftPresentationTarget.y=Math.max(1.13,leftPresentationTarget.y);}
     const reaction = this._vendorReaction;
     const reactionArm = reaction && !leftHandCustomTarget && !this.coneHeldByVendor &&
       !this.leftHandConeProp?.visible && !this.napkinProp?.visible && !this.napkinConeProp?.visible &&
@@ -2985,7 +3181,7 @@ export class GameWorld {
       }
     }else if (!leftPresentationTarget) this._fitHandToShaft(this.lArmRig, front.distance, Math.sin(displayedRoll) * 0.14,front.handFrame);
     else if (reactionArm || leftHandGesture) {
-      this._setVendorOpenHand(this.lArmRig, reaction?.kind === 'photo' ? 1 : 4);
+      this._setVendorOpenHand(this.lArmRig, reaction?.kind === 'photo' ? 1 : 4, true);
       if (reaction?.kind === 'photo' && this.stallDecor) {
         const direction = this.stallDecor.props.photo.group.getWorldPosition(new THREE.Vector3()).sub(this.lArmRig.handGroup.position).normalize();
         this.lArmRig.handGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
@@ -3008,40 +3204,56 @@ export class GameWorld {
 
     if(this.servingNapkin?.visible&&this.servingNapkin.parent===this.lArmRig.handGroup&&!vendorHoldsCone&&!legacyCone)
       applyVendorPaperGrip(this.lArmRig,new THREE.Vector3(0,.07,0));
+    let servingMovedAfterIK = Boolean(this._stanceAdjustedPaddle);
     if (this.coneHeldByVendor && this.conePivot.parent === this.lArmRig.handGroup) {
-      this.conePivot.position.lerp(new THREE.Vector3(0, 0.11, 0.035), Math.min(1, dt * 12));
-      if(heldConeStart)this.conePivot.quaternion.copy(this.lArmRig.handGroup.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(heldConeStart));
+      this.conePivot.position.lerp((this._vConeHandTarget ||= new THREE.Vector3(0, 0.11, 0.035)), Math.min(1, dt * 12));
+      if(heldConeStart)this.conePivot.quaternion.copy(this.lArmRig.handGroup.getWorldQuaternion(this._qHandInv ||= new THREE.Quaternion()).invert().multiply(heldConeStart));
       orientVendorHeldCone(this, dt);
+      servingMovedAfterIK = true;
     } else if (this.conePivot.parent === this.paddleGroup) {
       this.coneHeldByVendor = false;
-      this.conePivot.position.lerp(new THREE.Vector3(0, 0.02, 0), Math.min(1, dt * 14));
+      const poleTarget = (this._vConePoleTarget ||= new THREE.Vector3(0, 0.02, 0));
+      const prevX = this.conePivot.position.x, prevY = this.conePivot.position.y, prevZ = this.conePivot.position.z;
+      this.conePivot.position.lerp(poleTarget, Math.min(1, dt * 14));
+      if (this.conePivot.position.distanceToSquared(poleTarget) < 1e-8) {
+        this.conePivot.position.copy(poleTarget);
+      }
+      if (Math.abs(this.conePivot.position.x - prevX) + Math.abs(this.conePivot.position.y - prevY) + Math.abs(this.conePivot.position.z - prevZ) > 1e-5) {
+        servingMovedAfterIK = true;
+      }
     }
-    (this.servingClearance ||= new ServingClearance()).apply(this);
-    this.refreshPaddleAttachment();
+    if ((this.servingClearance ||= new ServingClearance()).apply(this)) {
+      servingMovedAfterIK = true;
+    }
+    if (servingMovedAfterIK) {
+      this.refreshPaddleAttachment();
+    } else {
+      this._fitArmToHand(this.rArmRig);
+    }
     const handRole=this._leftHandOnShaft||this._leftSupportRecovery?'pole':vendorHoldsCone||legacyCone?'cone':legacyPaper||this.servingNapkin?.visible&&this.servingNapkin.parent===this.lArmRig.handGroup?'paper':'free';
     if(this.lArmRig.handRig)(this.lArmRig.poseBlend ||= new VendorHandBlend(this.lArmRig)).apply(handRole,dt);
     this._fitArmToHand(this.lArmRig);
+    this._ikSolvedThisFrame = true;
   }
 
   /** Refit after food deformation/ownership settling, before rendering. */
   refreshPaddleAttachment() {
     if (!this.paddleContact || !this.rArmRig) return;
     this.paddleContact.update(this, this._displayedPaddleRoll || 0);
-    const tip = this.paddleRollGroup.getWorldPosition(new THREE.Vector3());
-    const backward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.paddleRollGroup.getWorldQuaternion(new THREE.Quaternion()));
-    const right = this.rightShoulderAnchor.getWorldPosition(new THREE.Vector3());
-    const left = this.leftShoulderAnchor.getWorldPosition(new THREE.Vector3());
-    const {rear,front}=this._resolveVendorGrips(right,left);
+    const right = this.rightShoulderAnchor.getWorldPosition(this._rShoulderTmp ||= new THREE.Vector3());
+    const left = this.leftShoulderAnchor.getWorldPosition(this._lShoulderTmp ||= new THREE.Vector3());
+    const {rear,front}=this._resolveVendorGrips(right,left,this._preferredRearGrip??.82);
     this.paddleRearGripAnchor.position.set(0, 0, -rear.distance);
     this.paddleFrontGripAnchor.position.set(0, 0, -front.distance);
     this.paddleRollGroup.updateWorldMatrix(true, true);
-    this._solveArmIK(this.rArmRig, right, this.paddleRearGripAnchor.getWorldPosition(new THREE.Vector3()), new THREE.Vector3(-.35, -.5, -.2), true);
+    const rearTarget = this.paddleRearGripAnchor.getWorldPosition(this._rGripTmp ||= new THREE.Vector3());
+    this._solveArmIK(this.rArmRig, right, rearTarget, this._rElbowHint ||= new THREE.Vector3(-.35, -.5, -.2), true);
     this._fitHandToShaft(this.rArmRig, rear.distance, Math.sin(this._displayedPaddleRoll || 0) * .18,rear.handFrame);
     this._fitArmToHand(this.rArmRig);
     if (this._leftHandOnShaft && front.safe) {
-      const target = this.paddleFrontGripAnchor.getWorldPosition(new THREE.Vector3());
+      const target = this.paddleFrontGripAnchor.getWorldPosition(this._lGripTmp ||= new THREE.Vector3());
       this.leftPropSpring.pos.copy(target); this.leftPropSpring.vel.set(0, 0, 0);
-      this._solveArmIK(this.lArmRig, left, target, new THREE.Vector3(.35, -.5, -.2), true);
+      this._solveArmIK(this.lArmRig, left, target, this._lElbowHint ||= new THREE.Vector3(.35, -.5, -.2), true);
       this._fitHandToShaft(this.lArmRig, front.distance, Math.sin(this._displayedPaddleRoll || 0) * .14,front.handFrame);
       this._fitArmToHand(this.lArmRig);
     }
@@ -3063,19 +3275,27 @@ export class GameWorld {
 
     // Real-time Vendor Lip-Sync & Jaw/Beard/Mustache Animation
     // Note: jawGroup hinges DOWNWARD (-0.068 - voiceMouthOpen * 0.024) so the beard NEVER rises over the face!
-    if (voiceMouthOpen > 0.01) {
+    const mouthTarget = voiceMouthOpen > 0.01 ? voiceMouthOpen : 0;
+    this._smoothedMouthOpen = THREE.MathUtils.lerp(
+      this._smoothedMouthOpen || 0,
+      mouthTarget,
+      1 - Math.exp(-Math.max(0, dt) * 20)
+    );
+    const activeMouth = this._smoothedMouthOpen;
+    if (activeMouth > 0.002) {
       this.vendorMouth.scale.set(
-        1.25 + voiceMouthOpen * 0.4,
-        0.45 + voiceMouthOpen * 1.35,
+        1.25 + activeMouth * 0.4,
+        0.45 + activeMouth * 1.35,
         0.65
       );
-      this.jawGroup.position.y = -0.068 - voiceMouthOpen * 0.024;
-      this.jawGroup.rotation.x = voiceMouthOpen * 0.18;
-      this.mustacheGroup.position.y = -0.032 + voiceMouthOpen * 0.008;
+      this.jawGroup.position.y = -0.068 - activeMouth * 0.024;
+      this.jawGroup.rotation.x = activeMouth * 0.18;
+      this.mustacheGroup.position.y = -0.032 + activeMouth * 0.008;
       this.mustacheGroup.rotation.z =
-        Math.sin(time * 28) * voiceMouthOpen * 0.08;
-      this.vendorHead.position.y = 0.67 + voiceMouthOpen * 0.015;
+        Math.sin(time * 28) * activeMouth * 0.08;
+      this.vendorHead.position.y = 0.67 + activeMouth * 0.015;
     } else {
+      this._smoothedMouthOpen = 0;
       this.jawGroup.position.y = -0.068;
       this.jawGroup.rotation.x = 0;
       this.mustacheGroup.position.y = -0.032;
@@ -3106,18 +3326,33 @@ export class GameWorld {
       this.vendorHead.rotation.x=THREE.MathUtils.lerp(this.vendorHead.rotation.x,-.13,b);
       this.vendorHead.rotation.y=THREE.MathUtils.lerp(this.vendorHead.rotation.y,target.x*.42,b);
     }
-    if(!Number.isInteger(this.vendorBellLook)&&this._bellLooking&&!this._vendorReaction){this.vendorHead.rotation.x*=Math.exp(-dt*9);if(Math.abs(this.vendorHead.rotation.x)<.002)this._bellLooking=false;}
-    // Natural Vendor Eye Blinking
+    if(!Number.isInteger(this.vendorBellLook)&&this._bellLooking&&!this._vendorReaction){
+      const decay=Math.exp(-dt*9);
+      this.vendorHead.rotation.x*=decay;
+      this.vendorHead.rotation.y*=decay;
+      if(Math.abs(this.vendorHead.rotation.x)+Math.abs(this.vendorHead.rotation.y)<.003)this._bellLooking=false;
+    }
+    // Natural Asymmetric Vendor Eye Blinking
     this.blinkTimer -= dt;
-    if (this.blinkTimer <= 0) {
-      if (!this.isBlinking) {
-        this.isBlinking = true;
-        this.blinkTimer = 0.11;
-        this.eyes.forEach((e) => e.scale.set(1, 0.12, 1));
-      } else {
+    if (!this.isBlinking && this.blinkTimer <= 0) {
+      this.isBlinking = true;
+      this._blinkDuration = 0.14;
+      this.blinkTimer = this._blinkDuration + Math.min(0, this.blinkTimer);
+    }
+    if (this.isBlinking) {
+      if (this.blinkTimer <= 0) {
         this.isBlinking = false;
         this.blinkTimer = 2.8 + Math.random() * 1.8;
         this.eyes.forEach((e) => e.scale.set(1, 1, 1));
+      } else {
+        const dur = this._blinkDuration || 0.14;
+        const bt = THREE.MathUtils.clamp(1 - this.blinkTimer / dur, 0, 1);
+        const closure = bt < 0.35
+          ? THREE.MathUtils.smoothstep(bt / 0.35, 0, 1)
+          : 1 - THREE.MathUtils.smoothstep((bt - 0.35) / 0.65, 0, 1);
+        const scaleY = 1 - closure * 0.88;
+        const scaleX = 1 + closure * 0.05;
+        this.eyes.forEach((e) => e.scale.set(scaleX, scaleY, 1));
       }
     }
 
@@ -3163,18 +3398,54 @@ export class GameWorld {
         Math.min(1, dt * 8)
       );
 
-      if (this.spectatorReactionTimer > 0) {
-        const bounce = Math.abs(Math.sin(time * 14 + sp.phase)) * 0.07;
-        sp.root.position.y = bounce;
-        const clap = Math.sin(time * 22 + sp.phase) * 0.09;
-        sp.leftHand.position.set(-0.11 + clap, 1.14, 0.2);
-        sp.rightHand.position.set(0.11 - clap, 1.14, 0.2);
-        sp.mouth.scale.set(1.4, 0.95, 0.6);
+      const reactTarget = this.spectatorReactionTimer > 0 ? 1 : 0;
+      sp.reactBlend = THREE.MathUtils.lerp(
+        sp.reactBlend || 0,
+        reactTarget,
+        1 - Math.exp(-Math.max(0, dt) * 14)
+      );
+      const idleRootY = (Math.sin(time * 2.1 + sp.phase) + 1) * 0.005;
+      if (sp.reactBlend > 0.002) {
+        const isGasp = this.spectatorReactionType === 'gasp' || this.spectatorReactionType === 'laugh';
+        const bounce = Math.abs(Math.sin(time * (isGasp ? 10 : 14) + sp.phase)) * (isGasp ? 0.045 : 0.07);
+        const clap = Math.sin(time * 22 + sp.phase) * (isGasp ? 0.025 : 0.09);
+        const targetHandX = isGasp ? 0.08 : 0.11;
+        const targetHandY = isGasp ? 1.24 : 1.14;
+        const targetHandZ = isGasp ? 0.18 : 0.2;
+        const targetMouthX = isGasp ? 0.95 : 1.4;
+        const targetMouthY = isGasp ? 1.15 : 0.95;
+        const w = sp.reactBlend;
+        sp.root.position.y = THREE.MathUtils.lerp(idleRootY, bounce, w);
+        sp.leftHand.position.set(
+          THREE.MathUtils.lerp(-0.18, -targetHandX + clap, w),
+          THREE.MathUtils.lerp(1.05, targetHandY, w),
+          THREE.MathUtils.lerp(0.14, targetHandZ, w)
+        );
+        sp.rightHand.position.set(
+          THREE.MathUtils.lerp(0.18, targetHandX - clap, w),
+          THREE.MathUtils.lerp(1.05, targetHandY, w),
+          THREE.MathUtils.lerp(0.14, targetHandZ, w)
+        );
+        sp.mouth.scale.set(
+          THREE.MathUtils.lerp(1.2, targetMouthX, w),
+          THREE.MathUtils.lerp(0.5, targetMouthY, w),
+          THREE.MathUtils.lerp(0.5, 0.6, w)
+        );
       } else {
-        sp.root.position.y = Math.sin(time * 2.1 + sp.phase) * 0.01;
+        sp.reactBlend = 0;
+        sp.root.position.y = idleRootY;
         sp.leftHand.position.set(-0.18, 1.05, 0.14);
         sp.rightHand.position.set(0.18, 1.05, 0.14);
         sp.mouth.scale.set(1.2, 0.5, 0.5);
+      }
+      if (sp.leftArm && sp.rightArm) {
+        this._spanSpectatorArm(sp.leftArm, sp.leftShoulder, sp.leftHand.position);
+        this._spanSpectatorArm(sp.rightArm, sp.rightShoulder, sp.rightHand.position);
+      }
+      if (sp.leftShoe && sp.rightShoe) {
+        const shoeOffset = Math.max(0.012, 0.026 - sp.root.position.y * 0.65);
+        sp.leftShoe.position.y = shoeOffset;
+        sp.rightShoe.position.y = shoeOffset;
       }
     });
 
@@ -3206,30 +3477,39 @@ export class GameWorld {
       );
     }
 
-    const coneVelX =
-      (this.paddleGroup.position.x - this.prevConePos.x) / Math.max(0.005, dt);
-    const coneVelY =
-      (this.paddleGroup.position.y - this.prevConePos.y) / Math.max(0.005, dt);
+    const safeDt = Math.max(0.005, dt);
+    const coneVelX = (this.paddleGroup.position.x - this.prevConePos.x) / safeDt;
+    const coneVelY = (this.paddleGroup.position.y - this.prevConePos.y) / safeDt;
+    const coneVelZ = (this.paddleGroup.position.z - this.prevConePos.z) / safeDt;
     this.prevConePos.copy(this.paddleGroup.position);
 
     this.scoopJiggleSpring.impulse(
       -coneVelX * 0.35 * dt,
       -coneVelY * 0.28 * dt,
-      0
+      -coneVelZ * 1.15 * dt
     );
     const jiggle = this.scoopJiggleSpring.step(dt);
 
-    const squashY = THREE.MathUtils.clamp(1 + jiggle.y * 1.2, 0.78, 1.25);
+    const squashY = THREE.MathUtils.clamp(1 + jiggle.y * 1.1, 0.82, 1.20);
     const invSquash = 1 / Math.sqrt(squashY);
     const servingFactor = this.scoopStackGroup.parent === this.conePivot ? 1 : this.servingScale;
     this.scoopStackGroup.scale.set(invSquash * servingFactor, squashY * servingFactor, invSquash * servingFactor);
-    this.scoopStackGroup.rotation.z = THREE.MathUtils.clamp(
-      jiggle.x * 1.8,
-      -0.32,
-      0.32
+    this.scoopStackGroup.rotation.x = THREE.MathUtils.clamp(
+      -jiggle.z * 1.25,
+      -0.06,
+      0.06
     );
-    if((this.servingClearance ||= new ServingClearance()).apply(this))this._fitArmToHand(this.lArmRig);
-    this.refreshPaddleAttachment();
+    this.scoopStackGroup.rotation.z = THREE.MathUtils.clamp(
+      jiggle.x * 0.85,
+      -0.12,
+      0.12
+    );
+    const clearanceMoved = (this.servingClearance ||= new ServingClearance()).apply(this);
+    if (clearanceMoved) this._fitArmToHand(this.lArmRig);
+    if (clearanceMoved || poleHasFood(this) || !this._ikSolvedThisFrame) {
+      this.refreshPaddleAttachment();
+    }
+    this._ikSolvedThisFrame = false;
 
     this.lanterns.forEach((l) => {
       l.group.rotation.z = Math.sin(time * 1.4 + l.phase) * 0.05;
@@ -3257,38 +3537,42 @@ export class GameWorld {
       b.handInContact = handContact;
       b.paddleInContact = paddleContact;
 
-      // Outer brass bell swing physics
-      const springZ = -115 * b.angleZ - 4.4 * b.velZ;
-      const springX = -115 * b.angleX - 4.4 * b.velX;
-      b.velZ += springZ * dt;
-      b.velX += springX * dt;
-      b.angleZ = THREE.MathUtils.clamp(b.angleZ + b.velZ * dt, -0.68, 0.68);
-      b.angleX = THREE.MathUtils.clamp(b.angleX + b.velX * dt, -0.55, 0.55);
+      // Outer brass bell swing & inner clapper pendulum with substep stability
+      const bellSteps = dt > 0.02 ? 2 : 1;
+      const h = dt / bellSteps;
+      for (let s = 0; s < bellSteps; s++) {
+        const springZ = -115 * b.angleZ - 4.4 * b.velZ;
+        const springX = -115 * b.angleX - 4.4 * b.velX;
+        b.velZ += springZ * h;
+        b.velX += springX * h;
+        b.angleZ = THREE.MathUtils.clamp(b.angleZ + b.velZ * h, -0.68, 0.68);
+        b.angleX = THREE.MathUtils.clamp(b.angleX + b.velX * h, -0.55, 0.55);
+
+        if (b.clapperPivot) {
+          const cSpringZ = -210 * b.clapperAngleZ - 3.6 * b.clapperVelZ - springZ * 0.45;
+          const cSpringX = -210 * b.clapperAngleX - 3.6 * b.clapperVelX - springX * 0.45;
+          b.clapperVelZ += cSpringZ * h;
+          b.clapperVelX += cSpringX * h;
+          b.clapperAngleZ += b.clapperVelZ * h;
+          b.clapperAngleX += b.clapperVelX * h;
+
+          if (Math.abs(b.clapperAngleZ) > 0.34) {
+            b.clapperAngleZ = Math.sign(b.clapperAngleZ) * 0.34;
+            b.clapperVelZ *= -0.62;
+          }
+          if (Math.abs(b.clapperAngleX) > 0.3) {
+            b.clapperAngleX = Math.sign(b.clapperAngleX) * 0.3;
+            b.clapperVelX *= -0.62;
+          }
+        }
+      }
 
       // High-frequency acoustic vibration shudder while ringing
       const ringVib =
         b.shimmerTimer > 0 ? Math.sin(time * 68 + b.index) * 0.025 * b.shimmerTimer : 0;
       b.pivot.rotation.z = b.angleZ + ringVib;
       b.pivot.rotation.x = b.angleX;
-
-      // Independent inner clapper pendulum with rim collision rebound!
       if (b.clapperPivot) {
-        const cSpringZ = -210 * b.clapperAngleZ - 3.6 * b.clapperVelZ - springZ * 0.45;
-        const cSpringX = -210 * b.clapperAngleX - 3.6 * b.clapperVelX - springX * 0.45;
-        b.clapperVelZ += cSpringZ * dt;
-        b.clapperVelX += cSpringX * dt;
-        b.clapperAngleZ += b.clapperVelZ * dt;
-        b.clapperAngleX += b.clapperVelX * dt;
-
-        // Rim impact bounce when clapper hits inside of bell wall
-        if (Math.abs(b.clapperAngleZ) > 0.34) {
-          b.clapperAngleZ = Math.sign(b.clapperAngleZ) * 0.34;
-          b.clapperVelZ *= -0.62;
-        }
-        if (Math.abs(b.clapperAngleX) > 0.3) {
-          b.clapperAngleX = Math.sign(b.clapperAngleX) * 0.3;
-          b.clapperVelX *= -0.62;
-        }
         b.clapperPivot.rotation.z = b.clapperAngleZ;
         b.clapperPivot.rotation.x = b.clapperAngleX;
       }
@@ -3365,7 +3649,22 @@ export class GameWorld {
     this.camera.updateProjectionMatrix();
   }
 
+  attachContextLifecycle(canvas = this.canvas) {
+    if (!canvas?.addEventListener) return;
+    canvas.addEventListener('webglcontextlost', (event) => {
+      event.preventDefault?.();
+      this.contextLost = true;
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      this.contextLost = false;
+      this.renderer?.resetState?.();
+      this._renderSize = null;
+      this.onResize();
+    });
+  }
+
   render() {
+    if (this.contextLost) return;
     this.renderer.render(this.scene, this.camera);
   }
 }

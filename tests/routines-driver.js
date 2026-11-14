@@ -5,6 +5,7 @@ import { stretchCutGuide } from '../src/stretch-cut.js';
 import { figureEightWorldPoint } from '../src/figure-eight.js';
 import { layeredServiceCue, LAYERED_SERVICE_ID } from '../src/serving-sequence.js';
 import { customerServiceCue, CUSTOMER_SERVICE_IDS } from '../src/customer-service.js';
+import { MARAS_FLOURISH_IDS } from '../src/maras-flourish-tricks.js';
 
 /** Development-only valid-input driver. Never imports saves or skips director steps. */
 export class RoutinePreviewDriver {
@@ -128,7 +129,7 @@ export class RoutinePreviewDriver {
     } else if (d.currentMechanic === 'EYE_LOCK_RHYTHM_CHASE') {
       if (d.subStep === 0) this.reach(key, new THREE.Vector3(d.coneWorldPos.x * .5, 1.15, .41), dt, 'midpoint');
       else this.reach(`${key}:${d.rhythmBeatsCompleted}:${d.rhythmTargetPos.x.toFixed(3)}`, d.rhythmTargetPos, dt, 'follow');
-    } else if (['GIANT_BLOCK_TEASE','MIDAIR_BLOCK_SOMERSAULT','VERTICAL_WINDMILL','UPSIDE_DOWN_GRAVITY','FAKE_DROP_PANIC','OVERHEAD_CROWN_DANGLE','COMBO_DOUBLE_PUMP','WHOLE_MOLD_ON_CONE'].includes(d.currentMechanic)) {
+    } else if (['GIANT_BLOCK_TEASE','MIDAIR_BLOCK_SOMERSAULT','VERTICAL_WINDMILL','UPSIDE_DOWN_GRAVITY','FAKE_DROP_PANIC','OVERHEAD_CROWN_DANGLE','COMBO_DOUBLE_PUMP','WHOLE_MOLD_ON_CONE','PENDULUM_BELL_SWING','SHOULDER_FAKEOUT_PIVOT','ZIGZAG_LIGHTNING_TEASE','CROWN_TAP_KISS_TEASE','SPIRAL_CROWN_ASCENT'].includes(d.currentMechanic) || MARAS_FLOURISH_IDS.has(d.currentMechanic)) {
       if (d.subStep === 0) this.release(); else this.reach(key, d.coneWorldPos, dt);
     } else if (d.currentMechanic === 'BELL_RHYTHM_FEINT') {
       if (d.bellBeatsDone < 2) this.release(); else this.reach(key, d.coneWorldPos, dt);

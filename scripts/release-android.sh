@@ -16,10 +16,18 @@ echo "==> 2. Web build + Capacitor Android senkronizasyonu"
 npm run build
 npx cap sync android
 
-echo "==> 3. Gradle: İmzalı Production AAB + APK derleniyor"
+echo "==> 3. Gradle: İmzalı Production AAB + APK derleniyor (v2.0.1 / versionCode 3)"
 ( cd android && ./gradlew --quiet bundleRelease assembleRelease )
 
 mkdir -p play-store-publish/releases
+cp android/app/build/outputs/bundle/release/app-release.aab \
+   play-store-publish/releases/TurkishIceCreamChallenge-v2.0.1-release.aab
+cp android/app/build/outputs/apk/release/app-release.apk \
+   play-store-publish/releases/TurkishIceCreamChallenge-v2.0.1-release.apk
+cp android/app/build/outputs/bundle/release/app-release.aab \
+   play-store-publish/releases/TurkishIceCreamChallenge-v2.0.0-release.aab
+cp android/app/build/outputs/apk/release/app-release.apk \
+   play-store-publish/releases/TurkishIceCreamChallenge-v2.0.0-release.apk
 cp android/app/build/outputs/bundle/release/app-release.aab \
    play-store-publish/releases/TurkishIceCreamChallenge-v1.0.0-release.aab
 cp android/app/build/outputs/apk/release/app-release.apk \

@@ -124,7 +124,7 @@ export function updateLayeredService(d,dt,time,{intentPos,validReach,gestureStat
     d.coneTargetPos.copy(back);d.leftHandCustomTarget=handFor(outerPoint(d));
     if(d.gestureValidation.reach('layered-return-empty',intentPos.distanceTo(V(-.12,1.26,.24)),.27,dt)){
       // Peel the SAME sheet away first; the customer is left holding only paper.
-      w.setServingNapkin({owner:'player',peel:1});s.returnFrom=d.leftHandCustomTarget.clone();
+      w.setServingNapkin({owner:'player',peel:1});s.returnFrom=(d.leftHandCustomTarget||handRest).clone();
       w.handoffOuterCone('vendor',true);d.heldItem='SERVICE_PAPER';phase(d,3);d.sound.playWaferSlide();
     }
   }else if(d.subStep===3){
@@ -132,7 +132,7 @@ export function updateLayeredService(d,dt,time,{intentPos,validReach,gestureStat
     if(t>=.6)phase(d,4);
   }else if(d.subStep===4){
     d.coneTargetPos.copy(back);if(!s.paperReturn&&!d.gestureValidation.reach('layered-paper-back',intentPos.distanceTo(V(-.12,1.26,.24)),.27,dt))return;s.paperReturn ||= new NapkinReturn(d,{retrieveOnly:true});
-    if(s.paperReturn.update(d,dt/(d.config?.tempoFactor||1))){s.returnFrom=d.leftHandCustomTarget.clone();phase(d,5);d.sound.playWaferSlide();}
+    if(s.paperReturn.update(d,dt/(d.config?.tempoFactor||1))){s.returnFrom=(d.leftHandCustomTarget||handRest).clone();phase(d,5);d.sound.playWaferSlide();}
   }else if(d.subStep===5){
     d.coneTargetPos.copy(back);d.leftHandCustomTarget=s.returnFrom.clone().lerp(V(-.12,1.17,.20),ease(t/.4));
     w.setServingNapkin({owner:'vendor-hand',peel:1,offset:V(-.11,.025,-.025)});

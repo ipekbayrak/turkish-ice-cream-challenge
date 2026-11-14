@@ -39,8 +39,12 @@ export function buildConeRack(waffleTexture) {
     }
   }
   for(const instance of [cones,linings,rims]){instance.instanceMatrix.needsUpdate=true;instance.castShadow=true;instance.receiveShadow=true;root.add(instance);}
-  // Side-mounted supports rather than a hovering container.
+  // Side-mounted supports and rear cart-wall cantilever arms rather than a hovering container.
   for(const z of [-.20,.20]){mesh(new THREE.BoxGeometry(.065,.22,.035),steel,.11,-.10,z);mesh(new THREE.BoxGeometry(.12,.025,.035),steel,.07,-.20,z);}
+  for(const x of [-.12,.12]){
+    mesh(new THREE.BoxGeometry(.028,.032,.18),steel,x,-.045,.29);
+    mesh(new THREE.BoxGeometry(.065,.075,.020),steel,x,-.055,.375);
+  }
   root.userData={wellCount:8,conesPerWell:7,totalCones:count,wellCenters};
   batchStaticMeshes(root);
   return root;

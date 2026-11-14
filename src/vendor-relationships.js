@@ -1,4 +1,4 @@
-import { getVenueForStage } from './venues.js';
+import { getVenueForStage, formatTurkishVenueLocative } from './venues.js';
 import { StallMemoryProgress, laterVenueStory } from './stall-memories.js';
 /** A remembered customer and four linked masters. Narrative never awards gameplay progress. */
 const KEY='maras-vendor-relationships-v1';
@@ -58,8 +58,9 @@ export class VendorRelationships {
   this.world.playVendorReaction?.(this.visits[vendor]>1?'recognition':'greeting');
   if(stage>10){
    const thread=laterVenueStory(stage,this.save.lang);
-   const place=getVenueForStage(stage).name[this.save.lang==='tr'?'tr':'en'];
-   const text=thread?(this.memories.earned.has(thread.id)?thread.returning:thread.entry):(this.save.lang==='tr'?`${place}’de de seni bekliyorduk.`:`We were expecting you in ${place}.`);
+   const venue=getVenueForStage(stage),place=venue.name[this.save.lang]||venue.name.en;
+   const trLoc=formatTurkishVenueLocative(venue,false),trAlso=trLoc.endsWith('e')?'de':'da';
+   const text=thread?(this.memories.earned.has(thread.id)?thread.returning:thread.entry):(this.save.lang==='tr'?`${trLoc} ${trAlso} seni bekliyorduk.`:`We were expecting you in ${place}.`);
    this.pendingRecognition=thread&&this.memories.earned.has(thread.id)?thread.returning:this.visits[vendor]>1?TEXT[this.save.lang==='tr'?'tr':'en'].returning[vendor]:thread?.hint||text;return text;
   }
   return relationshipLine('greeting',vendor,this.visits[vendor],this.save.lang,this.lore.completed);

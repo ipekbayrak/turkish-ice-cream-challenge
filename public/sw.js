@@ -1,10 +1,13 @@
-const CACHE_NAME = 'maras-dondurma-v43-stable-hands';
+const CACHE_NAME = 'maras-dondurma-v45-hotfix';
 const PRECACHE_URLS = [
   './',
   './index.html',
   './manifest.webmanifest',
   './icon.svg',
+  './icon-192.png',
+  './icon-512.png',
   './apple-touch-icon.png',
+  './privacy-policy.html',
 ];
 
 self.addEventListener('install', (event) => {
@@ -29,6 +32,7 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  if (!event.request.url.startsWith(self.location.origin)) return;
 
   // Network-first for HTML navigation so fresh deployments always load immediately
   if (event.request.mode === 'navigate') {
@@ -75,7 +79,7 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         })
-        .catch(() => caches.match('./index.html'));
+        .catch(() => Response.error());
     })
   );
 });

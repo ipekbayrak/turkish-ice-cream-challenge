@@ -1,4 +1,5 @@
 import {BoxGeometry,CanvasTexture,Color,Group,InstancedMesh,MathUtils,Mesh,MeshStandardMaterial,Object3D,SRGBColorSpace} from 'three';
+import {batchStaticMeshes} from './static-batch.js';
 
 export const SHOP_FLOOR_Y=.008;
 export const SHOP_WALK_SPACE=Object.freeze({left:-1.28,right:1.28,front:-.65,back:-1.65});
@@ -69,6 +70,7 @@ export function buildShopInterior(){
   box(.035,.075,1.88,side*1.904,.05,-1.37,timber);
  }
  box(3.82,.075,.035,0,.05,-2.205,timber);
+ batchStaticMeshes(group);
  group.userData.walkSpace={...SHOP_WALK_SPACE};
  return group;
 }

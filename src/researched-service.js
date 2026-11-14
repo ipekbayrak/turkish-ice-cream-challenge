@@ -13,10 +13,10 @@ export const SERVICE_REFERENCES=Object.freeze({
  toss:{title:'Galata Ice Cream & Desserts — Our Story (vendor account)',url:'https://d458ed000cb810c112e78e953b8935ff72a30b80.web.ordersave.com/story',evidence:'The vendor describes twisting, tossing and teasing cones. These catch challenges combine that vocabulary with existing cone/scoop separation; exact trajectories and rules are game-authored.'},
 });
 export const RESEARCHED_SERVICE_CATALOG=Object.freeze([
- {id:WRIST_NEAR_MISS,names:{tr:'Bilekten Son Anda',en:'A Small Wrist Feint'},descs:{tr:'Usta yaklaşan elini görünce iki küçük bilek hareketiyle külahı kaçırır. Son sakin teklif gerçekten tutulabilir.',en:'Two small wrist evasions react to a deliberate approach, then the serving settles for a genuine grab.'},icon:'🍦',difficulty:2,category:'reactive_service',unlockStage:4,provenance:'observed-movement-game-adaptation',sourceRefs:[SERVICE_REFERENCES.wrist.url,SERVICE_REFERENCES.offers.url],adaptation:'Two feints, timing, signals and touch rules are authored for the game.'},
- {id:SCOOP_CONE_RELAY,names:{tr:'Toplar Külah Değiştiriyor',en:'Ice Cream Changes Cones'},descs:{tr:'Aynı dondurma iki gerçek külah arasında geçer. Boş külah hazneye dönünce dolu külahı ustanın elinden al.',en:'The same ice cream passes between two real cones. Take the filled cone after the empty wafer returns to its holder.'},icon:'🍦',difficulty:3,category:'cone_transfer',unlockStage:8,provenance:'firsthand-movement-game-adaptation',sourceRefs:[SERVICE_REFERENCES.relay.url],adaptation:'The two-transfer sequence, paths and final catch window are authored for the game.'},
- {id:EMPTY_WAFER_TOSS,names:{tr:'Havadaki Boş Külah',en:'Catch the Flying Wafer'},descs:{tr:'Usta gerçek boş külahı kısa bir yayla atar. Havada tut; sonra dolu külahın altına geri geçir.',en:'The real empty wafer makes a short airborne turn. Catch it, then return it below the filled cone.'},icon:'🍦',difficulty:3,category:'airborne_wafer',unlockStage:5,provenance:'authored-service-challenge',sourceRefs:[SERVICE_REFERENCES.toss.url,SERVICE_REFERENCES.relay.url],adaptation:'An authored airborne catch and nesting challenge using documented toss and cone-transfer vocabulary; not a separately documented traditional name.'},
- {id:SCOOP_AIR_CATCH,names:{tr:'Topları Külahla Yakala',en:'Catch the Scoops in Your Cone'},descs:{tr:'Boş külah gerçekten elinde kalır. Ustanın attığı aynı dondurmayı külahın altında bekleyerek yakala.',en:'Keep the real bare cone and place it below the same airborne scoop stack to catch the ice cream.'},icon:'🍨',difficulty:4,category:'airborne_scoops',unlockStage:9,provenance:'authored-service-challenge',sourceRefs:[SERVICE_REFERENCES.toss.url,SERVICE_REFERENCES.relay.url],adaptation:'A game-authored catch challenge combining tosses with separation/reunion of the same serving. Catch timing is not a claim about a named traditional trick.'},
+ {id:WRIST_NEAR_MISS,names:{tr:'Bilekten Son Anda',en:'A Small Wrist Feint',ar:'مراوغة المعصم في اللحظة الأخيرة',ru:'Кистевой финт в последний миг',de:'Handgelenk-Finte im letzten Moment',ja:'寸前のリストフェイント'},descs:{tr:'Usta yaklaşan elini görünce iki küçük bilek hareketiyle külahı kaçırır. Son sakin teklif gerçekten tutulabilir.',en:'Two small wrist evasions react to a deliberate approach, then the serving settles for a genuine grab.',ar:'يستجيب البائع لاقتراب يدك بمراوغتين صغيرتين بالمعصم ثم يثبت القمع لتتمكن من إمساكه.',ru:'Мастер дважды уводит рожок легким движением кисти при приближении руки, а затем спокойно подает его.',de:'Der Meister weicht deiner Hand zweimal kurz aus dem Handgelenk aus, bevor er die Waffel ruhig anbietet.',ja:'近づく手に反応して手首で2回かわし、3回目の静かな差し出しで本当に掴める！'},icon:'🍦',difficulty:2,category:'reactive_service',unlockStage:4,provenance:'observed-movement-game-adaptation',sourceRefs:[SERVICE_REFERENCES.wrist.url,SERVICE_REFERENCES.offers.url],adaptation:'Two feints, timing, signals and touch rules are authored for the game.'},
+ {id:SCOOP_CONE_RELAY,names:{tr:'Toplar Külah Değiştiriyor',en:'Ice Cream Changes Cones',ar:'البوظة تنتقل بين قمعين',ru:'Мороженое меняет рожки',de:'Eis wechselt die Waffel',ja:'アイスがコーンを乗り換える'},descs:{tr:'Aynı dondurma iki gerçek külah arasında geçer. Boş külah hazneye dönünce dolu külahı ustanın elinden al.',en:'The same ice cream passes between two real cones. Take the filled cone after the empty wafer returns to its holder.',ar:'تنتقل نفس البوظة بين قمعين حقيقيين! خذ القمع الممتلئ من يد البائع بعد عودة القمع الفارغ لمكانه.',ru:'Одно и то же мороженое переходит между двумя рожками. Возьми полный рожок из руки мастера!',de:'Dasselbe Eis wandert zwischen zwei Waffeln hin und her. Nimm die volle Waffel aus der Hand des Meisters!',ja:'同じアイスが2つのコーンの間を行き来する！空コーンが戻ったら満杯のコーンを受け取れ！'},icon:'🍦',difficulty:3,category:'cone_transfer',unlockStage:8,provenance:'firsthand-movement-game-adaptation',sourceRefs:[SERVICE_REFERENCES.relay.url],adaptation:'The two-transfer sequence, paths and final catch window are authored for the game.'},
+ {id:EMPTY_WAFER_TOSS,names:{tr:'Havadaki Boş Külah',en:'Catch the Flying Wafer',ar:'امسك القمع الطائر',ru:'Поймай летящий рожок',de:'Fang die fliegende Waffel',ja:'空飛ぶ空コーンをキャッチ'},descs:{tr:'Usta gerçek boş külahı kısa bir yayla atar. Havada tut; sonra dolu külahın altına geri geçir.',en:'The real empty wafer makes a short airborne turn. Catch it, then return it below the filled cone.',ar:'يرمي البائع القمع الفارغ في الهواء بقوس قصير! امسكه في الهواء ثم أعده أسفل القمع الممتلئ.',ru:'Мастер подбрасывает пустой рожок по дуге. Поймай его в воздухе и верни под полный рожок!',de:'Der Meister wirft die leere Waffel im Bogen. Fang sie in der Luft und steck sie unter die volle Waffel!',ja:'職人が投げた空のコーンを空中でキャッチし、アイスの入ったコーンの下へ戻せ！'},icon:'🍦',difficulty:3,category:'airborne_wafer',unlockStage:5,provenance:'authored-service-challenge',sourceRefs:[SERVICE_REFERENCES.toss.url,SERVICE_REFERENCES.relay.url],adaptation:'An authored airborne catch and nesting challenge using documented toss and cone-transfer vocabulary; not a separately documented traditional name.'},
+ {id:SCOOP_AIR_CATCH,names:{tr:'Topları Külahla Yakala',en:'Catch the Scoops in Your Cone',ar:'التقط كرات البوظة بقمعك',ru:'Поймай шарики своим рожком',de:'Fang die Kugeln mit deiner Waffel',ja:'飛んでくるアイスをコーンで受け止めろ'},descs:{tr:'Boş külah gerçekten elinde kalır. Ustanın attığı aynı dondurmayı külahın altında bekleyerek yakala.',en:'Keep the real bare cone and place it below the same airborne scoop stack to catch the ice cream.',ar:'يبقى القمع الفارغ في يدك؛ ضعه تحت كرات البوظة الطائرة في الهواء لتلتقطها!',ru:'Держи пустой рожок в руке и подставь его под летящие шарики мороженого, чтобы поймать их!',de:'Halte deine leere Waffel unter die durch die Luft fliegenden Eiskugeln, um sie aufzufangen!',ja:'手に持った空のコーンを落下地点に合わせて、空中を飛ぶアイスを受け止めろ！'},icon:'🍨',difficulty:4,category:'airborne_scoops',unlockStage:9,provenance:'authored-service-challenge',sourceRefs:[SERVICE_REFERENCES.toss.url,SERVICE_REFERENCES.relay.url],adaptation:'A game-authored catch challenge combining tosses with separation/reunion of the same serving. Catch timing is not a claim about a named traditional trick.'},
 ]);
 export const researchedIdsForStage=stage=>RESEARCHED_SERVICE_CATALOG.filter(t=>t.unlockStage<=stage).map(t=>t.id);
 export const isResearchedService=id=>RESEARCHED_SERVICE_IDS.includes(id);
@@ -100,7 +100,7 @@ function updateRelay(d,dt,input){
    const grip=w.lArmRig.handGroup.localToWorld(V(0,.11,.035));
    const cone=point(w,w.conePivot),offset=cone.clone().sub(d.coneWorldPos);
    pose(d,s.from,grip.clone().sub(offset),t/.65);d.presentationExact=true;
-   if(t>=.65&&cone.distanceTo(grip)<.04){
+   if(t>=.65&&(cone.distanceTo(grip)<.04||t>=1.35)){
     s.entryContactDistance=cone.distanceTo(grip);w.handoffCone('vendor');w.handoffOuterCone('paddle',true);
     w.vendorConeReceiveProgress=null;w.vendorConeReceiveFrom=null;
     s.transferred=true;s.entryTransferAt=t;s.from=d.coneWorldPos.clone();d.sound.playWaferSlide?.(0);
@@ -154,8 +154,8 @@ function updateWaferToss(d,dt,input){
  }else if(d.subStep===1){
   const p=Math.min(1,t/1.12);w.outerConeGroup.position.copy(arc(s.launch,s.landing,p,.22));w.outerConeGroup.rotation.set(.08,0,Math.PI*2*p);d.leftHandCustomTarget=null;
   if(p>.30&&p<.94&&reach(d,`flying-wafer-${s.attempt}`,w.outerConeGroup,input,dt)){
-   w.handoffOuterCone('player',true);d.heldItem='TOSSED_WAFER';phase(d,2);d.sound.playConePop?.(.1);
-  }else if(p>=1){s.recovery=point(w,w.outerConeGroup);s.attempt++;phase(d,5);}
+   w.handoffOuterCone('player',true);d.heldItem='TOSSED_WAFER';phase(d,2);d.sound.playConePop?.(.1);d._vibrate?.(20);
+  }else if(p>=1){s.recovery=point(w,w.outerConeGroup);s.attempt++;if(s.attempt>=4){w.handoffOuterCone('nested',true);phase(d,3);}else phase(d,5);}
  }else if(d.subStep===2){
   pose(d,s.from,OFFER,t/.32);
   if(t>.35&&reach(d,'nest-caught-wafer',w.conePivot,input,dt)){w.handoffOuterCone('nested',true);d.heldItem=null;phase(d,3);d.sound.playWaferSlide?.(0);}
@@ -181,7 +181,7 @@ function updateAirScoops(d,dt,input){
   w.scene.updateMatrixWorld(true);
   const grip=w.lArmRig.handGroup.localToWorld(V(0,.11,.035)),cone=point(w,w.conePivot),offset=cone.clone().sub(d.coneWorldPos);
   pose(d,s.from,grip.clone().sub(offset),t/.48);d.presentationExact=true;
-  if(t>=.48&&cone.distanceTo(grip)<.04){w.handoffCone('vendor');w.vendorConeReceiveProgress=null;w.vendorConeReceiveFrom=null;w.setScoopPresentation('paddle');phase(d,1);}
+  if(t>=.48&&(cone.distanceTo(grip)<.04||t>=1.20)){w.handoffCone('vendor');w.vendorConeReceiveProgress=null;w.vendorConeReceiveFrom=null;w.setScoopPresentation('paddle');phase(d,1);}
  }else if(d.subStep===1){
   holdMain(d,HAND.clone().lerp(HAND_OFFER,ease(t/.36)));pose(d,s.from,V(-.12,1.44,.09),t/.38);d.presentationExact=true;
   if(t>.45&&reach(d,'take-air-bare-cone',w.conePivot,input,dt)){takeMain(d,2);d.heldItem='AIR_CATCH_CONE';}
@@ -193,8 +193,8 @@ function updateAirScoops(d,dt,input){
   d.coneTargetPos.copy(s.landing).add(V(0,.19,-.14));d.presentationExact=true;
   const linedUp=reachTarget(d,`air-landing-${s.attempt}`,landingTarget(d),input,dt);
   if(p>=.82&&linedUp&&point(w,w.conePivot).distanceTo(s.landing)<.14){
-   w.scoopInFlight=false;w.setScoopPresentation('cone');phase(d,4);d.sound.playIcePop?.(.1);w.triggerScoopJiggle?.(.5);
-  }else if(p>=1){w.scoopInFlight=false;w.setScoopPresentation('paddle',s.landing);s.attempt++;phase(d,6);}
+   w.scoopInFlight=false;w.setScoopPresentation('cone');phase(d,4);d.sound.playIcePop?.(.1);w.triggerScoopJiggle?.(.5);d._vibrate?.(20);
+  }else if(p>=1){w.scoopInFlight=false;s.attempt++;if(s.attempt>=4){w.setScoopPresentation('cone');phase(d,4);}else{w.setScoopPresentation('paddle',s.landing);phase(d,6);}}
  }else if(d.subStep===4){d.coneTargetPos.copy(REST);if(t>=.32)phase(d,5);}
  else if(d.subStep===5){if(recoverMain(d,t))finish(d,440);}
  else {

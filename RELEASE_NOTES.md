@@ -1,17 +1,17 @@
 ## tr-TR
-v1.0.0: İlk resmi Google Play sürümü! 3 farklı Maraş ustası, gerçekçi 3B boş külah ve peçete tuzakları, 6 dil desteği ve tam ekran performans modu.
+v2.0.1: Kararlılık ve deneyim güncellemesi! 4 Maraş ustası ve 112 şovda mola dönüşü donma hatası giderildi, mobil ses/zamanlayıcı akıcılığı güçlendirildi ve "yanlış lezzet şakası" esprisi konuşma balonları ile daha anlaşılır hale getirildi!
 
 ## en-US
-v1.0.0: Official launch! Experience 3D POV Maraş ice cream tricks, empty cone & napkin traps, 3 masters with vocal synthesis, and 6 languages.
+v2.0.1: Stability & clarity update! Fixed a rare gameplay freeze after idle flourish recovery across all 4 masters & 112 shows, improved mobile audio resilience, and added playful banter for the Maraş wrong-flavor prank!
 
 ## ar
-الإصدار 1.0.0: الإطلاق الرسمي! خدع الآيس كريم التركي ثلاثية الأبعاد مع دعم كامل للغة العربية.
+الإصدار 2.0.1: تحديث الاستقرار! إصلاح مشكلة التوقف النادرة أثناء اللعب، وتحسين سلاسة الصوت على الهواتف، وتوضيح مقلب النكهة الخاطئة الفكاهي للمعلم!
 
 ## ru-RU
-v1.0.0: Официальный релиз! 3D трюки с турецким мороженым, 3 мастера и 6 языков.
+v2.0.1: Обновление стабильности! Исправлено редкое зависание после анимации ожидания, улучшена работа звука на мобильных устройствах и добавлены весёлые реплики для шутки с другой начинкой!
 
 ## de-DE
-v1.0.0: Offizieller Start! 3D-POV Maraş-Eistricks, 3 Meister und 6 Sprachen.
+v2.0.1: Stabilitäts-Update! Seltener Einfrier-Fehler nach Pausen-Animationen behoben, mobile Audio-Stabilität verbessert und witzige Meister-Kommentare für den Maraş-Sorten-Streich ergänzt!
 
 ## ja-JP
-v1.0.0: 公式リリース！3Dトルコアイス職人トリック、3人のマスター、6言語対応。
+v2.0.1: 安定性＆演出アップデート！待機アクション復帰時の稀なフリーズ不具合を修正し、モバイル音声の安定性を向上、さらに職人の「違う味のイタズラ」演出をより分かりやすく改善しました！

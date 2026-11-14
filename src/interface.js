@@ -19,8 +19,8 @@ function closePanel(dialog) {
     delete dialog.dataset.closing;
   }, reducedMotion.matches ? 0 : 180);
 }
-for (const [trigger, panel] of [['btn-stages-panel', 'dialog-stages']]) {
-  $(trigger).addEventListener('click', () => { $('dialog-settings')?.close(); delete $(panel).dataset.closing; $(panel).showModal(); });
+for (const [trigger, panel] of [['btn-stages-panel', 'dialog-stages'], ['btn-tricks-panel', 'dialog-tricks']]) {
+  $(trigger)?.addEventListener('click', () => { $('dialog-settings')?.close(); delete $(panel).dataset.closing; $(panel).showModal(); });
 }
 document.querySelectorAll('[data-dismiss]').forEach(button => {
   button.addEventListener('click', () => closePanel($(button.dataset.dismiss)));

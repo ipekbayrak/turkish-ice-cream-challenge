@@ -12,25 +12,28 @@ export function canonicalPoleHandRotation(side,out=new Quaternion()){
   return out.setFromAxisAngle(Y,-side*Math.PI/2);
 }
 
+const _fx=new Vector3(),_fy=new Vector3(),_fz=new Vector3(),_fMat=new Matrix4();
 function frameAcrossAxis(side,axis,approach,roll,out){
-  const x=axis.clone().normalize().multiplyScalar(side);
-  const y=approach.clone().addScaledVector(x,-approach.dot(x));
+  const x=_fx.copy(axis).normalize().multiplyScalar(side);
+  const y=_fy.copy(approach).addScaledVector(x,-approach.dot(x));
   if(y.lengthSq()<1e-6){y.copy(Y).addScaledVector(x,-Y.dot(x));}
   if(y.lengthSq()<1e-6){y.copy(Z).addScaledVector(x,-Z.dot(x));}
   y.normalize();if(roll)y.applyAxisAngle(axis,roll);
-  const z=new Vector3().crossVectors(x,y).normalize();y.crossVectors(z,x).normalize();
-  return out.setFromRotationMatrix(new Matrix4().makeBasis(x,y,z));
+  const z=_fz.crossVectors(x,y).normalize();y.crossVectors(z,x).normalize();
+  return out.setFromRotationMatrix(_fMat.makeBasis(x,y,z));
 }
 
+const _pApproach=new Vector3();
 /** Full hand frame, with thumb along the shaft and wrist pointing from the
  * forearm toward the grip. Roll is pronation, never an up/down wrist fold. */
 export function poleHandRotation(side,shaftDirection,contact,elbow,roll=0,out=new Quaternion()){
-  const approach=elbow?contact.clone().sub(elbow):Y.clone();
+  const approach=elbow?_pApproach.copy(contact).sub(elbow):_pApproach.copy(Y);
   // Rear/right grip is overhand: thumb toward the handle, knuckles above
   // the rod. The front/left support keeps its existing underhand direction.
   return frameAcrossAxis(side<0?-side:side,shaftDirection,approach,roll,out);
 }
 
+const _cAxis=new Vector3(),_cPrevY=new Vector3(),_cTargetY=new Vector3(),_cCross=new Vector3(),_cCanon=new Quaternion();
 /** The contact root carries this outer rotation; the HandRig retains the
  * canonical local pole frame. Prediction and rendering use this same result. */
 export function poleContactRotation(side,shaftDirection,contact,elbow,roll=0,out=new Quaternion(),previousHand=null,maxTwist=Infinity){
@@ -39,38 +42,39 @@ export function poleContactRotation(side,shaftDirection,contact,elbow,roll=0,out
   // in a single frame. Keep the shaft axis exact, but turn the palm continuously
   // about it. The immutable frame-start reference is shared by all candidates.
   if(previousHand&&Number.isFinite(maxTwist)){
-    const axis=shaftDirection.clone().normalize(),previousY=Y.clone().applyQuaternion(previousHand);
+    const axis=_cAxis.copy(shaftDirection).normalize(),previousY=_cPrevY.copy(Y).applyQuaternion(previousHand);
     previousY.addScaledVector(axis,-previousY.dot(axis));
     if(previousY.lengthSq()>1e-6){
-      previousY.normalize();const targetY=Y.clone().applyQuaternion(out);
-      const angle=Math.atan2(axis.dot(new Vector3().crossVectors(previousY,targetY)),previousY.dot(targetY));
+      previousY.normalize();const targetY=_cTargetY.copy(Y).applyQuaternion(out);
+      const angle=Math.atan2(axis.dot(_cCross.crossVectors(previousY,targetY)),previousY.dot(targetY));
       if(Math.abs(angle)>maxTwist){
         const limited=previousY.applyAxisAngle(axis,Math.sign(angle)*maxTwist);
         frameAcrossAxis(side<0?-side:side,axis,limited,0,out);
       }
     }
   }
-  return out.multiply(canonicalPoleHandRotation(side,new Quaternion()).invert());
+  return out.multiply(canonicalPoleHandRotation(side,_cCanon).invert());
 }
 
 export function coneHandRotation(side,approach,axis=Y,out=new Quaternion()){
   return frameAcrossAxis(side,axis,approach,0,out);
 }
 
+const _rY=new Vector3(),_rZ=new Vector3(),_rX=new Vector3(),_rMat=new Matrix4(),_pCone=new Vector3();
 /** Empty resting hands continue the forearm, with palms toward the body and
  * thumbs up when reaching forward. Authored pointing/waving use their own frame. */
 export function restHandRotation(side,forearm,bodyRight=X,out=new Quaternion()){
-  const y=forearm.clone().normalize(),z=bodyRight.clone().multiplyScalar(side);
+  const y=_rY.copy(forearm).normalize(),z=_rZ.copy(bodyRight).multiplyScalar(side);
   z.addScaledVector(y,-z.dot(y));
   if(z.lengthSq()<1e-6){z.copy(Z).negate().addScaledVector(y,y.dot(Z));}
-  z.normalize();const x=new Vector3().crossVectors(y,z).normalize();z.crossVectors(x,y).normalize();
-  return out.setFromRotationMatrix(new Matrix4().makeBasis(x,y,z));
+  z.normalize();const x=_rX.crossVectors(y,z).normalize();z.crossVectors(x,y).normalize();
+  return out.setFromRotationMatrix(_rMat.makeBasis(x,y,z));
 }
 
 /** Palm toward the player, thumb above the cone, forearm entering from its
  * anatomical side. Chirality and screen-side entry are independent choices. */
 export function playerConeRotation(side,out=new Quaternion()){
-  return coneHandRotation(side,X.clone().multiplyScalar(side),Y,out);
+  return coneHandRotation(side,_pCone.copy(X).multiplyScalar(side),Y,out);
 }
 
 /** Customer faces the vendor: right forearm enters from screen-right, thumb

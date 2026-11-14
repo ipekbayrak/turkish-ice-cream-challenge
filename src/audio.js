@@ -3,7 +3,7 @@
 import { USTA_BASE_PITCH, VENDOR_REACTIONS, synthesizeVendorVocal, musicStepEvents, musicStepSeconds, synthesizeMusicNote } from './sound-palette.js';
 import {MusicTransport} from './music-transport.js';
 export { synthesizeVendorVocal } from './sound-palette.js';
-export const VENDOR_VOICE_LIMITS = Object.freeze({ minGap: 3.2, repeatGap: 7, maxPerRound: 6 });
+export const VENDOR_VOICE_LIMITS = Object.freeze({ minGap: 3.2, repeatGap: 7, maxPerRound: 10 });
 const CUE_GROUPS = { hmm: 'curious', taunt: 'curious', hirr: 'effort', hoppa: 'effort', eeeh: 'amused', laugh: 'amused', cik: 'small', cheer: 'happy', shock: 'surprise' };
 
 export class SoundEngine {
@@ -420,6 +420,12 @@ export class SoundEngine {
     this.playBellNote(3, intensity, panX);
   }
 
+  playBellStrike(bellIdx = 3, intensity = 0.85, panX = 0) {
+    const idx = Number.isFinite(Number(bellIdx)) ? Math.round(Number(bellIdx)) : 3;
+    const autoPan = panX || Math.max(-0.6, Math.min(0.6, (idx - 3) * 0.16));
+    this.playBellNote(idx, intensity, autoPan);
+  }
+
   playBellNote(bellIdx = 3, intensity = 1.0, panX = 0) {
     this.syncMusicBeat();
     if (!this.enabled) return;
@@ -492,7 +498,77 @@ export class SoundEngine {
     });
   }
 
-  playPaddleClank(panX = 0) { this._playSurfaceImpact(panX, 1, true); }
+  playPaddleClank(panOrIntensity = 0, maybePan = undefined) {
+    const panX = maybePan !== undefined ? maybePan : panOrIntensity;
+    const pitchMult = maybePan !== undefined ? Math.max(0.75, Math.min(1.25, 0.85 + Number(panOrIntensity || 0.5) * 0.3)) : 1;
+    this._playSurfaceImpact(panX, pitchMult, true);
+  }
+
+  playPaperRustle(panX = 0) {
+    if (!this.enabled) return;
+    this.init();
+    if (!this._canScheduleAudio()) return;
+    const now = this.ctx.currentTime;
+    const len = Math.max(1, Math.floor(this.ctx.sampleRate * 0.085));
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.sin((i / len) * Math.PI) * 0.9;
+    }
+    const noise = this._trackSource(this.ctx.createBufferSource());
+    noise.buffer = buf;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(2450, now);
+    filter.frequency.exponentialRampToValueAtTime(1350, now + 0.08);
+    filter.Q.value = 1.4;
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.085, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.082);
+    noise.connect(filter);
+    filter.connect(gain);
+    this._connectWithPan(gain, panX, this.masterGain, noise);
+    noise.start(now);
+    noise.stop(now + 0.085);
+  }
+
+  playStretchPull(intensity = 0.6, panX = 0) {
+    if (!this.enabled) return;
+    this.init();
+    if (!this._canScheduleAudio()) return;
+    const now = this.ctx.currentTime;
+    const osc = this._trackSource(this.ctx.createOscillator());
+    const gain = this.ctx.createGain();
+    const level = Math.max(0.03, Math.min(0.18, 0.14 * (Number(intensity) || 0.6)));
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(195, now);
+    osc.frequency.exponentialRampToValueAtTime(335, now + 0.14);
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.exponentialRampToValueAtTime(level, now + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+    osc.connect(gain);
+    this._connectWithPan(gain, panX, this.masterGain, osc);
+    osc.start(now);
+    osc.stop(now + 0.17);
+  }
+
+  playIcePop(panX = 0) {
+    if (!this.enabled) return;
+    this.init();
+    if (!this._canScheduleAudio()) return;
+    const now = this.ctx.currentTime;
+    const osc = this._trackSource(this.ctx.createOscillator());
+    const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(250, now);
+    osc.frequency.exponentialRampToValueAtTime(640, now + 0.055);
+    gain.gain.setValueAtTime(0.16, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.075);
+    osc.connect(gain);
+    this._connectWithPan(gain, panX, this.masterGain, osc);
+    osc.start(now);
+    osc.stop(now + 0.08);
+  }
 
   playWhoosh(pitch = 1.0, panX = 0) {
     if (!this.enabled) return;

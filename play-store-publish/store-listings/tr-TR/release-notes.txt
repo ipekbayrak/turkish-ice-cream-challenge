@@ -1,1 +1,1 @@
-v1.0.0: İlk resmi Google Play sürümü! 3 farklı Maraş ustası, gerçekçi 3B boş külah ve peçete tuzakları, 6 dil desteği ve tam ekran performans modu.
+v2.0.1: El çabukluğu ve mola dönüşü sırasındaki donma hatası giderildi, mobil akıcılık iyileştirildi ve ustanın yanlış lezzet şakası konuşma balonlarıyla netleştirildi!

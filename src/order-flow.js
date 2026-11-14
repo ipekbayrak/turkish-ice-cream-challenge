@@ -56,7 +56,9 @@ export class OrderFlow {
     if(!point)return false;
     if(!this.pointerAnchor){this.pointerAnchor=point;return false;}
     if(Math.hypot(point.x-this.pointerAnchor.x,point.y-this.pointerAnchor.y)<ORDER_MOVE_PIXELS)return false;
-    this.pointerAnchor=point;this.motionRevision++;this.idleSeconds=0;this.dwellGrace=DWELL_GRACE_SECONDS;return true;
+    this.pointerAnchor=point;this.motionRevision++;
+    if(this.count<this.maxScoops){this.idleSeconds=0;this.dwellGrace=DWELL_GRACE_SECONDS;}
+    return true;
   }
   update(dt,input={active:false,flavor:null}) {
     if(!this.active||!Number.isFinite(dt)||dt<=0)return;
@@ -102,7 +104,7 @@ export class OrderFlow {
     // this grace forever. Only real movement or an accepted scoop renews it.
     const protectedDwell=choosing&&this.dwellGrace>0;
     if(choosing)this.dwellGrace=Math.max(0,this.dwellGrace-dt);
-    if(this.count&&!moved&&!protectedDwell){
+    if(this.count&&(!moved||this.count>=this.maxScoops)&&!protectedDwell){
       this.idleSeconds+=dt;
       if(this.count===1&&!this.singleAsked&&this.idleSeconds>=.65){this.singleAsked=true;this.onSingle();}
       if(this.idleSeconds+1e-8>=orderFinishDelay(this.count)+(this.count===1?.35:0))this.finish();

@@ -71,12 +71,16 @@ dialog::backdrop { backdrop-filter: blur(5px); transition-duration: 180ms; }
 .trick-item-desc { line-height: 1.5; }
 .modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .modal-actions button { min-height: 46px; }
+.modal-actions button[hidden] { display: none !important; }
 .modal-actions .play-giant-btn { grid-column: 1 / -1; grid-row: 1; }
+.modal-actions.single-secondary #btn-menu-round { grid-column: 1 / -1; }
 @media (max-width: 420px) {
   .top-minimal-pill { gap: 7px; padding-inline: 9px 5px; }
   .usta-badge-btn { font-size: .65rem; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
   .flavor-orb-btn { width: 44px; height: 44px; font-size: .9rem; }
   .scoop-dots { display: none; }
+  body.round-active .hud-top .scoop-dots { display: inline-flex; gap: 2px; }
+  body.round-active .hud-top .scoop-dots .s-dot { width: 5px; height: 5px; }
   .start-sheet-card { padding: 21px; }
   .modal-card { padding: 20px; }
   .visual-order-bar { padding: 12px; gap: 12px; }
@@ -140,7 +144,13 @@ body.ordering #btn-switch-usta { pointer-events: none; }
 .venue-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .venue-card { text-align: start; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 14px; color: var(--cream); border: 1px solid #ffffff19; border-radius: 16px; background: #ffffff04; cursor: pointer; }
 .venue-card.selected { border-color: #e0b66e; background: #dcb0670c; }
-.venue-card:disabled { cursor: default; opacity: .48; }
+.venue-card:disabled, .venue-card.disabled { cursor: default; opacity: .48; pointer-events: none; }
+.venue-stage-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.venue-stage-chip { min-height: 24px; padding: 2px 6px; border-radius: 8px; border: 1px solid #ffffff22; background: #ffffff08; color: #ead3a8; font-size: .61rem; font-weight: 600; cursor: pointer; line-height: 1.2; }
+.venue-stage-chip:hover:not(:disabled) { background: #f5b94226; border-color: #f5b94266; }
+.venue-stage-chip.active { background: #f5b94233; border-color: #f5b942; color: #fff4d2; }
+.venue-stage-chip.endless { border-color: #10b98166; color: #a7f3d0; }
+.venue-stage-chip:disabled { opacity: .35; cursor: default; }
 .venue-art { height: 88px; display: grid; place-items: center; color: #eed3a0; background: radial-gradient(ellipse, color-mix(in srgb,var(--venue-accent) 40%,transparent), transparent 74%); border-radius: 10px; }
 .venue-art svg { height: 86px; width: 130px; }
 .venue-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -228,15 +238,47 @@ body.discovery-dragging #game-canvas { cursor:grabbing; }
 .hud-top .usta-badge-btn { flex:1; min-width:0; }
 body.ordering .hud-top,body.ordering .hearts-strip,body.ordering .score-minimal,body.ordering .routine-progress-track { opacity:1; }
 .hud-top .usta-badge-btn { min-height:34px; }
-.vendor-speaking .hud-bottom { visibility:hidden; pointer-events:none; }
+.hud-top .usta-badge-btn.interactive { cursor:pointer; pointer-events:auto; }
+body.vendor-speaking:not(.round-active) .hud-bottom { visibility:hidden; pointer-events:none; }
 .hud-bottom, body.ios-immersive .hud-bottom { top:calc(max(8px,env(safe-area-inset-top)) + 48px); bottom:auto; }
 .hud-bottom .gesture-hud-card { padding:4px 12px 7px; border-radius:13px; max-width:min(360px,calc(100vw - 24px)); }
 .hud-bottom .gesture-pictogram { font-size:1.1rem; }
 .hud-bottom .action-mode-label { font-size:.73rem; line-height:1.25; }
 #dialog-result { inset:0; margin:auto; border-radius:24px; width:min(calc(100% - 28px),540px); max-height:88dvh; }
+[dir="rtl"] #btn-lang { right:auto; left:max(14px,env(safe-area-inset-left)); }
+[dir="rtl"] .hud-top, [dir="rtl"] body.ios-immersive .hud-top { padding-right:12px; padding-left:66px; }
 @media(orientation:landscape) {
  .hud-top,body.ios-immersive .hud-top { right:auto; width:min(260px,30vw); padding-right:0; }
  .hud-bottom,body.ios-immersive .hud-bottom { right:auto; width:min(260px,30vw); padding-inline:10px 0; }
  .hud-top .scoop-dots,.hud-top .scoop-summary { display:none; }
+ body.round-active .hud-top .scoop-dots { display:inline-flex; gap:2px; }
+ body.round-active .hud-top .scoop-dots .s-dot { width:5px; height:5px; }
  .hud-bottom .gesture-hud-card { width:100%; box-sizing:border-box; }
+ [dir="rtl"] .hud-top, [dir="rtl"] body.ios-immersive .hud-top { left:auto; right:0; padding-left:0; padding-right:10px; }
+ [dir="rtl"] .hud-bottom, [dir="rtl"] body.ios-immersive .hud-bottom { left:auto; right:0; padding-inline:10px 0; }
 }
+
+/* Categorized 111-Trick Encyclopedia & Practice Modal */
+#dialog-settings .menu-options-row { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+#dialog-tricks { max-width: min(100dvw, 640px); }
+.tricks-progress-summary { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; text-align: start; font-size: .74rem; color: #e8c47e; }
+.tricks-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.achievements-strip { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
+.achievement-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 99px; font-size: .66rem; font-weight: 600; border: 1px solid #f5b94245; background: #f5b94218; color: #ffe7b3; }
+.achievement-pill.locked { opacity: .42; border-color: #ffffff1a; background: #ffffff06; color: var(--text-muted); }
+.tricks-progress-bar { height: 7px; border-radius: 99px; background: #ffffff14; overflow: hidden; }
+.tricks-progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #f5b942, #10b981); transition: width 240ms ease; }
+.tricks-filter-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.trick-tab-btn { min-height: 34px; padding: 4px 11px; border-radius: 99px; border: 1px solid #ffffff1c; background: #ffffff08; color: var(--text-muted); font-size: .7rem; font-weight: 600; cursor: pointer; }
+.trick-tab-btn.active { border-color: #f5b942; background: #f5b94224; color: #ffe7b3; }
+.tricks-catalog-list { display: flex; flex-direction: column; gap: 9px; max-height: min(48dvh, 380px); overflow-y: auto; padding-inline-end: 4px; touch-action: pan-y; overscroll-behavior: contain; }
+.trick-card-item { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 14px; border-radius: 14px; border: 1px solid #ffffff14; background: #ffffff05; text-align: start; }
+.trick-card-item.locked { opacity: .48; }
+.trick-card-main { display: flex; gap: 10px; flex: 1; min-width: 0; }
+.trick-card-icon { font-size: 1.35rem; line-height: 1.2; flex-shrink: 0; }
+.trick-card-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.trick-card-title { font-size: .82rem; font-weight: 700; color: var(--cream); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.trick-card-stars { font-size: .65rem; color: #f5b942; letter-spacing: 1px; }
+.trick-card-desc { font-size: .72rem; line-height: 1.48; color: var(--text-muted); }
+.btn-practice-trick { align-self: center; flex-shrink: 0; min-height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid #f5b94255; background: #f5b9421f; color: #ffe5ad; font-size: .7rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.btn-practice-trick:hover { background: #f5b94238; }

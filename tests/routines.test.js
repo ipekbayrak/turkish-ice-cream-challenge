@@ -8,6 +8,7 @@ import { stretchCutGuide } from '../src/stretch-cut.js';
 import { figureEightWorldPoint } from '../src/figure-eight.js';
 import { layeredServiceCue, LAYERED_SERVICE_ID } from '../src/serving-sequence.js';
 import { customerServiceCue, CUSTOMER_SERVICE_IDS } from '../src/customer-service.js';
+import { MARAS_FLOURISH_IDS } from '../src/maras-flourish-tricks.js';
 import { CAMPAIGN_LEVELS, TRICK_CATALOG, ICE_CREAM_FLAVORS } from '../src/protocol.js';
 import { CHOREOGRAPHED_ROUTINES, ROUTINE_CATALOG, ROUTINE_SOURCES, BASE_SERVICE_ACTIONS, BRIDGE_FAMILIES, sampleBridgePose, routineSignature, isChoreographedRoutine, compoundLimitForStage } from '../src/trick-routines.js';
 
@@ -118,7 +119,7 @@ function fixture(routine, {stationary=false,jitter=false}={}) {
       if(d.subStep===0)reach(key,V(d.coneWorldPos.x*.5,1.15,.41),'midpoint');
       else reach(`${key}:${d.rhythmBeatsCompleted}:${d.rhythmTargetPos.x.toFixed(3)}`,d.rhythmTargetPos,'follow');return;
     }
-    if(['GIANT_BLOCK_TEASE','MIDAIR_BLOCK_SOMERSAULT','VERTICAL_WINDMILL','UPSIDE_DOWN_GRAVITY','FAKE_DROP_PANIC','OVERHEAD_CROWN_DANGLE','COMBO_DOUBLE_PUMP','WHOLE_MOLD_ON_CONE'].includes(d.currentMechanic)){
+    if(['GIANT_BLOCK_TEASE','MIDAIR_BLOCK_SOMERSAULT','VERTICAL_WINDMILL','UPSIDE_DOWN_GRAVITY','FAKE_DROP_PANIC','OVERHEAD_CROWN_DANGLE','COMBO_DOUBLE_PUMP','WHOLE_MOLD_ON_CONE','PENDULUM_BELL_SWING','SHOULDER_FAKEOUT_PIVOT','ZIGZAG_LIGHTNING_TEASE','CROWN_TAP_KISS_TEASE','SPIRAL_CROWN_ASCENT'].includes(d.currentMechanic) || MARAS_FLOURISH_IDS.has(d.currentMechanic)){
       if(d.subStep===0)release();else reach(key,d.coneWorldPos);return;
     }
     if(d.currentMechanic==='BELL_RHYTHM_FEINT'){if(d.bellBeatsDone<2)release();else reach(key,d.coneWorldPos);return;}
@@ -149,10 +150,10 @@ function fixture(routine, {stationary=false,jitter=false}={}) {
   };
 }
 
-test('repertoire has63 playable non-final shows,36 distinct authored signatures and honest component provenance',()=>{
-  assert.equal(TRICK_CATALOG.filter(t=>t.id!=='FINAL_PISTACHIO_CATCH').length,63);
-  assert.equal(CHOREOGRAPHED_ROUTINES.length,36);
-  assert.equal(new Set(CHOREOGRAPHED_ROUTINES.map(routineSignature)).size,36);
+test('repertoire has 110 playable non-final shows, 60 distinct authored signatures and honest component provenance',()=>{
+  assert.equal(TRICK_CATALOG.filter(t=>t.id!=='FINAL_PISTACHIO_CATCH').length,110);
+  assert.equal(CHOREOGRAPHED_ROUTINES.length,60);
+  assert.equal(new Set(CHOREOGRAPHED_ROUTINES.map(routineSignature)).size,60);
   const ids=new Set(TRICK_CATALOG.map(t=>t.id));
   for(const routine of CHOREOGRAPHED_ROUTINES){
     assert.ok(routine.componentIds.length>=2&&routine.componentIds.length<=3);
@@ -164,7 +165,7 @@ test('repertoire has63 playable non-final shows,36 distinct authored signatures 
     assert.ok(routine.componentIds.every(id=>ids.has(id)&&BASE_SERVICE_ACTIONS[id]&&!isChoreographedRoutine(id)));
     assert.ok(routine.sourceRefs.length>0&&routine.sourceRefs.every(id=>ROUTINE_SOURCES[id]?.url));
   }
-  assert.equal(ROUTINE_CATALOG.length,36);
+  assert.equal(ROUTINE_CATALOG.length,60);
 });
 
 test('the standalone8 awards only a closed drawn stroke, never the old brief reach-and-hold',()=>{
@@ -188,7 +189,7 @@ test('every choreographed show completes through original director input/ownersh
     assert.equal(f.world.scoopStackGroup.parent,f.world.conePivot);
     traces.add(f.trace.join('\n')); // Does not contain show/component IDs or names.
   }
-  assert.equal(traces.size,36,'renaming an identical physical sequence must not increase repertoire count');
+  assert.equal(traces.size,60,'renaming an identical physical sequence must not increase repertoire count');
 });
 
 test('stationary center and tiny jitter cannot finish any compound show',()=>{
@@ -230,7 +231,7 @@ test('progression/replays expose all36 shows but bound compounds to1/2/3 slots a
       assert.ok(shows.every(id=>CHOREOGRAPHED_ROUTINES.find(r=>r.id===id).unlockStage<=level.stage));
     }
   }
-  assert.equal(exposed.size,36);
+  assert.equal(exposed.size,60);
 });
 
 

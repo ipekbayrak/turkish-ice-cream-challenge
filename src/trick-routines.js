@@ -41,24 +41,47 @@ export const ROUTINE_SOURCES = Object.freeze({
 
 /** Trace descriptions omit IDs and direction-only variants on purpose. */
 export const BASE_SERVICE_ACTIONS = Object.freeze({
-  DOUBLE_CONE_SLIDE: { label: ['Çift külah', 'Nested cones'], motion: 'nest-and-separate-wafer', responses: ['reach', 'return-or-discard'], ownership: 'outer-wafer:pole>hand>return', seconds: 3.0, sources: ['gopro', 'daydream'] },
-  GIANT_BLOCK_TEASE: { label: ['Kalıbı kaldır', 'Lift the mold'], motion: 'tub-extraction-presentation-return', responses: ['withdraw-or-wait', 'reach'], ownership: 'mold:tub>pole>tub', seconds: 2.5, sources: ['gould', 'gopro'] },
-  MIDAIR_BLOCK_SOMERSAULT: { label: ['Kalıp dönüşü', 'Mold turn'], motion: 'mold-lift-full-aerial-turn-lower', responses: ['wait', 'reach'], ownership: 'mold:tub>air>tub', seconds: 2.0, sources: ['gopro', 'gould'] },
-  SHAFT_SPIN_360: { label: ['Çubuk çevirme', 'Axial paddle spin'], motion: 'two-axial-grip-releases', responses: ['reach-hold', 'fresh-reach-hold'], ownership: 'cone:pole-grip>pole-grip', seconds: 1.8, sources: ['gopro', 'goturkiye'] },
-  VERTICAL_WINDMILL: { label: ['Dikey savurma', 'Vertical windmill'], motion: 'vertical-orbit-then-chest-offer', responses: ['wait', 'reach'], ownership: 'cone:pole', seconds: 2.0, sources: ['gopro', 'winny'] },
-  UPSIDE_DOWN_GRAVITY: { label: ['Ters külah', 'Inverted cone'], motion: 'inverted-hold-upright-offer', responses: ['withdraw-or-wait', 'reach'], ownership: 'cone:pole-inverted>pole-upright', seconds: 1.9, sources: ['winny', 'gopro'] },
-  FAKE_DROP_PANIC: { label: ['Düşürme şakası', 'False drop'], motion: 'downward-plunge-recovery', responses: ['withdraw-or-wait', 'reach'], ownership: 'cone:pole-plunge>pole-recovered', seconds: 1.8, sources: ['gopro', 'goturkiye'] },
-  MEGA_TAFFY_SLICE: { label: ['Sünen dondurmayı kes', 'Cut the stretched ice'], motion: 'tub-to-pole-strand-sever-recoil', responses: ['horizontal-slice'], ownership: 'ice:connected-strand>two-ends-and-scrap', seconds: 1.2, sources: ['daydream', 'gopro'] },
-  NAPKIN_CONE_FAKEOUT: { label: ['Peçeteli servis', 'Serving-paper tease'], motion: 'wrapped-offer-pinch-peel-retract', responses: ['pinch-or-wait', 'discard-if-held', 'fresh-reach'], ownership: 'paper:cone>hand>air;cone:pole', seconds: 2.8, sources: ['gould', 'gopro'] },
-  SHELL_SWAP_DUEL: { label: ['İki elde şaşırtma', 'Two-hand shell game'], motion: 'two-cones-circular-exchange-and-reveal', responses: ['watch', 'pick-real-cone'], ownership: 'real:pole;decoy:left-hand>customer-if-wrong', seconds: 1.8, sources: ['daydream', 'gopro'] },
-  FIGURE_EIGHT_WEAVE: { label: ['Sekiz çiz', 'Figure-eight weave'], motion: 'continuous-three-axis-figure-eight', responses: ['trace-both-lobes-and-close'], ownership: 'cone:pole', seconds: 2.0, sources: ['gopro', 'goturkiye'] },
-  BELL_RHYTHM_FEINT: { label: ['Çanla iki yanıltma', 'Two bell feints'], motion: 'two-physical-bell-contacts-real-third-offer', responses: ['wait-two-feints', 'reach-third'], ownership: 'cone:left-hand>pole', seconds: 2.2, sources: ['goturkiye', 'gopro'] },
-  OVERHEAD_CROWN_DANGLE: { label: ['Tepeden uzat', 'Overhead dangle'], motion: 'overhead-inverted-lower-to-hand', responses: ['withdraw-or-wait', 'reach-low'], ownership: 'cone:pole-high>pole-low', seconds: 1.8, sources: ['winny', 'gopro'] },
-  COMBO_DOUBLE_PUMP: { label: ['Çift uzat-çek', 'Double offer'], motion: 'first-thrust-retract-second-thrust', responses: ['withdraw-first', 'reach-second'], ownership: 'cone:pole-feint>pole-offer', seconds: 1.6, sources: ['goturkiye', 'gopro'] },
-  EYE_LOCK_RHYTHM_CHASE: { label: ['Göz göze ritim', 'Eye-contact chase'], motion: 'midpoint-hold-three-displaced-beat-targets', responses: ['reach-midpoint', 'follow-three-targets'], ownership: 'cone:pole;hand:free-tracking', seconds: 2.5, sources: ['goturkiye', 'gopro'] },
-  WHOLE_MOLD_ON_CONE: { label: ['Külahta koca kalıp', 'Whole mold on the cone'], motion: 'tub-mold-mount-on-real-cone-return', responses: ['withdraw-or-wait', 'fresh-reach'], ownership: 'mold:tub>cone>tub;cone:left-hand>pole', seconds: 3.4, sources: ['gould', 'gopro'] },
-  SCOOP_LIFT_BACK: { label: ['Boşalan külah', 'Scoops lift away'], motion: 'lift-actual-scoops-off-cone-reunite', responses: ['avoid-empty-or-return-it', 'fresh-reach'], ownership: 'scoops:cone>scene>cone;bare-cone:hand-if-grabbed', seconds: 3.4, sources: ['daydream', 'gould', 'gopro'] },
-  BONUS_SCOOP_TAKEBACK: { label: ['Bir top daha?', 'One more scoop?'], motion: 'real-handoff-extra-bait-takeback-tub-return', responses: ['take-cone', 'bring-under-extra', 'fresh-reach'], ownership: 'cone:pole>customer>pole>vendor-hand>pole', seconds: 2.5, sources: ['daydream'] },
+  DOUBLE_CONE_SLIDE: { label: ['Çift külah', 'Nested cones', 'قمعان متداخلان', 'Двойной рожок', 'Doppelwaffel', '二重コーン'], motion: 'nest-and-separate-wafer', responses: ['reach', 'return-or-discard'], ownership: 'outer-wafer:pole>hand>return', seconds: 3.0, sources: ['gopro', 'daydream'] },
+  GIANT_BLOCK_TEASE: { label: ['Kalıbı kaldır', 'Lift the mold', 'رفع القالب', 'Подъём глыбы', 'Eisblock heben', '塊を持ち上げ'], motion: 'tub-extraction-presentation-return', responses: ['withdraw-or-wait', 'reach'], ownership: 'mold:tub>pole>tub', seconds: 2.5, sources: ['gould', 'gopro'] },
+  MIDAIR_BLOCK_SOMERSAULT: { label: ['Kalıp dönüşü', 'Mold turn', 'شقلبة القالب', 'Сальто блока', 'Block-Salto', '塊の宙返り'], motion: 'mold-lift-full-aerial-turn-lower', responses: ['wait', 'reach'], ownership: 'mold:tub>air>tub', seconds: 2.0, sources: ['gopro', 'gould'] },
+  SHAFT_SPIN_360: { label: ['Çubuk çevirme', 'Axial paddle spin', 'تدوير العصا', 'Вращение шеста', 'Stabdrehung', '鉄棒360°回転'], motion: 'two-axial-grip-releases', responses: ['reach-hold', 'fresh-reach-hold'], ownership: 'cone:pole-grip>pole-grip', seconds: 1.8, sources: ['gopro', 'goturkiye'] },
+  VERTICAL_WINDMILL: { label: ['Dikey savurma', 'Vertical windmill', 'طاحونة عمودية', 'Вертикальная мельница', 'Windmühle', '縦車スイング'], motion: 'vertical-orbit-then-chest-offer', responses: ['wait', 'reach'], ownership: 'cone:pole', seconds: 2.0, sources: ['gopro', 'winny'] },
+  UPSIDE_DOWN_GRAVITY: { label: ['Ters külah', 'Inverted cone', 'قمع مقلوب', 'Перевёрнутый рожок', 'Waffel kopfüber', '逆さまコーン'], motion: 'inverted-hold-upright-offer', responses: ['withdraw-or-wait', 'reach'], ownership: 'cone:pole-inverted>pole-upright', seconds: 1.9, sources: ['winny', 'gopro'] },
+  FAKE_DROP_PANIC: { label: ['Düşürme şakası', 'False drop', 'خدعة السقوط', 'Ложное падение', 'Schein-Fall', '落下フェイント'], motion: 'downward-plunge-recovery', responses: ['withdraw-or-wait', 'reach'], ownership: 'cone:pole-plunge>pole-recovered', seconds: 1.8, sources: ['gopro', 'goturkiye'] },
+  MEGA_TAFFY_SLICE: { label: ['Sünen dondurmayı kes', 'Cut the stretched ice', 'قطع البوظة الممتدة', 'Срез тягучего мороженого', 'Gezogenes Eis schneiden', '伸びるアイス切り'], motion: 'tub-to-pole-strand-sever-recoil', responses: ['horizontal-slice'], ownership: 'ice:connected-strand>two-ends-and-scrap', seconds: 1.2, sources: ['daydream', 'gopro'] },
+  NAPKIN_CONE_FAKEOUT: { label: ['Peçeteli servis', 'Serving-paper tease', 'خدعة منديل التقديم', 'Уловка с салфеткой', 'Servietten-Finte', 'ナプキン抜き'], motion: 'wrapped-offer-pinch-peel-retract', responses: ['pinch-or-wait', 'discard-if-held', 'fresh-reach'], ownership: 'paper:cone>hand>air;cone:pole', seconds: 2.8, sources: ['gould', 'gopro'] },
+  SHELL_SWAP_DUEL: { label: ['İki elde şaşırtma', 'Two-hand shell game', 'مراوغة باليدين', 'Обман двумя руками', 'Hütchenspiel', '両手すり替え'], motion: 'two-cones-circular-exchange-and-reveal', responses: ['watch', 'pick-real-cone'], ownership: 'real:pole;decoy:left-hand>customer-if-wrong', seconds: 1.8, sources: ['daydream', 'gopro'] },
+  FIGURE_EIGHT_WEAVE: { label: ['Sekiz çiz', 'Figure-eight weave', 'نسج الرقم ثمانية', 'Восьмёрка', 'Achter-Schwung', '8の字描き'], motion: 'continuous-three-axis-figure-eight', responses: ['trace-both-lobes-and-close'], ownership: 'cone:pole', seconds: 2.0, sources: ['gopro', 'goturkiye'] },
+  BELL_RHYTHM_FEINT: { label: ['Çanla iki yanıltma', 'Two bell feints', 'تمويهان بالجرس', 'Два обмана со звоном', 'Glocken-Finte', '二段ベルフェイント'], motion: 'two-physical-bell-contacts-real-third-offer', responses: ['wait-two-feints', 'reach-third'], ownership: 'cone:left-hand>pole', seconds: 2.2, sources: ['goturkiye', 'gopro'] },
+  OVERHEAD_CROWN_DANGLE: { label: ['Tepeden uzat', 'Overhead dangle', 'تدلية من الأعلى', 'Подача сверху', 'Überkopf-Pendel', '頭上吊り下げ'], motion: 'overhead-inverted-lower-to-hand', responses: ['withdraw-or-wait', 'reach-low'], ownership: 'cone:pole-high>pole-low', seconds: 1.8, sources: ['winny', 'gopro'] },
+  COMBO_DOUBLE_PUMP: { label: ['Çift uzat-çek', 'Double offer', 'تقديم مزدوج', 'Двойной выпад', 'Doppel-Vorstoß', '二段突き出し'], motion: 'first-thrust-retract-second-thrust', responses: ['withdraw-first', 'reach-second'], ownership: 'cone:pole-feint>pole-offer', seconds: 1.6, sources: ['goturkiye', 'gopro'] },
+  EYE_LOCK_RHYTHM_CHASE: { label: ['Göz göze ritim', 'Eye-contact chase', 'إيقاع النظرات', 'Ритм взгляда', 'Blickkontakt-Takt', 'アイコンタクト追跡'], motion: 'midpoint-hold-three-displaced-beat-targets', responses: ['reach-midpoint', 'follow-three-targets'], ownership: 'cone:pole;hand:free-tracking', seconds: 2.5, sources: ['goturkiye', 'gopro'] },
+  WHOLE_MOLD_ON_CONE: { label: ['Külahta koca kalıp', 'Whole mold on the cone', 'القالب الكامل على القمع', 'Целый блок на рожке', 'Ganzer Block auf Waffel', 'コーンに丸ごと塊'], motion: 'tub-mold-mount-on-real-cone-return', responses: ['withdraw-or-wait', 'fresh-reach'], ownership: 'mold:tub>cone>tub;cone:left-hand>pole', seconds: 3.4, sources: ['gould', 'gopro'] },
+  SCOOP_LIFT_BACK: { label: ['Boşalan külah', 'Scoops lift away', 'رفع الكرات عن القمع', 'Снятие шариков', 'Kugeln abheben', 'アイス抜き取り'], motion: 'lift-actual-scoops-off-cone-reunite', responses: ['avoid-empty-or-return-it', 'fresh-reach'], ownership: 'scoops:cone>scene>cone;bare-cone:hand-if-grabbed', seconds: 3.4, sources: ['daydream', 'gould', 'gopro'] },
+  BONUS_SCOOP_TAKEBACK: { label: ['Bir top daha?', 'One more scoop?', 'كرة إضافية؟', 'Ещё шарик?', 'Noch eine Kugel?', 'もう一段おまけ？'], motion: 'real-handoff-extra-bait-takeback-tub-return', responses: ['take-cone', 'bring-under-extra', 'fresh-reach'], ownership: 'cone:pole>customer>pole>vendor-hand>pole', seconds: 2.5, sources: ['daydream'] },
+  PENDULUM_BELL_SWING: { label: ['Sarkaç çan', 'Pendulum bell', 'بندول الجرس', 'Маятник колокольчика', 'Glockenpendel', '振り子ベル'], motion: 'pendulum-bell-arc-offer', responses: ['wait', 'reach'], ownership: 'cone:pole-pendulum>pole', seconds: 1.9, sources: ['goturkiye', 'gopro'] },
+  SHOULDER_FAKEOUT_PIVOT: { label: ['Omuz dönüşü', 'Shoulder pivot', 'دوران الكتف', 'Разворот через плечо', 'Schulter-Drehung', '肩越しピボット'], motion: 'shoulder-lift-side-dip-offer', responses: ['wait', 'reach'], ownership: 'cone:pole-shoulder>pole', seconds: 1.9, sources: ['gopro', 'winny'] },
+  ZIGZAG_LIGHTNING_TEASE: { label: ['Zikzak kaçış', 'Zigzag evasion', 'مراوغة متعرجة', 'Зигзаг-уход', 'Zickzack-Ausweichen', 'ジグザグ回避'], motion: 'three-corner-zigzag-lock', responses: ['wait', 'reach'], ownership: 'cone:pole-zigzag>pole', seconds: 1.9, sources: ['gopro', 'goturkiye'] },
+  CROWN_TAP_KISS_TEASE: { label: ['Burun ucu şakası', 'Nose-tip pull', 'مزحة طرف الأنف', 'Уловка у носа', 'Nasenspitzen-Finte', '鼻先フェイント'], motion: 'close-tilt-spin-retract-offer', responses: ['wait', 'reach'], ownership: 'cone:pole-close>pole', seconds: 1.9, sources: ['goturkiye', 'gopro'] },
+  SPIRAL_CROWN_ASCENT: { label: ['Burgu yükseliş', 'Spiral ascent', 'صعود حلزوني', 'Спиральный подъём', 'Spiral-Aufstieg', '螺旋上昇'], motion: 'helical-corkscrew-ascent-drop', responses: ['wait', 'reach'], ownership: 'cone:pole-helix>pole', seconds: 1.9, sources: ['gopro', 'winny'] },
+  TRIPLE_BELL_CRESCENDO: { label: ['Üçlü çan', 'Triple bell crescendo', 'ثلاثية الأجراس', 'Тройной перезвон', 'Dreifach-Glocke', '三連ベル'], motion: 'three-bell-crescendo-sweep', responses: ['wait', 'reach'], ownership: 'cone:pole-bells>pole', seconds: 2.0, sources: ['goturkiye', 'gopro'] },
+  COUNTER_DRUM_CADENCE: { label: ['Tezgah darbukası', 'Counter drum cadence', 'إيقاع الرخام', 'Барабан по стойке', 'Theken-Trommel', 'カウンター太鼓'], motion: 'hand-hold-three-counter-raps-offer', responses: ['wait', 'reach'], ownership: 'cone:vendor-hand>pole', seconds: 2.0, sources: ['gopro', 'goturkiye'] },
+  SYNCOPATED_BELL_FAKE: { label: ['Es’li çan', 'Syncopated bell fake', 'سكتة الجرس', 'Синкопа колокольчика', 'Synkopen-Glocke', '無音ベルフェイント'], motion: 'silent-bell-halt-low-bait-ring', responses: ['wait', 'reach'], ownership: 'cone:pole-pause>pole', seconds: 2.1, sources: ['goturkiye', 'gopro'] },
+  TWIN_RIBBON_SCISSORS: { label: ['Salınan şerit', 'Swinging ribbon', 'شريط متأرجح', 'Качающаяся лента', 'Schwingendes Eisband', '揺れるアイスリボン'], motion: 'swinging-viscoelastic-strand-release', responses: ['wait', 'reach'], ownership: 'ice:swinging-strand>cone:pole', seconds: 2.0, sources: ['daydream', 'gopro'] },
+  ELASTIC_BUNGEE_YO_YO: { label: ['Lastik yo-yo', 'Elastic yo-yo', 'يويو مطاطي', 'Эластичное йо-йо', 'Eis-Jo-Jo', 'ゴム伸びヨーヨー'], motion: 'vertical-bungee-strand-double-bounce', responses: ['wait', 'reach'], ownership: 'ice:bungee-strand>cone:pole', seconds: 2.0, sources: ['daydream', 'gopro'] },
+  MOLD_PENDULUM_HEIST: { label: ['Kalıp sarkacı', 'Mold pendulum', 'بندول القالب', 'Маятник глыбы', 'Block-Pendel', '塊の振り子'], motion: 'tub-block-pendulum-sweep-seat', responses: ['wait', 'reach'], ownership: 'mold:tub>pendulum>tub;cone:pole', seconds: 2.1, sources: ['gould', 'gopro'] },
+  UNDER_ARM_PIROUETTE: { label: ['Koltuk altı çarkı', 'Under-arm pirouette', 'دوران تحت الذراع', 'Пируэт под рукой', 'Unterarm-Pirouette', '脇下ピルエット'], motion: 'low-underarm-double-spin-pop', responses: ['wait', 'reach'], ownership: 'cone:pole-underarm>pole', seconds: 2.0, sources: ['gopro', 'winny'] },
+  HORIZONTAL_HELICOPTER: { label: ['Yatay pervane', 'Horizontal rotor', 'مروحة أفقية', 'Горизонтальный винт', 'Horizontal-Rotor', '水平プロペラ'], motion: 'flat-horizontal-orbit-spin', responses: ['wait', 'reach'], ownership: 'cone:pole-rotor>pole', seconds: 1.9, sources: ['gopro', 'goturkiye'] },
+  BACKHAND_WRIST_SNAP: { label: ['Ters bilek', 'Backhand snap', 'خطفة ظهر المعصم', 'Обратный кистевой рывок', 'Rückhand-Schnapper', '逆手スナップ'], motion: 'left-bait-backhand-right-snap', responses: ['wait', 'reach'], ownership: 'cone:pole-snap>pole', seconds: 1.9, sources: ['goturkiye', 'gopro'] },
+  INFINITY_CROWN_LOOP: { label: ['Tepe sonsuzluk', 'Overhead infinity', 'حلقة اللانهاية العلوية', 'Верхняя бесконечность', 'Überkopf-Unendlichkeit', '頭上インフィニティ'], motion: 'high-infinity-loop-descent', responses: ['wait', 'reach'], ownership: 'cone:pole-crown-loop>pole', seconds: 2.0, sources: ['winny', 'gopro'] },
+  LEFT_RIGHT_SHELL_BLITZ: { label: ['Üçlü çapraz külah', 'Triple shell blitz', 'مراوغة ثلاثية سريعة', 'Тройной перекрёст', 'Dreifach-Kreuztausch', '三連クロスすり替え'], motion: 'three-rapid-decoy-cross-swaps', responses: ['wait', 'reach'], ownership: 'real:pole;decoy:left-hand-blitz', seconds: 2.0, sources: ['daydream', 'gopro'] },
+  NAPKIN_FAN_CURTAIN: { label: ['Peçete perdesi', 'Napkin curtain', 'ستار المنديل', 'Ширма из салфетки', 'Servietten-Vorhang', 'ナプキンの幕'], motion: 'napkin-curtain-lateral-reveal', responses: ['wait', 'reach'], ownership: 'paper:curtain;cone:pole', seconds: 2.0, sources: ['gould', 'gopro'] },
+  WAITER_TRAY_BALANCE: { label: ['Garson tepsisi', 'Waiter tray balance', 'توازن الصينية', 'Баланс на подносе', 'Kellnertablett-Balance', 'ウェイター盆バランス'], motion: 'flat-blade-tray-traverse-tip', responses: ['wait', 'reach'], ownership: 'cone:pole-tray>pole', seconds: 2.0, sources: ['winny', 'gopro'] },
+  DOUBLE_PUMP_CROSSOVER: { label: ['Çapraz çift pompa', 'Crossover double pump', 'تمويه قطري مزدوج', 'Диагональный двойной выпад', 'Kreuz-Doppelvorstoß', 'クロス二段フェイント'], motion: 'diagonal-left-right-double-thrust', responses: ['wait', 'reach'], ownership: 'cone:pole-crossover>pole', seconds: 1.9, sources: ['goturkiye', 'gopro'] },
+  TRIANGLE_RHYTHM_CHASE: { label: ['Altın üçgen', 'Golden triangle', 'المثلث الذهبي', 'Золотой треугольник', 'Goldenes Dreieck', '黄金トライアングル'], motion: 'three-vertex-triangle-perimeter', responses: ['wait', 'reach'], ownership: 'cone:pole-triangle>pole', seconds: 2.0, sources: ['goturkiye', 'gopro'] },
+  MAGNETIC_PULL_ESCAPE: { label: ['Mıknatıs kaçışı', 'Magnetic escape', 'إفلات مغناطيسي', 'Магнитный уход', 'Magnet-Flucht', '磁石エスケープ'], motion: 'close-bait-two-corner-repels', responses: ['wait', 'reach'], ownership: 'cone:pole-repel>pole', seconds: 2.0, sources: ['goturkiye', 'gopro'] },
+  LOW_RAIL_SKIMMER: { label: ['Mermer sıyırma', 'Marble rail skim', 'مسح حافة الرخام', 'Скольжение над мрамором', 'Marmorkanten-Gleiter', '大理石すれすれ滑走'], motion: 'low-front-rail-skim-high-arc', responses: ['wait', 'reach'], ownership: 'cone:pole-rail>pole', seconds: 2.0, sources: ['gopro', 'goturkiye'] },
+  GRAND_FINALE_BOW_TEASE: { label: ['Usta selamı', 'Grand bow tease', 'تحية المعلم', 'Поклон мастера', 'Meister-Verbeugung', '名人の一礼'], motion: 'salute-deep-bow-full-whirl', responses: ['wait', 'reach'], ownership: 'cone:pole-bow>pole', seconds: 2.0, sources: ['goturkiye', 'gopro'] },
 });
 
 /** Authored anticipation connectors, not additional canonical tricks. */
@@ -110,6 +133,31 @@ const rows = [
   ['TERS_SEKIZ_KES', 'Ters, Sekiz, Kes', 'Invert, Weave, Cut', 6, ['UPSIDE_DOWN_GRAVITY', 'FIGURE_EIGHT_WEAVE', 'MEGA_TAFFY_SLICE']],
   ['KUTLE_YEL_FAZLA', 'Kütle, Yel, Fazla', 'Mass, Windmill, Extra', 6, ['GIANT_BLOCK_TEASE', 'VERTICAL_WINDMILL', 'BONUS_SCOOP_TAKEBACK']],
   ['DUS_PECETE_HOP', 'Düş, Peçete, Hop', 'Drop, Paper, Feint', 6, ['FAKE_DROP_PANIC', 'NAPKIN_CONE_FAKEOUT', 'COMBO_DOUBLE_PUMP']],
+  // +24 New Choreographed Master Shows (4 per tier across Tiers 1-6 => 60 total)
+  ['SARKACTAN_FIRILDAGA', 'Sarkaçtan Fırıldağa', 'Pendulum into Whirl', 1, ['PENDULUM_BELL_SWING', 'SHAFT_SPIN_360']],
+  ['OMUZDAN_IPE', 'Omuzdan İpe', 'Shoulder into Stretch', 1, ['SHOULDER_FAKEOUT_PIVOT', 'MEGA_TAFFY_SLICE']],
+  ['ZIKZAK_VE_CIFT', 'Zikzak ve Çift Külah', 'Zigzag into Nested Cones', 1, ['ZIGZAG_LIGHTNING_TEASE', 'DOUBLE_CONE_SLIDE']],
+  ['SARKAC_DONUS_KES', 'Sarkaç, Dönüş, Kesik', 'Pendulum, Spin, Cut', 1, ['PENDULUM_BELL_SWING', 'SHOULDER_FAKEOUT_PIVOT', 'MEGA_TAFFY_SLICE']],
+  ['DARBUKADAN_YELE', 'Darbukadan Yel Değirmenine', 'Drum into Windmill', 2, ['COUNTER_DRUM_CADENCE', 'VERTICAL_WINDMILL']],
+  ['MIKNATIS_VE_TERS', 'Mıknatıs ve Ters Külah', 'Magnet into Upside Down', 2, ['MAGNETIC_PULL_ESCAPE', 'UPSIDE_DOWN_GRAVITY']],
+  ['BURGU_VE_SEKIZ', 'Burgu ve Sekiz', 'Spiral into Figure Eight', 2, ['SPIRAL_CROWN_ASCENT', 'FIGURE_EIGHT_WEAVE']],
+  ['PERDEDEN_SUNMEYE', 'Peçete Perdesi ve Sünme', 'Curtain into Swinging Ribbon', 2, ['NAPKIN_FAN_CURTAIN', 'TWIN_RIBBON_SCISSORS']],
+  ['YOYO_VE_BOS_KULAH', 'Yo-Yo ve Boş Külah', 'Yo-Yo into Empty Cone', 3, ['ELASTIC_BUNGEE_YO_YO', 'SCOOP_LIFT_BACK']],
+  ['KOLTUKTAN_IKI_ELE', 'Koltuk Altından İki Ele', 'Under-Arm into Shell Game', 3, ['UNDER_ARM_PIROUETTE', 'SHELL_SWAP_DUEL']],
+  ['UCLU_CAN_VE_TAKLA', 'Üçlü Çan ve Takla', 'Triple Bell into Somersault', 3, ['TRIPLE_BELL_CRESCENDO', 'MIDAIR_BLOCK_SOMERSAULT']],
+  ['TEPSI_DENGE_IP', 'Tepsi Dengesi ve İp', 'Waiter Tray into Cut', 3, ['WAITER_TRAY_BALANCE', 'MEGA_TAFFY_SLICE']],
+  ['KALIP_SARKACI_PECETE', 'Kalıp Sarkacı ve Peçete', 'Mold Pendulum and Napkin', 4, ['MOLD_PENDULUM_HEIST', 'NAPKIN_CONE_FAKEOUT']],
+  ['UCGEN_VE_FIRILDAK', 'Üçgen Takip ve Fırıldak', 'Triangle into Whirl', 4, ['TRIANGLE_RHYTHM_CHASE', 'SHAFT_SPIN_360']],
+  ['PERVANEDEN_TEPEYE', 'Pervaneden Tepeye', 'Helicopter to Overhead', 4, ['HORIZONTAL_HELICOPTER', 'OVERHEAD_CROWN_DANGLE']],
+  ['ESLI_CAN_VE_FAZLA', 'Es’li Çan ve Fazla Top', 'Syncopated Bell and Extra Scoop', 4, ['SYNCOPATED_BELL_FAKE', 'BONUS_SCOOP_TAKEBACK']],
+  ['CAPRAZ_CIFT_KES', 'Çapraz Pompa, Çift Külah, Kesik', 'Crossover, Double, Cut', 5, ['DOUBLE_PUMP_CROSSOVER', 'DOUBLE_CONE_SLIDE', 'MEGA_TAFFY_SLICE']],
+  ['MERMER_SEKIZ_TERS', 'Mermer Sıyırma, Sekiz, Ters', 'Rail Skim, Eight, Invert', 5, ['LOW_RAIL_SKIMMER', 'FIGURE_EIGHT_WEAVE', 'UPSIDE_DOWN_GRAVITY']],
+  ['TERS_BILEK_KALIP_RITIM', 'Ters Bilek, Kalıp, Ritim', 'Backhand, Mold, Rhythm', 5, ['BACKHAND_WRIST_SNAP', 'GIANT_BLOCK_TEASE', 'EYE_LOCK_RHYTHM_CHASE']],
+  ['BURUN_CAN_EL', 'Dokun-Kaç, Çan, El', 'Nose-Tip, Bell, Shell Game', 5, ['CROWN_TAP_KISS_TEASE', 'BELL_RHYTHM_FEINT', 'SHELL_SWAP_DUEL']],
+  ['UCLU_DUELLO_YOYO_BOS', 'Üçlü Düello, Yo-Yo, Boşluk', 'Blitz, Yo-Yo, Empty', 6, ['LEFT_RIGHT_SHELL_BLITZ', 'ELASTIC_BUNGEE_YO_YO', 'SCOOP_LIFT_BACK']],
+  ['SONSUZLUK_PECETE_FAZLA', 'Sonsuzluk, Peçete, Fazla Top', 'Infinity, Paper, Extra', 6, ['INFINITY_CROWN_LOOP', 'NAPKIN_CONE_FAKEOUT', 'BONUS_SCOOP_TAKEBACK']],
+  ['DARBUKA_TAKLA_SUNME', 'Darbuka, Takla, Sünme', 'Drum, Tumble, Cut', 6, ['COUNTER_DRUM_CADENCE', 'MIDAIR_BLOCK_SOMERSAULT', 'MEGA_TAFFY_SLICE']],
+  ['SELAM_UCGEN_KESIK', 'Usta Selamı, Üçgen, Kesik', 'Grand Bow, Triangle, Cut', 6, ['GRAND_FINALE_BOW_TEASE', 'TRIANGLE_RHYTHM_CHASE', 'MEGA_TAFFY_SLICE']],
 ];
 
 export const CHOREOGRAPHED_ROUTINES = Object.freeze(rows.map(([slug, tr, en, tier, componentIds], rowIndex) => {
@@ -119,9 +167,21 @@ export const CHOREOGRAPHED_ROUTINES = Object.freeze(rows.map(([slug, tr, en, tie
     const family = BRIDGE_KEYS[(rowIndex + index * 2) % BRIDGE_KEYS.length];
     return Object.freeze({ family, ...BRIDGE_FAMILIES[family], beats: Object.freeze([...BRIDGE_FAMILIES[family].beats]) });
   });
+  const arChain = components.map(a => a.label[2]).join(' + ');
+  const ruChain = components.map(a => a.label[3]).join(' + ');
+  const deChain = components.map(a => a.label[4]).join(' + ');
+  const jaChain = components.map(a => a.label[5]).join('・');
   return Object.freeze({
     id: `SHOW_${slug}`, tier, unlockStage: (tier - 1) * 5 + 1,
-    componentIds: Object.freeze(componentIds), bridges: Object.freeze(bridges), names: Object.freeze({ tr, en }),
+    componentIds: Object.freeze(componentIds), bridges: Object.freeze(bridges),
+    names: Object.freeze({
+      tr,
+      en,
+      ar: `عرض المعلم: ${arChain}`,
+      ru: `Шоу мастера: ${ruChain}`,
+      de: `Meister-Show: ${deChain}`,
+      ja: `職人ショー：${jaChain}`,
+    }),
     sourceRefs: Object.freeze(sourceRefs),
     estimatedSeconds: Number((components.reduce((sum, action) => sum + action.seconds, 0) + bridges.reduce((sum, bridge) => sum + bridge.duration, 0)).toFixed(2)),
     provenance: 'choreographed-combination',
@@ -129,13 +189,25 @@ export const CHOREOGRAPHED_ROUTINES = Object.freeze(rows.map(([slug, tr, en, tie
   });
 }));
 const BY_ID = new Map(CHOREOGRAPHED_ROUTINES.map(routine => [routine.id, routine]));
-export const ROUTINE_CATALOG = Object.freeze(CHOREOGRAPHED_ROUTINES.map(routine => ({
-  ...routine, icon: '🎭', difficulty: Math.min(5, routine.tier + 1), category: 'choreographed_show',
-  descs: {
-    tr: `Kurgulanmış gösteri: ${routine.componentIds.map(id => BASE_SERVICE_ACTIONS[id].label[0]).join(' → ')}. Gerçek servis hareketlerinden oyun için birleştirildi.`,
-    en: `Choreographed show: ${routine.componentIds.map(id => BASE_SERVICE_ACTIONS[id].label[1]).join(' → ')}. Service gestures combined for the game.`,
-  },
-})));
+export const ROUTINE_CATALOG = Object.freeze(CHOREOGRAPHED_ROUTINES.map(routine => {
+  const trSteps = routine.componentIds.map(id => BASE_SERVICE_ACTIONS[id].label[0]).join(' → ');
+  const enSteps = routine.componentIds.map(id => BASE_SERVICE_ACTIONS[id].label[1]).join(' → ');
+  const arSteps = routine.componentIds.map(id => BASE_SERVICE_ACTIONS[id].label[2]).join(' ← ');
+  const ruSteps = routine.componentIds.map(id => BASE_SERVICE_ACTIONS[id].label[3]).join(' → ');
+  const deSteps = routine.componentIds.map(id => BASE_SERVICE_ACTIONS[id].label[4]).join(' → ');
+  const jaSteps = routine.componentIds.map(id => BASE_SERVICE_ACTIONS[id].label[5]).join(' → ');
+  return {
+    ...routine, icon: '🎭', difficulty: Math.min(5, routine.tier + 1), category: 'choreographed_show',
+    descs: {
+      tr: `Kurgulanmış gösteri: ${trSteps}. Gerçek servis hareketlerinden oyun için birleştirildi.`,
+      en: `Choreographed show: ${enSteps}. Service gestures combined for the game.`,
+      ar: `عرض مركب متعدد المراحل: ${arSteps}. حركات تقديم متتالية للإمساك بالقمع.`,
+      ru: `Хореографическое комбо-шоу: ${ruSteps}. Последовательность приёмов мастера.`,
+      de: `Choreografierte Kombi-Show: ${deSteps}. Kombinierte Serviertricks im fließenden Übergang.`,
+      ja: `連続コンビネーションショー：${jaSteps}。複数の技を繋げた職人の連続パフォーマンス！`,
+    },
+  };
+}));
 export function isChoreographedRoutine(id) { return BY_ID.has(id); }
 export function getChoreographedRoutine(id) { return BY_ID.get(id) || null; }
 export function routineSignature(routine) {

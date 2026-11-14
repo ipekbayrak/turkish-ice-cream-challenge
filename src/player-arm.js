@@ -1,4 +1,4 @@
-import {Vector3} from 'three';
+import {Matrix4,Vector3} from 'three';
 
 // Only the distal forearm and cuff are rendered in POV. The shoulder remains
 // outside the view; no camera-to-wrist bridge can cross the playing area.
@@ -17,7 +17,7 @@ export function constrainPlayerArmDepth(w,target,out=new Vector3()){return out.c
 export function fitAnchoredPlayerArm(w){
  if(!w.playerHandRig||!w.touristForearm||!w.touristSleeve)return false;
  const hand=w.playerHandRig,root=w.touristHand;
- const s=w.playerArmState ||= {wrist:new Vector3(),elbow:new Vector3(),shoulder:new Vector3(),axis:new Vector3(),a:new Vector3(),b:new Vector3()};
+ const s=w.playerArmState ||= {wrist:new Vector3(),elbow:new Vector3(),shoulder:new Vector3(),axis:new Vector3(),a:new Vector3(),b:new Vector3(),invMatrix:new Matrix4()};
  root.updateWorldMatrix(true,true);hand.wristAnchor.getWorldPosition(s.wrist);
  s.axis.copy(Y).transformDirection(hand.matrixWorld);
  s.elbow.copy(s.wrist).addScaledVector(s.axis,-PLAYER_FOREARM_LENGTH);
@@ -33,7 +33,7 @@ export function fitAnchoredPlayerArm(w){
  if(s.joint)s.joint.visible=false;if(s.collar)s.collar.visible=false;
  if(w.touristBracelet){
   s.a.copy(s.wrist).addScaledVector(s.axis,-.027);root.worldToLocal(s.a);w.touristBracelet.position.copy(s.a);
-  s.a.copy(s.axis).transformDirection(root.matrixWorld.clone().invert());w.touristBracelet.quaternion.setFromUnitVectors(Z,s.a);
+  s.a.copy(s.axis).transformDirection((s.invMatrix ||= new Matrix4()).copy(root.matrixWorld).invert());w.touristBracelet.quaternion.setFromUnitVectors(Z,s.a);
  }
  return true;
 }
