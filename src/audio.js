@@ -2,6 +2,7 @@
 
 import { USTA_BASE_PITCH, VENDOR_REACTIONS, synthesizeVendorVocal, musicStepEvents, musicStepSeconds, synthesizeMusicNote } from './sound-palette.js';
 import {MusicTransport} from './music-transport.js';
+import { VoiceSampleBank } from './voice-samples.js';
 export { synthesizeVendorVocal } from './sound-palette.js';
 export const VENDOR_VOICE_LIMITS = Object.freeze({ minGap: 3.2, repeatGap: 7, maxPerRound: 10 });
 const CUE_GROUPS = { hmm: 'curious', taunt: 'curious', hirr: 'effort', hoppa: 'effort', eeeh: 'amused', laugh: 'amused', cik: 'small', cheer: 'happy', shock: 'surprise' };
@@ -34,6 +35,8 @@ export class SoundEngine {
 
     // Live lip-sync envelope state for 3D vendor mouth, jaw, beard & mustache animation
     this.voiceSyllables = [];
+    this.voiceBank = new VoiceSampleBank();
+    this._voiceManifestChecked = false;
   }
 
   init({resume=true}={}) {
@@ -53,6 +56,10 @@ export class SoundEngine {
     }
     if (this.ctx) {
       this._setupMixer();
+      if (!this._voiceManifestChecked && globalThis.window?.__MARAS_VOICE_MANIFEST__) {
+        this._voiceManifestChecked = true;
+        this.voiceBank.preloadFromManifest(this.ctx).catch(() => {});
+      }
       if (this._observedContext !== this.ctx) {
         this._observedContext = this.ctx;
         const context=this.ctx;
@@ -289,9 +296,30 @@ export class SoundEngine {
         now - (this.lastVoiceByGroup.get(group) ?? -Infinity) < VENDOR_VOICE_LIMITS.repeatGap) return false;
     const vendor = Math.abs(Math.round(ustaIdx)) % USTA_BASE_PITCH.length;
     const variation = ++this.voiceVariation;
-    const gestures = VENDOR_REACTIONS[key];
-    gestures.forEach((gesture, index) => this._playVendorGesture(gesture, USTA_BASE_PITCH[vendor], panX, variation * 83 + index * 17 + vendor * 971));
-    const phraseEnd = now + Math.max(...gestures.map(gesture => (gesture.offset || 0) + gesture.duration));
+    let phraseEnd;
+    const realSample = this.voiceBank.pickSample(key, variation + vendor);
+    if (realSample && realSample.buffer) {
+      const source = this._trackSource(this.ctx.createBufferSource());
+      source.buffer = realSample.buffer;
+      this.vendorSources.add(source);
+      source.addEventListener('ended', () => this.vendorSources.delete(source), { once: true });
+      this._connectWithPan(source, panX, this.voiceGain);
+      source.start(now);
+      source.stop(now + realSample.duration + 0.02);
+      for (const syl of realSample.syllables) {
+        this.voiceSyllables.push({
+          start: now + syl.offset,
+          end: now + syl.offset + syl.duration,
+          intensity: syl.intensity,
+          trill: false,
+        });
+      }
+      phraseEnd = now + realSample.duration;
+    } else {
+      const gestures = VENDOR_REACTIONS[key];
+      gestures.forEach((gesture, index) => this._playVendorGesture(gesture, USTA_BASE_PITCH[vendor], panX, variation * 83 + index * 17 + vendor * 971));
+      phraseEnd = now + Math.max(...gestures.map(gesture => (gesture.offset || 0) + gesture.duration));
+    }
     this.voiceUntil = phraseEnd;
     this.voiceCount++;
     this.lastVoiceAt = now;
@@ -568,6 +596,54 @@ export class SoundEngine {
     this._connectWithPan(gain, panX, this.masterGain, osc);
     osc.start(now);
     osc.stop(now + 0.08);
+  }
+
+  playConeBite(panX = 0) {
+    if (!this.enabled) return;
+    this.init();
+    if (!this._canScheduleAudio()) return;
+    const now = this.ctx.currentTime;
+    // Crisp wafer crunch burst + sweet harmonic chime
+    const len = Math.max(1, Math.floor(this.ctx.sampleRate * 0.13));
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      const env = Math.pow(1 - i / len, 1.6) * (0.65 + 0.35 * Math.sin(i * 0.18));
+      data[i] = (Math.random() * 2 - 1) * env;
+    }
+    const crunch = this._trackSource(this.ctx.createBufferSource());
+    crunch.buffer = buf;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1850, now);
+    filter.frequency.exponentialRampToValueAtTime(920, now + 0.12);
+    filter.Q.value = 1.1;
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.22, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.128);
+    crunch.connect(filter);
+    filter.connect(gain);
+    this._connectWithPan(gain, panX, this.masterGain, crunch);
+    crunch.start(now);
+    crunch.stop(now + 0.13);
+  }
+
+  playSmudgeSplat(panX = 0) {
+    if (!this.enabled) return;
+    this.init();
+    if (!this._canScheduleAudio()) return;
+    const now = this.ctx.currentTime;
+    const osc = this._trackSource(this.ctx.createOscillator());
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(320, now);
+    osc.frequency.exponentialRampToValueAtTime(115, now + 0.14);
+    gain.gain.setValueAtTime(0.18, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
+    osc.connect(gain);
+    this._connectWithPan(gain, panX, this.masterGain, osc);
+    osc.start(now);
+    osc.stop(now + 0.155);
   }
 
   playWhoosh(pitch = 1.0, panX = 0) {

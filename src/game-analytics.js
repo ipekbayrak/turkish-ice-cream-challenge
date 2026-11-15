@@ -5,6 +5,10 @@ const SAFE_TOKEN_RE = /^[a-zA-Z0-9_:.-]{1,60}$/;
 const DEFAULT_RELEASE = 'web-v43';
 const MAX_STAGE_CHARS = 60;
 const MAX_DURATION_MS = 3_600_000;
+const MAX_STEP_INDEX = 200;
+const MAX_BAMBOOZLED = 999;
+const MAX_SCOOPS_META = 12;
+const ALLOWED_MODES = new Set(['standard', 'master_exam', 'daily', 'challenge']);
 const MAX_QUEUE_LENGTH = 32;
 const MAX_RETRIES = 30;
 const RETRY_INTERVAL_MS = 500;
@@ -79,6 +83,41 @@ function sanitizeMetadata(props) {
     input.durationMs <= MAX_DURATION_MS
   ) {
     metadata.durationMs = input.durationMs;
+  }
+
+  if (typeof input.trick === 'string' && SAFE_TOKEN_RE.test(input.trick)) {
+    metadata.trick = input.trick;
+  }
+
+  if (
+    typeof input.step === 'number' &&
+    Number.isInteger(input.step) &&
+    input.step >= 0 &&
+    input.step <= MAX_STEP_INDEX
+  ) {
+    metadata.step = input.step;
+  }
+
+  if (
+    typeof input.bamboozled === 'number' &&
+    Number.isInteger(input.bamboozled) &&
+    input.bamboozled >= 0 &&
+    input.bamboozled <= MAX_BAMBOOZLED
+  ) {
+    metadata.bamboozled = input.bamboozled;
+  }
+
+  if (
+    typeof input.scoops === 'number' &&
+    Number.isInteger(input.scoops) &&
+    input.scoops >= 1 &&
+    input.scoops <= MAX_SCOOPS_META
+  ) {
+    metadata.scoops = input.scoops;
+  }
+
+  if (typeof input.mode === 'string' && ALLOWED_MODES.has(input.mode)) {
+    metadata.mode = input.mode;
   }
 
   return metadata;
@@ -289,7 +328,59 @@ export class GameAnalytics {
     return false;
   }
 
-  finish(stage = this.currentStage, { won = false, outcome = 'unknown' } = {}) {
+  recordConeTaken(stage = this.currentStage) {
+    const normalized = normalizeStage(stage);
+    this.currentStage = normalized;
+    return this.track('cone_taken', { stage: normalized });
+  }
+
+  recordOrderConfirmed(stage = this.currentStage, { scoops, mode } = {}) {
+    const normalized = normalizeStage(stage);
+    this.currentStage = normalized;
+    return this.track('order_confirmed', {
+      stage: normalized,
+      ...(scoops !== undefined ? { scoops } : {}),
+      ...(mode !== undefined ? { mode } : {}),
+    });
+  }
+
+  recordConeBitten(stage = this.currentStage, { bamboozled, mode } = {}) {
+    const normalized = normalizeStage(stage);
+    return this.track('cone_bitten', {
+      stage: normalized,
+      ...(bamboozled !== undefined ? { bamboozled } : {}),
+      ...(mode !== undefined ? { mode } : {}),
+    });
+  }
+
+  recordAbandoned(stage = this.currentStage, { trick, step, bamboozled, mode } = {}) {
+    if (!this.roundActive) {
+      return false;
+    }
+    this.roundActive = false;
+    const normalized = stage !== undefined ? normalizeStage(stage) : this.currentStage;
+    const durationMs = Math.min(MAX_DURATION_MS, Math.max(0, Math.round(this.activeMs)));
+    return this.track('round_abandoned', {
+      stage: normalized,
+      durationMs,
+      ...(trick !== undefined ? { trick } : {}),
+      ...(step !== undefined ? { step } : {}),
+      ...(bamboozled !== undefined ? { bamboozled } : {}),
+      ...(mode !== undefined ? { mode } : {}),
+    });
+  }
+
+  recordShare({ kind = 'link', stage = this.currentStage, mode } = {}) {
+    const normalized = normalizeStage(stage);
+    const safeKind = typeof kind === 'string' && SAFE_TOKEN_RE.test(kind) ? kind : 'link';
+    return this.track('share_triggered', {
+      stage: normalized,
+      operation: safeKind,
+      ...(mode !== undefined ? { mode } : {}),
+    });
+  }
+
+  finish(stage = this.currentStage, { won = false, outcome = 'unknown', bamboozled, trick, step, mode } = {}) {
     if (!this.roundActive) {
       return false;
     }
@@ -306,6 +397,10 @@ export class GameAnalytics {
       stage: normalized,
       operation: safeOutcome,
       durationMs,
+      ...(bamboozled !== undefined ? { bamboozled } : {}),
+      ...(trick !== undefined ? { trick } : {}),
+      ...(step !== undefined ? { step } : {}),
+      ...(mode !== undefined ? { mode } : {}),
     });
   }
 }

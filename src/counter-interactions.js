@@ -1,7 +1,7 @@
 import {Vector3,MathUtils} from 'three';
 import {playerOwnsCone} from './cone-grip.js';
 import {HandInteractionIntent} from './hand-interaction-intent.js';
-import {BellMelodies} from './bell-melodies.js';
+import {BELL_MELODIES,BellMelodies,SECRET_BELL_MELODIES} from './bell-melodies.js';
 
 export function customerHandEmpty(world,director={}){
  return !playerOwnsCone(world)&&!director.heldItem&&!director.isGraspingPaddleCone&&!world.playerConeGripRequested&&
@@ -16,8 +16,9 @@ export class CounterInteractions {
  constructor(world,sound,{onInspect=()=>{},onPoke=()=>{},onRecognized=()=>{},canInspect=()=>true}={}){
   Object.assign(this,{world,sound,onInspect,onPoke,onRecognized,canInspect});this.intent=new HandInteractionIntent();
   this.point=new Vector3();this.previous=null;this.epoch=null;this.latched=new Set();this.focus=null;this.reach=0;
-  this.bellHits=0;this.faceTouches=0;
+  this.bellHits=0;this.faceTouches=0;this._mustacheSecretTriggered=false;
   this.melodies=new BellMelodies({
+   melodies:[...BELL_MELODIES,...SECRET_BELL_MELODIES],
    onNote:index=>{
     const bell=this.world.bells?.find(b=>b.index===index)??this.world.bells?.[index];
     this.world.strikeBell?.(index,.55);
@@ -64,7 +65,15 @@ export class CounterInteractions {
   const desired=target?.kind==='detail'?.10*this.intent.progress:target?.kind==='bell'?.14:target?.kind==='face'?.12:0;
   this.reach=MathUtils.lerp(this.reach,desired,1-Math.exp(-dt*12));
   if(event?.type==='inspect'){this.onInspect(event.target.id);this.reset();}
-  if(event?.type==='poke'){w.playFaceTouch(event.target.part);this.faceTouches++;this.onPoke(event.target.part);}
+  if(event?.type==='poke'){
+   w.playFaceTouch(event.target.part);this.faceTouches++;this.onPoke(event.target.part);
+   if(this.faceTouches>=3&&!this._mustacheSecretTriggered){
+    this._mustacheSecretTriggered=true;
+    w.ringBells?.(0.95);
+    this.sound?.speakVendor?.('laugh');
+    this.onRecognized('mustache-twirl');
+   }
+  }
  }
  draw(ctx){
   if(this.focus?.kind!=='detail'||!this.intent.progress)return;

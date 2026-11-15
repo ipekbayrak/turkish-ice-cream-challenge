@@ -226,7 +226,7 @@ test('progression/replays expose all36 shows but bound compounds to1/2/3 slots a
       const sequence=TrickDirector.prototype._buildDynamicRoutineForStage.call({targetScoopCount:2,currentStage:level.stage},level);
       const shows=sequence.filter(isChoreographedRoutine);
       assert.ok(shows.length<=compoundLimitForStage(level.stage));
-      assert.ok(sequence.includes('EYE_LOCK_RHYTHM_CHASE'));
+      assert.equal(sequence.includes('EYE_LOCK_RHYTHM_CHASE'),level.stage>=3);
       assert.equal(sequence.filter(id=>id!=='SCRAPE_FLAVOR_SCOOP'&&id!=='FINAL_PISTACHIO_CATCH').length,level.trickCount);
       assert.ok(shows.every(id=>CHOREOGRAPHED_ROUTINES.find(r=>r.id===id).unlockStage<=level.stage));
     }

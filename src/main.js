@@ -31,6 +31,33 @@ import { poleGripRenderTarget } from './cone-grip.js';
 import { drawFigureEightGuide } from './gesture-guide-view.js';
 import { resizeOverlay } from './render-size.js';
 import { EncounterCamera } from './encounter-camera.js';
+import { QualityGovernor } from './quality-tier.js';
+import { ConeBiteFinale } from './cone-bite-finale.js';
+import {
+  buildShareUrl,
+  createSeededRandom,
+  getDailyChallengeSpec,
+} from './seeded-random.js';
+import {
+  formatEmojiStrip,
+  formatShareText,
+  renderShareCardCanvas,
+  shareResultCard,
+} from './daily-challenge.js';
+import {
+  CURATED_TRAP_TRICKS,
+  createTrapChallengeLink,
+  formatChallengeComparison,
+  parseIncomingChallengeUrl,
+} from './challenge-builder.js';
+import './i18n-extended.js';
+import { CounterTroll } from './counter-troll.js';
+import { ElasticSnatchBack, ScreenSmudge } from './screen-smudge.js';
+import { HighlightRingBuffer, exportHighlightClip } from './highlight-recorder.js';
+import {
+  applyHandCustomization,
+  renderHandStyleModal,
+} from './hand-customization.js';
 
 const gameContainer = document.getElementById('game-container');
 const gameCanvas = document.getElementById('game-canvas');
@@ -54,6 +81,7 @@ const btnLang = document.getElementById('btn-lang');
 
 const hudLevel = document.getElementById('hud-level');
 const hudHearts = document.getElementById('hud-hearts');
+const hudBamboozled = document.getElementById('hud-bamboozled');
 const hudScore = document.getElementById('hud-score');
 const hudCard = document.getElementById('hud-card');
 const hudGestureIcon = document.getElementById('hud-gesture-icon');
@@ -80,6 +108,12 @@ const valSound = document.getElementById('val-sound');
 const btnToggleHaptics = document.getElementById('btn-toggle-haptics');
 const lblHaptics = document.getElementById('lbl-haptics');
 const valHaptics = document.getElementById('val-haptics');
+const btnToggleMasterExam = document.getElementById('btn-toggle-master-exam');
+const lblMasterExam = document.getElementById('lbl-master-exam');
+const valMasterExam = document.getElementById('val-master-exam');
+const btnCycleQuality = document.getElementById('btn-cycle-quality');
+const lblQuality = document.getElementById('lbl-quality');
+const valQuality = document.getElementById('val-quality');
 const btnToggleFullscreen = document.getElementById('btn-toggle-fullscreen');
 const lblFullscreen = document.getElementById('lbl-fullscreen');
 const valFullscreen = document.getElementById('val-fullscreen');
@@ -107,6 +141,41 @@ const resScoops = document.getElementById('res-scoops');
 const btnMenuRound = document.getElementById('btn-menu-round');
 const btnNextRound = document.getElementById('btn-next-round');
 const btnRetryRound = document.getElementById('btn-retry-round');
+
+const challengeBanner = document.getElementById('challenge-banner');
+const counterViralBar = document.getElementById('counter-viral-bar');
+const btnDailyMaster = document.getElementById('btn-daily-master');
+const btnOpenChallengeBuilder = document.getElementById('btn-open-challenge-builder');
+const btnOpenHandStyle = document.getElementById('btn-open-hand-style');
+const viralToast = document.getElementById('viral-toast');
+const resultChallengeCmp = document.getElementById('result-challenge-cmp');
+const resultEmojiStrip = document.getElementById('result-emoji-strip');
+const btnShareCard = document.getElementById('btn-share-card');
+const btnShareTrapResult = document.getElementById('btn-share-trap-result');
+const btnShareClip = document.getElementById('btn-share-clip');
+
+const dialogChallengeBuilder = document.getElementById('dialog-challenge-builder');
+const challengeBuilderTitle = document.getElementById('challenge-builder-title');
+const challengeBuilderDesc = document.getElementById('challenge-builder-desc');
+const challengeSelectedStrip = document.getElementById('challenge-selected-strip');
+const challengeTrickPicker = document.getElementById('challenge-trick-picker');
+const btnPlayOwnTrap = document.getElementById('btn-play-own-trap');
+const btnShareBuiltTrap = document.getElementById('btn-share-built-trap');
+
+const dialogHandStyle = document.getElementById('dialog-hand-style');
+const handStyleTitle = document.getElementById('hand-style-title');
+const handStyleBody = document.getElementById('hand-style-body');
+
+let viralToastTimer = null;
+function showViralToast(text, durationMs = 2400) {
+  if (!viralToast || !text) return;
+  viralToast.textContent = text;
+  viralToast.hidden = false;
+  clearTimeout(viralToastTimer);
+  viralToastTimer = setTimeout(() => {
+    viralToast.hidden = true;
+  }, durationMs);
+}
 
 // Top-layer discrete display transition probe & smooth exit helper per `animate-to-from-top-layer`
 let supportsDisplayTransition;
@@ -237,6 +306,27 @@ const world = new GameWorld(gameCanvas, (surface) => {
     sound.playWhoosh(0.6);
   }
 });
+const qualityGovernor = new QualityGovernor({
+  mode: saveManager.qualityMode,
+  onTierChange(spec) {
+    world.setQualitySpec(spec);
+    world.onResize();
+    resizeTrailCanvas();
+  },
+});
+world.setQualitySpec(qualityGovernor.spec);
+world.onResize();
+applyHandCustomization(world, saveManager.data?.handStyle);
+let coneBiteFinale = null;
+let counterTroll = null;
+const highlightBuffer = new HighlightRingBuffer();
+const elasticSnatch = new ElasticSnatchBack();
+const screenSmudge = new ScreenSmudge({
+  sound,
+  onSmudge() {
+    highlightBuffer.markMoment('smudge', 3.2);
+  },
+});
 
 let discovery = null;
 let discoveryHomeWasVisible=false;
@@ -253,6 +343,18 @@ let selectedStage = saveManager.data.unlockedStage || 1;
 if(import.meta.env.DEV){const previewStage=Number(new URLSearchParams(location.search).get('stage-check'));if(Number.isSafeInteger(previewStage)&&previewStage>0)selectedStage=previewStage;}
 let selectedScoopCount = saveManager.data.preferredScoopCount || 3;
 let selectedFlavors = (saveManager.data.preferredFlavors || [0, 1, 2, 3]).slice();
+let pendingIncomingChallenge = parseIncomingChallengeUrl(location.search);
+let lastRoundResult = null;
+let selectedTrapTricks = ['DOUBLE_CONE_SLIDE', 'UPSIDE_DOWN_GRAVITY', 'NAPKIN_CONE_FAKEOUT', 'SHELL_SWAP_DUEL'];
+let trapComparisonContext = null;
+if (pendingIncomingChallenge) {
+  selectedStage = pendingIncomingChallenge.stage;
+  selectedScoopCount = pendingIncomingChallenge.scoopCount;
+  selectedFlavors = pendingIncomingChallenge.flavors.slice();
+  while (selectedFlavors.length < MAX_SCOOPS) {
+    selectedFlavors.push(selectedFlavors[selectedFlavors.length - 1] ?? 0);
+  }
+}
 
 const VENDOR_ICONS = ['🧢', '🏮', '🧔‍♂️👓', '👑'];
 
@@ -459,8 +561,40 @@ function applyLanguageUI() {
   settingsTitle.textContent = saveManager.t('settingsTitle');
   lblSound.textContent = `🔊 ${saveManager.t('soundLabel')}`;
   lblHaptics.textContent = `📳 ${saveManager.t('hapticsLabel')}`;
+  if (lblMasterExam) lblMasterExam.textContent = `🔥 ${saveManager.t('masterExamLabel')}`;
+  if (lblQuality) lblQuality.textContent = `⚡ ${saveManager.t('qualityLabel')}`;
   lblFullscreen.textContent = `⛶ ${saveManager.t('fullscreenLabel')}`;
   btnCloseSettings.textContent = saveManager.t('closeBtn');
+
+  if (btnDailyMaster) btnDailyMaster.textContent = saveManager.t('dailyBtn');
+  if (btnOpenChallengeBuilder) btnOpenChallengeBuilder.textContent = saveManager.t('challengeBtn');
+  if (btnOpenHandStyle) {
+    const shortHand = saveManager.lang === 'tr' ? '✋ El' : saveManager.t('handCustomBtn').split('&')[0].trim();
+    btnOpenHandStyle.textContent = shortHand;
+    btnOpenHandStyle.title = saveManager.t('handCustomBtn');
+  }
+  if (btnShareCard) btnShareCard.textContent = saveManager.t('shareCardBtn');
+  if (btnShareTrapResult) btnShareTrapResult.textContent = saveManager.t('challengeBtn');
+  if (btnShareClip) btnShareClip.textContent = saveManager.t('shareClipBtn');
+  if (handStyleTitle) handStyleTitle.textContent = saveManager.t('handCustomBtn');
+  if (challengeBuilderTitle) challengeBuilderTitle.textContent = saveManager.t('challengeBtn');
+  if (challengeBuilderDesc) {
+    challengeBuilderDesc.textContent = saveManager.lang === 'tr'
+      ? '3–5 numara seç; arkadaşına kurulum gerektirmeyen tuzak bağlantısı gönder!'
+      : 'Pick 3–5 tricks and send an instant no-install trap challenge link to a friend!';
+  }
+  if (btnPlayOwnTrap) {
+    btnPlayOwnTrap.textContent = saveManager.lang === 'tr' ? '▶ Kendin Dene' : '▶ Try It Yourself';
+  }
+  if (btnShareBuiltTrap) {
+    btnShareBuiltTrap.textContent = saveManager.lang === 'tr' ? '📤 Bağlantıyı Paylaş' : '📤 Share Trap Link';
+  }
+  if (challengeBanner && pendingIncomingChallenge) {
+    challengeBanner.hidden = false;
+    challengeBanner.textContent = pendingIncomingChallenge.kind === 'daily'
+      ? `${saveManager.t('dailyBtn')} · ${pendingIncomingChallenge.dateKey}`
+      : `🎯 ${saveManager.t('challengeBanner')}`;
+  }
 
   if (iosFsTitle) iosFsTitle.textContent = saveManager.t('iosFsTitle');
   if (iosFsDesc) iosFsDesc.textContent = saveManager.t('iosFsDesc');
@@ -468,7 +602,7 @@ function applyLanguageUI() {
   if (iosFsStep2) iosFsStep2.textContent = `2️⃣ ${saveManager.t('iosFsStep2')}`;
   if (btnCloseIosFs) btnCloseIosFs.textContent = saveManager.t('iosFsPlay');
 
-  langCardBtns.forEach((btn) => {
+  document.querySelectorAll('.lang-card-btn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.lang === saveManager.lang);
   });
 
@@ -478,6 +612,19 @@ function applyLanguageUI() {
   valSound.classList.toggle('on', sound.enabled);
   valHaptics.textContent = saveManager.hapticsEnabled ? onWord : offWord;
   valHaptics.classList.toggle('on', saveManager.hapticsEnabled);
+  if (valMasterExam) {
+    valMasterExam.textContent = saveManager.masterExamMode ? onWord : offWord;
+    valMasterExam.classList.toggle('on', Boolean(saveManager.masterExamMode));
+  }
+  if (valQuality) {
+    const qMap = {
+      auto: saveManager.t('qualityAuto'),
+      high: saveManager.t('qualityHigh'),
+      low: saveManager.t('qualityLow'),
+    };
+    valQuality.textContent = qMap[saveManager.qualityMode] || qMap.auto;
+    valQuality.classList.toggle('on', saveManager.qualityMode !== 'low');
+  }
   const isFsActive = Boolean(
     document.fullscreenElement ||
       document.webkitFullscreenElement ||
@@ -497,10 +644,45 @@ function applyLanguageUI() {
 const uiCallbacks = {
   onPrompt() {},
   onTrickStart(event) { relationships?.onTrickStart(event); },
-  onReaction(event) { relationships?.onReaction(event); },
+  onReaction(event) {
+    relationships?.onReaction(event);
+    if (event?.kind === 'mistake') {
+      highlightBuffer.markMoment('mistake', 2.4);
+      const mech = event.componentId || event.trickId || director.currentMechanic;
+      if (screenSmudge.shouldTriggerForMistake(mech)) {
+        const fIdx = (director.selectedFlavors?.[0] ?? 0) % ICE_CREAM_FLAVORS.length;
+        const cssColor = ICE_CREAM_FLAVORS[fIdx]?.cssColor || '#fff5e4';
+        screenSmudge.trigger({
+          colorCss: cssColor,
+          rand: () => director._rand(),
+        });
+      }
+      if (hudBamboozled && !saveManager.masterExamMode) {
+        hudBamboozled.classList.remove('bump');
+        void hudBamboozled.offsetWidth;
+        hudBamboozled.classList.add('bump');
+        setTimeout(() => hudBamboozled.classList.remove('bump'), 220);
+      }
+    }
+  },
+
+  onVictoryBite(resultData) {
+    endPointerInteraction();
+    coneBiteFinale.start(resultData, { scoopCount: director.targetScoopCount });
+  },
 
   onRoundEnd(data) {
-    gameAnalytics.finish(director.currentStage,{won:data.outcomeType==='MASTER_CATCH',outcome:data.outcomeType});
+    lastRoundResult = data;
+    const activeChallenge = director.challengeMeta;
+    const roundMode = activeChallenge?.kind || (saveManager.masterExamMode ? 'exam' : 'standard');
+    gameAnalytics.finish(director.currentStage,{
+      won:data.outcomeType==='MASTER_CATCH',
+      outcome:data.outcomeType,
+      bamboozled:data.bamboozled ?? director.penaltiesTaken,
+      trick:director.currentShowId || director.currentMechanic,
+      step:director.routineIndex,
+      mode:roundMode,
+    });
     endPointerInteraction();
     renderVenueSelector();
     resultBadge.textContent = data.badge;
@@ -511,6 +693,21 @@ const uiCallbacks = {
     const earnedMemory = relationships?.finish(data.outcomeType === 'MASTER_CATCH');
     if (earnedMemory) document.getElementById('result-story').textContent = earnedMemory;
     resultStars.textContent = data.stars;
+    const emojiStrip = formatEmojiStrip(data.stepOutcomes);
+    if (resultEmojiStrip) {
+      resultEmojiStrip.textContent = emojiStrip;
+    }
+    if (resultChallengeCmp) {
+      const cmp = formatChallengeComparison({
+        challengeMeta: activeChallenge,
+        won: data.outcomeType === 'MASTER_CATCH',
+        bamboozled: data.bamboozled ?? director.penaltiesTaken,
+        score: data.score,
+        lang: saveManager.lang,
+      });
+      resultChallengeCmp.textContent = cmp;
+      resultChallengeCmp.hidden = !cmp;
+    }
     resScore.textContent = saveManager.formatNumber(data.score);
     resBest.textContent = saveManager.formatNumber(
       data.bestScore || data.score
@@ -537,6 +734,18 @@ const uiCallbacks = {
         resultDesc.textContent = `${data.desc} ${saveManager.lang === 'tr' ? '✨ Yeni mekân açıldı!' : '✨ New venue unlocked!'}`;
       }
     }
+    if (activeChallenge?.kind === 'daily') {
+      saveManager.recordDailyResult(activeChallenge.dateKey, {
+        won: data.outcomeType === 'MASTER_CATCH',
+        score: data.score,
+        stars: data.starNum || 0,
+        bamboozled: data.bamboozled ?? director.penaltiesTaken,
+        emojiStrip,
+      });
+      resultBadge.textContent = `${saveManager.t('dailyBtn')} · ${activeChallenge.dateKey}`;
+    } else if (activeChallenge?.kind === 'challenge') {
+      resultBadge.textContent = `🎯 ${saveManager.t('challengeBanner')}`;
+    }
 
     if (!dialogResult.open) {
       dialogResult.showModal();
@@ -545,6 +754,28 @@ const uiCallbacks = {
 };
 
 const director = new TrickDirector(world, sound, saveManager, uiCallbacks);
+coneBiteFinale = new ConeBiteFinale({
+  world,
+  sound,
+  onBite() {
+    highlightBuffer.markMoment('bite', 3.0);
+    gameAnalytics.recordConeBitten(director.currentStage, {
+      scoops: director.targetScoopCount,
+    });
+  },
+  onComplete(resultData) {
+    uiCallbacks.onRoundEnd(resultData);
+  },
+});
+counterTroll = new CounterTroll({
+  world,
+  director,
+  sound,
+  save: saveManager,
+  onTroll(ev) {
+    highlightBuffer.markMoment('troll', 3.6, ev.kind);
+  },
+});
 relationships = new VendorRelationships({save:saveManager,lore,world,director});
 orderFlow = new OrderFlow({
   onSingle(){director.sayLine(saveManager.lang==='tr'?'Sadece bir mi?':'Just one?','hmm',.9);},
@@ -592,17 +823,25 @@ orderFlow = new OrderFlow({
     world.cancelVendorReaction?.();
     director.setOrderConfig(selectedScoopCount, selectedFlavors, selectedStage);
     refreshOrderHUD();
-    const runFirstTutorial =
-      selectedStage === 1 &&
-      !saveManager.data.tutorialCompleted &&
-      (saveManager.data.completedStages?.length || 0) === 0;
-    if (runFirstTutorial) saveManager.markTutorialCompleted();
+    gameAnalytics.recordOrderConfirmed(selectedStage, {
+      scoops: selectedScoopCount,
+    });
+    if (!saveManager.data.tutorialCompleted && selectedStage === 1) {
+      saveManager.markTutorialCompleted();
+    }
+    counterTroll?.resetRound();
+    screenSmudge.reset();
+    elasticSnatch.reset();
+    highlightBuffer.reset();
     director.resetRound(selectedStage, false, {
       preserveCustomerCone: true,
-      includeTutorialWarmup: runFirstTutorial,
+      includeTutorialWarmup: false,
     });
     director.startRound({customerCone:true});
-    gameAnalytics.startRound(director.currentStage);
+    gameAnalytics.startRound(director.currentStage, {
+      scoops: selectedScoopCount,
+      mode: saveManager.masterExamMode ? 'exam' : 'standard',
+    });
     encounterCamera.setPhase('play');
   },
 });
@@ -695,6 +934,23 @@ btnToggleHaptics.addEventListener('click', () => {
   applyLanguageUI();
 });
 
+btnToggleMasterExam?.addEventListener('click', () => {
+  saveManager.toggleMasterExam();
+  hudCache.hearts = -1;
+  hudCache.bamboozled = -1;
+  hudCache.examMode = null;
+  applyLanguageUI();
+});
+
+btnCycleQuality?.addEventListener('click', () => {
+  const nextMode = saveManager.cycleQualityMode();
+  qualityGovernor.setMode(nextMode);
+  world.setQualitySpec(qualityGovernor.spec);
+  world.onResize();
+  resizeTrailCanvas();
+  applyLanguageUI();
+});
+
 function toggleFullscreenExperience() {
   const docEl = document.documentElement;
   const reqFs = docEl.requestFullscreen || docEl.webkitRequestFullscreen;
@@ -758,7 +1014,7 @@ function resizeTrailCanvas() {
     1,
     window.visualViewport?.height || window.innerHeight
   );
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const dpr = Math.min(window.devicePixelRatio || 1, qualityGovernor?.spec?.maxDpr ?? 2);
   trailSize=resizeOverlay(trailCanvas,trailCtx,viewportWidth,viewportHeight,dpr,trailSize);
 }
 window.addEventListener('resize', resizeTrailCanvas);
@@ -810,6 +1066,23 @@ const counterInteractions=new CounterInteractions(world,sound,{
   onPoke(part){
     const tr=saveManager.lang==='tr';
     director.sayLine(tr?(part==='eye'?'Gözüm orada, dondurma burada!':part==='nose'?'Burnumdan dondurma çıkmaz!':'Hop! Dondurmaya bakalım.'):(part==='eye'?'Easy on the eyes!':part==='nose'?'No ice cream in my nose!':'The ice cream is over here!'),'hmm',1.5);
+  },
+  onRecognized(secretId){
+    if (secretId && saveManager.data) {
+      const list = saveManager.data.secretMelodiesFound || [];
+      const isNew = !list.includes(secretId);
+      if (isNew) {
+        saveManager.data.secretMelodiesFound = [...list, secretId];
+        saveManager.save();
+      }
+      world.spawnBurst?.(new THREE.Vector3(0, 1.48, 0.14), 0xfbbf24, 24);
+      const tr = saveManager.lang === 'tr';
+      showViralToast(
+        isNew
+          ? (tr ? `✨ Gizli Sır Keşfedildi! (${saveManager.data.secretMelodiesFound.length}/8)` : `✨ Secret Found! (${saveManager.data.secretMelodiesFound.length}/8)`)
+          : (tr ? '🎶 Usta ezgiye eşlik ediyor!' : '🎶 The Master joins your melody!')
+      );
+    }
   }
 });
 const orderPatience=new OrderPatience(world,sound,()=>{
@@ -918,6 +1191,11 @@ gameContainer.addEventListener('pointerdown', (event) => {
     discovery.pointerDown(event);
     return;
   }
+  if (coneBiteFinale?.active && !event.target.closest('button, dialog, a, input')) {
+    sound.init();
+    coneBiteFinale.triggerBite();
+    return;
+  }
   if (
     event.button !== 0 ||
     activePointerId !== null ||
@@ -999,9 +1277,21 @@ gameContainer.addEventListener('pointermove', (event) => {
   const begin = !isControlActive(gestureState);
   const dt = Math.max(0.004, (now - lastMoveTime) / 1000);
   lastMoveTime = now;
+  const prevPx = gestureState.pointerX;
+  const prevPy = gestureState.pointerY;
   gestureState.isMouseHover = hovering;
   gestureState.pointerType = controlPointerType(event, touchPreview);
   updateNormalizedPointer(event.clientX, event.clientY, dt, begin);
+  if (screenSmudge.isActive) {
+    screenSmudge.wipe(
+      event.clientX,
+      event.clientY,
+      prevPx,
+      prevPy,
+      viewportWidth,
+      viewportHeight
+    );
+  }
   // Restore the original desktop reach: move up to extend, down to withdraw.
   gestureState.isReaching = gestureState.isPointerDown || gestureState.normY > -0.68;
 });
@@ -1064,6 +1354,8 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function beginOrderFlow() {
+  director.clearSeededChallenge();
+  if (challengeBanner) challengeBanner.hidden = true;
   discovery?.exit(true);
   world.resetExploration?.();
   gestureState.trailPoints.length = 0;
@@ -1089,6 +1381,10 @@ function beginOrderFlow() {
 }
 
 function prepareCounter() {
+  coneBiteFinale?.cancel({ restoreScoops: true });
+  counterTroll?.resetRound();
+  screenSmudge.reset();
+  elasticSnatch.reset();
   endPointerInteraction();orderFlow.cancel();tubOrderView.end();
   counterInteractions.reset();orderPatience.reset();
   document.body.classList.remove('ordering');document.body.removeAttribute('data-order-phase');
@@ -1097,14 +1393,361 @@ function prepareCounter() {
   coneIntro.reset();
   encounterCamera.setPhase('offer',true);
 }
+window.addEventListener('pagehide', () => {
+  if (director?.active && !director.roundEnded) {
+    gameAnalytics.recordAbandoned(director.currentStage, {
+      trick: director.currentShowId || director.currentMechanic,
+      step: director.routineIndex,
+      bamboozled: director.penaltiesTaken,
+    });
+  }
+});
 function launchStageRound() {
   dialogSettings.close();
   prepareCounter();
 }
 btnStartGame.addEventListener('click', launchStageRound);
 
+function startSeededRound(spec, { customerCone = false } = {}) {
+  if (!spec) return;
+  closeTopLayer(dialogResult);
+  closeTopLayer(dialogSettings);
+  closeTopLayer(dialogChallengeBuilder);
+  coneBiteFinale?.cancel({ restoreScoops: true });
+  discovery?.exit(true);
+  endPointerInteraction();
+  orderFlow.cancel();
+  tubOrderView.end();
+  counterInteractions.reset();
+  orderPatience.reset();
+  document.body.classList.remove('ordering');
+  document.body.removeAttribute('data-order-phase');
+  gestureState.trailPoints.length = 0;
+  trailCtx.clearRect(0, 0, viewportWidth, viewportHeight);
+
+  selectedStage = spec.stage || selectedStage || 5;
+  selectedScoopCount = spec.scoopCount || 3;
+  selectedFlavors = Array.isArray(spec.flavors) && spec.flavors.length > 0
+    ? spec.flavors.slice()
+    : [0, 1, 2];
+  while (selectedFlavors.length < MAX_SCOOPS) {
+    selectedFlavors.push(selectedFlavors[selectedFlavors.length - 1] ?? 0);
+  }
+
+  director.setSeededChallenge({
+    randomFn: createSeededRandom(spec.seed),
+    customTricks: Array.isArray(spec.tricks) && spec.tricks.length > 0 ? spec.tricks : null,
+    meta: spec,
+  });
+  director.setOrderConfig(selectedScoopCount, selectedFlavors, selectedStage);
+  refreshOrderHUD();
+  sound.init();
+  requestScreenWakeLock();
+  startOverlay.classList.add('hidden');
+  document.querySelector('.hud-bottom')?.setAttribute('aria-hidden', 'false');
+  world.cancelVendorReaction?.();
+  if (!customerCone) {
+    coneIntro.active = false;
+  }
+  counterTroll?.resetRound();
+  screenSmudge.reset();
+  elasticSnatch.reset();
+  highlightBuffer.reset();
+  director.resetRound(selectedStage, false, {
+    preserveCustomerCone: Boolean(customerCone),
+    includeTutorialWarmup: false,
+  });
+  director.startRound({ customerCone: Boolean(customerCone) });
+  gameAnalytics.startRound(director.currentStage, {
+    scoops: selectedScoopCount,
+    mode: spec.kind || 'seeded',
+  });
+  encounterCamera.setPhase('play');
+  if (challengeBanner) {
+    challengeBanner.hidden = false;
+    challengeBanner.textContent = spec.kind === 'daily'
+      ? `${saveManager.t('dailyBtn')} · ${spec.dateKey}`
+      : `🎯 ${saveManager.t('challengeBanner')}`;
+  }
+}
+
+function renderTrapBuilderModal() {
+  if (!challengeTrickPicker || !challengeSelectedStrip) return;
+  challengeSelectedStrip.replaceChildren();
+  selectedTrapTricks.forEach((trickId, idx) => {
+    const info = saveManager.getTrickInfo(trickId);
+    const chip = document.createElement('span');
+    chip.className = 'challenge-selected-chip';
+    chip.textContent = `${idx + 1}. ${info.icon} ${info.name}`;
+    challengeSelectedStrip.appendChild(chip);
+  });
+
+  challengeTrickPicker.replaceChildren();
+  CURATED_TRAP_TRICKS.forEach((trickId) => {
+    const info = saveManager.getTrickInfo(trickId);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    const isSel = selectedTrapTricks.includes(trickId);
+    btn.className = `trap-pick-btn${isSel ? ' selected' : ''}`;
+    btn.textContent = `${info.icon} ${info.name}`;
+    btn.addEventListener('click', () => {
+      const existing = selectedTrapTricks.indexOf(trickId);
+      if (existing >= 0) {
+        if (selectedTrapTricks.length > 3) {
+          selectedTrapTricks.splice(existing, 1);
+        }
+      } else if (selectedTrapTricks.length < 5) {
+        selectedTrapTricks.push(trickId);
+      } else {
+        selectedTrapTricks.shift();
+        selectedTrapTricks.push(trickId);
+      }
+      renderTrapBuilderModal();
+    });
+    challengeTrickPicker.appendChild(btn);
+  });
+}
+
+function openTrapBuilderModal(prefillTricks = null, comparisonCtx = null) {
+  trapComparisonContext = comparisonCtx || null;
+  if (Array.isArray(prefillTricks) && prefillTricks.length >= 3) {
+    selectedTrapTricks = prefillTricks.slice(0, 5);
+  }
+  renderTrapBuilderModal();
+  if (dialogChallengeBuilder && !dialogChallengeBuilder.open) {
+    delete dialogChallengeBuilder.dataset.closing;
+    dialogChallengeBuilder.showModal();
+  }
+}
+
+btnDailyMaster?.addEventListener('click', () => {
+  if (director.active || orderFlow.active) return;
+  startSeededRound(getDailyChallengeSpec(new Date()));
+});
+
+btnOpenChallengeBuilder?.addEventListener('click', () => {
+  if (director.active || orderFlow.active) return;
+  endPointerInteraction();
+  openTrapBuilderModal(null, null);
+});
+
+btnOpenHandStyle?.addEventListener('click', () => {
+  if (director.active || orderFlow.active) return;
+  endPointerInteraction();
+  renderHandStyleModal({
+    container: handStyleBody,
+    saveManager,
+    world,
+  });
+  if (dialogHandStyle && !dialogHandStyle.open) {
+    delete dialogHandStyle.dataset.closing;
+    dialogHandStyle.showModal();
+  }
+});
+
+btnPlayOwnTrap?.addEventListener('click', () => {
+  const linkSpec = createTrapChallengeLink({
+    tricks: selectedTrapTricks,
+    stage: Math.max(4, Math.min(20, selectedStage || 6)),
+    scoopCount: selectedScoopCount || 3,
+    flavors: selectedFlavors.slice(0, selectedScoopCount || 3),
+    baseHref: location.href,
+  });
+  startSeededRound({
+    kind: 'challenge',
+    seed: linkSpec.seed,
+    stage: linkSpec.stage,
+    scoopCount: linkSpec.scoopCount,
+    flavors: linkSpec.flavors,
+    tricks: linkSpec.tricks,
+  });
+});
+
+btnShareBuiltTrap?.addEventListener('click', async () => {
+  const linkSpec = createTrapChallengeLink({
+    tricks: selectedTrapTricks,
+    stage: trapComparisonContext?.stage || Math.max(4, Math.min(20, selectedStage || 6)),
+    scoopCount: trapComparisonContext?.scoopCount || selectedScoopCount || 3,
+    flavors: (trapComparisonContext?.flavors || selectedFlavors).slice(0, 4),
+    senderScore: trapComparisonContext?.score ?? null,
+    senderBamboozled: trapComparisonContext?.bamboozled ?? null,
+    baseHref: location.href,
+  });
+  const shareText = formatShareText({
+    lang: saveManager.lang,
+    mode: 'challenge',
+    stage: linkSpec.stage,
+    emojiStrip: '🎯🍦🎪',
+    bamboozled: trapComparisonContext?.bamboozled ?? 0,
+    score: trapComparisonContext?.score ?? 0,
+    url: linkSpec.url,
+  });
+  let channel = 'none';
+  if (typeof navigator.share === 'function') {
+    try {
+      await navigator.share({
+        title: saveManager.t('gameTitle'),
+        text: shareText,
+        url: linkSpec.url,
+      });
+      channel = 'web-share';
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+    }
+  }
+  if (channel === 'none' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(`${shareText}`);
+      channel = 'clipboard';
+      showViralToast(`✅ ${saveManager.t('copiedNotice')}`);
+    } catch {
+      // Ignore clipboard permission errors
+    }
+  }
+  gameAnalytics.recordShare(linkSpec.stage, {
+    channel,
+    kind: 'trap-builder',
+  });
+  closeTopLayer(dialogChallengeBuilder);
+});
+
+btnShareCard?.addEventListener('click', async () => {
+  const data = lastRoundResult || {};
+  const activeChallenge = director.challengeMeta;
+  const emojiStrip = formatEmojiStrip(data.stepOutcomes);
+  const bamboozled = data.bamboozled ?? director.penaltiesTaken ?? 0;
+  let shareUrl = buildShareUrl(location.href);
+  if (activeChallenge?.kind === 'daily') {
+    shareUrl = buildShareUrl(location.href, { daily: 1, date: activeChallenge.dateKey });
+  } else {
+    const routineTricks = (director.routine || []).filter(
+      (id) => id && id !== 'SCRAPE_FLAVOR_SCOOP' && id !== 'FINAL_PISTACHIO_CATCH'
+    );
+    const trap = createTrapChallengeLink({
+      tricks: routineTricks.slice(0, 4),
+      stage: director.currentStage,
+      scoopCount: director.targetScoopCount,
+      flavors: director.selectedFlavors.slice(0, director.targetScoopCount),
+      senderScore: data.score || 0,
+      senderBamboozled: bamboozled,
+      baseHref: location.href,
+      seed: activeChallenge?.seed || (Date.now() >>> 0),
+    });
+    shareUrl = trap.url;
+  }
+  const mode = activeChallenge?.kind || 'stage';
+  const shareText = formatShareText({
+    lang: saveManager.lang,
+    mode,
+    dateKey: activeChallenge?.dateKey || '',
+    stage: director.currentStage,
+    emojiStrip,
+    bamboozled,
+    score: data.score || 0,
+    url: shareUrl,
+  });
+  const cardCanvas = renderShareCardCanvas({
+    gameTitle: saveManager.t('gameTitle'),
+    badge: resultBadge?.textContent || saveManager.t('dailyBtn'),
+    title: data.title || saveManager.t('end_win_title'),
+    stars: data.stars || '⭐⭐⭐',
+    scoreText: saveManager.formatNumber(data.score || 0),
+    bamboozled,
+    bamboozledLabel: saveManager.t('bamboozledLabel'),
+    emojiStrip,
+  });
+  const res = await shareResultCard({
+    canvas: cardCanvas,
+    text: shareText,
+    url: shareUrl,
+    title: saveManager.t('gameTitle'),
+  });
+  if (res.method === 'clipboard') {
+    showViralToast(`✅ ${saveManager.t('copiedNotice')}`);
+  }
+  if (res.ok) {
+    gameAnalytics.recordShare(director.currentStage, {
+      channel: res.method,
+      kind: mode,
+    });
+  }
+});
+
+btnShareTrapResult?.addEventListener('click', () => {
+  const data = lastRoundResult || {};
+  const routineTricks = (director.routine || []).filter((id) =>
+    CURATED_TRAP_TRICKS.includes(id)
+  );
+  openTrapBuilderModal(
+    routineTricks.length >= 3 ? routineTricks.slice(0, 4) : null,
+    {
+      stage: director.currentStage,
+      scoopCount: director.targetScoopCount,
+      flavors: director.selectedFlavors.slice(0, director.targetScoopCount),
+      score: data.score || 0,
+      bamboozled: data.bamboozled ?? director.penaltiesTaken ?? 0,
+    }
+  );
+});
+
+btnShareClip?.addEventListener('click', async () => {
+  if (!btnShareClip || btnShareClip.disabled) return;
+  const origLabel = btnShareClip.textContent;
+  btnShareClip.disabled = true;
+  btnShareClip.textContent = '⏳ 6s...';
+  try {
+    const data = lastRoundResult || {};
+    const res = await exportHighlightClip({
+      ringBuffer: highlightBuffer,
+      durationMs: 4200,
+      fps: 24,
+      meta: {
+        gameTitle: saveManager.t('gameTitle'),
+        bamboozledLabel: saveManager.t('bamboozledLabel'),
+        emojiStrip: formatEmojiStrip(data.stepOutcomes),
+      },
+    });
+    if (!res.ok || !res.blob) return;
+
+    const filename = `maras-dondurma-klip.${res.ext || 'webm'}`;
+    let channel = 'none';
+    if (typeof navigator.share === 'function' && typeof File === 'function') {
+      try {
+        const file = new File([res.blob], filename, { type: res.mimeType });
+        if (!navigator.canShare || navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            title: saveManager.t('gameTitle'),
+            files: [file],
+          });
+          channel = 'web-share-clip';
+        }
+      } catch (err) {
+        if (err?.name === 'AbortError') return;
+      }
+    }
+    if (channel === 'none' && typeof URL?.createObjectURL === 'function') {
+      const objUrl = URL.createObjectURL(res.blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(objUrl), 5000);
+      channel = 'download-clip';
+    }
+    gameAnalytics.recordShare(director.currentStage, {
+      channel,
+      kind: 'clip-6s',
+    });
+  } finally {
+    btnShareClip.disabled = false;
+    btnShareClip.textContent = origLabel;
+  }
+});
+
 if (btnMenuRound) {
   btnMenuRound.addEventListener('click', () => {
+    director.clearSeededChallenge();
+    if (challengeBanner) challengeBanner.hidden = true;
     closeTopLayer(dialogResult);
     startOverlay.classList.remove('hidden');
     orderFlow.cancel();
@@ -1121,6 +1764,13 @@ if (btnMenuRound) {
 }
 
 btnNextRound.addEventListener('click', () => {
+  const retryMeta = !lastAdvanceUnlocked ? director.challengeMeta : null;
+  if (retryMeta) {
+    startSeededRound(retryMeta);
+    return;
+  }
+  director.clearSeededChallenge();
+  if (challengeBanner) challengeBanner.hidden = true;
   closeTopLayer(dialogResult);
   requestScreenWakeLock();
   if (lastAdvanceUnlocked && director.currentStage < Number.MAX_SAFE_INTEGER) {
@@ -1133,6 +1783,10 @@ btnNextRound.addEventListener('click', () => {
 });
 
 btnRetryRound.addEventListener('click', () => {
+  if (director.challengeMeta) {
+    startSeededRound(director.challengeMeta);
+    return;
+  }
   closeTopLayer(dialogResult);
   requestScreenWakeLock();
   selectedStage = director.currentStage;
@@ -1189,6 +1843,7 @@ function updateHUD(guide) {
   if(hudCache.canSwitchUsta!==canSwitchUsta){
     hudCache.canSwitchUsta=canSwitchUsta;
     document.getElementById('btn-switch-usta')?.classList.toggle('interactive',canSwitchUsta);
+    if (counterViralBar) counterViralBar.hidden = !canSwitchUsta;
   }
   const ustaName = saveManager.getUstaName(director.levelIndex);
   const scoopText=orderFlow?.active?`${orderFlow.count} ${saveManager.t('scoopsUnit')}`:`${director.scoopCount}/${director.targetScoopCount}`;
@@ -1207,11 +1862,27 @@ function updateHUD(guide) {
     hudScore.textContent = scoreText;
   }
 
-  if (hudCache.hearts !== director.hearts) {
-    hudCache.hearts = director.hearts;
-    heartSpanEls.forEach((hEl, idx) => {
-      hEl.classList.toggle('lost', idx >= director.hearts);
+  const examMode = Boolean(saveManager.masterExamMode);
+  if (hudCache.examMode !== examMode) {
+    hudCache.examMode = examMode;
+    heartSpanEls.forEach((hEl) => {
+      hEl.hidden = !examMode;
     });
+    if (hudBamboozled) {
+      hudBamboozled.hidden = examMode;
+      hudBamboozled.title = saveManager.t('bamboozledLabel');
+    }
+  }
+  if (examMode) {
+    if (hudCache.hearts !== director.hearts) {
+      hudCache.hearts = director.hearts;
+      heartSpanEls.forEach((hEl, idx) => {
+        hEl.classList.toggle('lost', idx >= director.hearts);
+      });
+    }
+  } else if (hudBamboozled && hudCache.bamboozled !== director.penaltiesTaken) {
+    hudCache.bamboozled = director.penaltiesTaken;
+    hudBamboozled.textContent = `🎣 ${director.penaltiesTaken}`;
   }
 
   if (hudCache.scoopCount !== director.scoopCount) {
@@ -1550,6 +2221,7 @@ function renderVisualCometsAndTrails(dt, elapsed, guide) {
     drawFadingToBrightComet(trailCtx, pts, activeTheme, elapsed, false);
     trailCtx.restore();
   }
+  screenSmudge.draw(trailCtx, viewportWidth, viewportHeight);
   drawTouchContact();
 }
 
@@ -1561,11 +2233,23 @@ const encounterCamera=new EncounterCamera(world,()=>{
 });
 world.encounterCamera=encounterCamera;
 coneIntro = new ConeIntroduction(world, {
-  onTake(){ gameAnalytics.begin(selectedStage);sound.init(); sound.playWaferSlide?.(0); requestScreenWakeLock(); },
+  onTake(){
+    gameAnalytics.begin(selectedStage);
+    gameAnalytics.recordConeTaken(selectedStage);
+    sound.init();
+    sound.playWaferSlide?.(0);
+    requestScreenWakeLock();
+  },
   onTransfer(){encounterCamera.setPhase('order');},
   onComplete(){
     carryHandRest.copy(world.touristHand.position);
     director.heldItem = 'CUSTOMER_CONE';
+    if (pendingIncomingChallenge) {
+      const spec = pendingIncomingChallenge;
+      pendingIncomingChallenge = null;
+      startSeededRound(spec, { customerCone: true });
+      return;
+    }
     beginOrderFlow();
   },
 });
@@ -1614,6 +2298,7 @@ function animate(now) {
 
   const dt = Math.max(0, Math.min(0.05, (now - prevTime) / 1000));
   prevTime = now;
+  qualityGovernor.recordFrame(dt * 1000);
   const elapsed = now / 1000;
   gestureState.frameTime=elapsed;
   gameAnalytics.tick(dt,{visible:!document.hidden&&!discovery?.active&&!document.querySelector('dialog[open]'),playing:director.active&&!director.roundEnded});
@@ -1633,6 +2318,26 @@ function animate(now) {
     empty:customerHandEmpty(world,director),x:((gestureState.aimNormX??gestureState.normX)+1)*viewportWidth*.5,y:(1-(gestureState.aimNormY??gestureState.normY))*viewportHeight*.5,
     epoch:gestureState.pointerEpoch,width:viewportWidth,height:viewportHeight
   });
+  counterTroll?.update(dt, {
+    active: director.active && !director.roundEnded && !document.hidden && !document.querySelector('dialog[open]'),
+    pointerDown: isControlActive(gestureState),
+    x: ((gestureState.aimNormX ?? gestureState.normX) + 1) * viewportWidth * 0.5,
+    y: (1 - (gestureState.aimNormY ?? gestureState.normY)) * viewportHeight * 0.5,
+    epoch: gestureState.pointerEpoch,
+    width: viewportWidth,
+    height: viewportHeight,
+    gestureState,
+  });
+  screenSmudge.update(dt);
+  const snatchSnap = elasticSnatch.update(dt, {
+    stretching: Boolean(world.stretchyStrand?.mesh?.visible),
+    handSpeed: gestureState.speed,
+  });
+  if (snatchSnap.slicedFree && director.active && !director.roundEnded) {
+    director.score += 120;
+    director._spawnScorePopup?.(120, director.coneWorldPos, '✂️');
+    highlightBuffer.markMoment('slice', 1.8);
+  }
   if(discovery.active){world.render();return;}
   gestureState.lungeBoost = Math.max(0, gestureState.lungeBoost - dt * 3.5);
 
@@ -1733,14 +2438,23 @@ function animate(now) {
     elapsed
   );
 
+  let activeJuiceFov = 0;
   if (coneIntro.active) {
     if(!document.hidden&&!document.querySelector('dialog[open]'))director.tickSpeech(dt);
     coneIntro.update(dt,elapsed,gestureState,document.hidden || Boolean(document.querySelector('dialog[open]')));
   } else if (orderFlow.active) {
     if (!document.hidden && !document.querySelector('dialog[open]')) director.tickSpeech(dt);
-  } else if (!document.hidden) {
+  } else if (!document.hidden && !coneBiteFinale?.active) {
     try {
-      director.update(dt, elapsed, gestureState);
+      const juiceSnap =
+        director.active && !director.roundEnded && director.juice
+          ? director.juice.step(dt, {
+              mechanic: director.currentMechanic,
+              subStep: director.subStep,
+            })
+          : { visualDt: dt, fovOffset: 0 };
+      activeJuiceFov = juiceSnap.fovOffset || 0;
+      director.update(juiceSnap.visualDt, elapsed, gestureState, dt);
     } catch (err) {
       console.error('[TrickDirector.update]', err);
       clearVendorFlourish(director);
@@ -1780,10 +2494,54 @@ function animate(now) {
     voiceMouthOpen
   );
   encounterCamera.update(dt);
+  world.applyJuiceFov(activeJuiceFov);
+  if (coneBiteFinale?.active) {
+    coneBiteFinale.update(dt);
+  }
   touchArmView.update(pointerHandActive(), gestureState.pointerX, gestureState.pointerY, viewportWidth, viewportHeight,gestureState.pointerType,!introTaking&&!director.isGraspingPaddleCone&&!director.roundEnded&&!director.paperReturnPose,relativePresented()?relativeTouch:null);
   world.render();
 
-  const guide = director.getGestureGuide();
+  const guide = coneBiteFinale?.active
+    ? {
+        active: false,
+        quiet: false,
+        theme: 'green',
+        icon: '😋🍦',
+        badgeText: saveManager.t('cue_bite_cone'),
+        trickTitle: saveManager.t('speech_afiyet'),
+        routineProgress: 1,
+        stageProgress: Math.max(0, 1 - coneBiteFinale.elapsed / 2.2),
+        comets: [],
+        rings: [],
+      }
+    : director.getGestureGuide();
+  if (guide && !coneBiteFinale?.active && screenSmudge.needsWipeCue) {
+    guide.badgeText = saveManager.t('cue_wipe_smudge');
+    guide.icon = '🧼✋';
+  }
+  if ((director.active && !director.roundEnded) || coneBiteFinale?.active) {
+    const coneProj = world.projectToScreen(director.coneWorldPos);
+    const flavorColors = director.selectedFlavors
+      .slice(0, Math.max(1, director.targetScoopCount))
+      .map((idx) => ICE_CREAM_FLAVORS[idx % ICE_CREAM_FLAVORS.length]?.cssColor || '#fff8eb');
+    highlightBuffer.recordTick(dt, {
+      coneX: viewportWidth > 0 ? coneProj.x / viewportWidth : 0.5,
+      coneY: viewportHeight > 0 ? coneProj.y / viewportHeight : 0.45,
+      handX: ((gestureState.aimNormX ?? gestureState.normX) + 1) * 0.5,
+      handY: (1 - (gestureState.aimNormY ?? gestureState.normY)) * 0.5,
+      grabCurl: gestureState.grabCurl,
+      scoops: director.scoopCount,
+      flavorColors,
+      vendorMood: world.vendorMood || 'smile',
+      bubbleText: director.vendorBubbleText || '',
+      badgeText: guide?.badgeText || '',
+      theme: guide?.theme || 'green',
+      score: director.score,
+      bamboozled: director.penaltiesTaken,
+      smudgeAlpha: screenSmudge.opacity,
+      biteActive: Boolean(coneBiteFinale?.active),
+    });
+  }
   updateHUD(guide);
   renderVisualCometsAndTrails(dt, elapsed, guide);
   performanceProbe?.endFrame();

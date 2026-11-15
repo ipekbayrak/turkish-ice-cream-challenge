@@ -110,7 +110,7 @@ test('referenced movement provenance is explicit and at most one researched serv
  for(const entry of RESEARCHED_SERVICE_CATALOG){assert.ok(entry.sourceRefs.every(url=>url.startsWith('https://')));assert.match(entry.adaptation,/authored/);}
  for(const level of CAMPAIGN_LEVELS)for(let i=0;i<40;i++){
   const routine=TrickDirector.prototype._buildDynamicRoutineForStage.call({targetScoopCount:2,currentStage:level.stage},level);
-  assert.ok(routine.filter(isResearchedService).length<=1);assert.ok(routine.includes('EYE_LOCK_RHYTHM_CHASE'));
+  assert.ok(routine.filter(isResearchedService).length<=1);assert.equal(routine.includes('EYE_LOCK_RHYTHM_CHASE'),level.stage>=3);
  }
 });
 

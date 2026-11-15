@@ -24,6 +24,7 @@ import { VendorFlourish, VendorPoleRejoin, VENDOR_FLOURISH_SECONDS, canRejoinVen
 import { isTimedVendorShow, isIdleVendorAction, isQuietVendorPresentation, markIdleSettling, tickIdleGuide, suppressIdleScene } from './idle-presentation.js';
 import { enterExtraTrick, updateExtraTrick, extraTrickCue, enterServingNapkin, updateServingNapkin, servingNapkinCue } from './trick-extensions.js';
 import { enterNestedService, separateNestedCone, updateNestedService, nestedServiceCue, servicePresentationPlaying } from './serving-sequence.js';
+import { JuiceDirector } from './juice-director.js';
 import {
   CAMPAIGN_LEVELS,
   GAME_MODES,
@@ -50,15 +51,19 @@ function buildCurvedScreenPath(p0, p1, bendY = -28, segments = 18) {
   return pts;
 }
 
-function shuffleArray(arr) {
+function shuffleArray(arr, rand = Math.random) {
   const copy = arr.slice();
   for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rand() * (i + 1));
     const tmp = copy[i];
     copy[i] = copy[j];
     copy[j] = tmp;
   }
   return copy;
+}
+
+function randOf(ctx) {
+  return typeof ctx?.randomFn === 'function' ? ctx.randomFn : Math.random;
 }
 
 export class TrickDirector {
@@ -80,11 +85,34 @@ export class TrickDirector {
     this.selectedFlavors = (this.save?.data?.preferredFlavors || [0, 1, 2, 3]).slice();
     this.forceTutorialNext = false;
     this.includeTutorialWarmupNext = false;
+    this.randomFn = null;
+    this.seededMode = false;
+    this.customTrickList = null;
+    this.challengeMeta = null;
+    this.juice = new JuiceDirector();
 
     this.floatingPopups = [];
     this.vignetteFlash = { color: 'green', alpha: 0 };
 
     this.resetRound(this.currentStage);
+  }
+
+  _rand() {
+    return typeof this.randomFn === 'function' ? this.randomFn() : Math.random();
+  }
+
+  setSeededChallenge({ randomFn = null, customTricks = null, meta = null } = {}) {
+    this.randomFn = typeof randomFn === 'function' ? randomFn : null;
+    this.seededMode = Boolean(this.randomFn || (Array.isArray(customTricks) && customTricks.length > 0));
+    this.customTrickList = Array.isArray(customTricks) && customTricks.length > 0 ? customTricks.slice() : null;
+    this.challengeMeta = meta || null;
+  }
+
+  clearSeededChallenge() {
+    this.randomFn = null;
+    this.seededMode = false;
+    this.customTrickList = null;
+    this.challengeMeta = null;
   }
 
   setOrderConfig(scoopCount, flavorIndices, stageNumber = this.currentStage) {
@@ -151,7 +179,9 @@ export class TrickDirector {
 
   _loseHeart(worldPos = this.coneWorldPos, icon = '💔') {
     this.penaltiesTaken++;
+    this._stepHadMistake = true;
     this.hearts = Math.max(0, this.hearts - 1);
+    this.juice?.triggerNearMiss?.();
     this.score = Math.max(0, this.score - 160);
     this._spawnScorePopup(-160, worldPos, icon);
     this.sound.playPenalty();
@@ -160,9 +190,9 @@ export class TrickDirector {
     this.world.ringBells(0.85);
     this.world.setVendorMood('laugh');
     this._vibrate([60, 40, 75]);
-    this.ui?.onReaction?.({ kind: 'mistake', trickId: this.currentShowId || this.currentMechanic, componentId: this.currentMechanic, stage: this.currentStage, vendorIndex: this.levelIndex, index: this.routineIndex, score: this.score });
+    this.ui?.onReaction?.({ kind: 'mistake', trickId: this.currentShowId || this.currentMechanic, componentId: this.currentMechanic, stage: this.currentStage, vendorIndex: this.levelIndex, index: this.routineIndex, score: this.score, bamboozled: this.penaltiesTaken });
 
-    if (this.hearts <= 0) {
+    if (this.hearts <= 0 && Boolean(this.save?.masterExamMode)) {
       this._triggerVendorSpeech('laugh');
       this._endRound('OUT_OF_HEARTS');
       return true;
@@ -196,6 +226,7 @@ export class TrickDirector {
   }
 
   _buildDynamicRoutineForStage(stageCfg) {
+    const rand = randOf(this);
     const seq = []; // Start directly at the cart; no automatic tutorial step.
     if (this.includeTutorialWarmupNext) {
       seq.push('TUTORIAL_WARMUP');
@@ -205,36 +236,42 @@ export class TrickDirector {
     // Always start by scraping the 1st chosen flavor & introducing the signature Double Cone or Giant Block
     seq.push('SCRAPE_FLAVOR_SCOOP');
 
-    const discoveredSet = Array.isArray(this.save?.data?.discoveredTricks)
-      ? new Set(this.save.data.discoveredTricks)
-      : null;
-    const recentSet = this._recentTricks instanceof Set ? this._recentTricks : null;
-    const pool = shuffleArray(stageCfg.trickPool || []);
-    if (discoveredSet || recentSet) {
-      const rank = (id) => {
-        if (discoveredSet && !discoveredSet.has(id) && !recentSet?.has(id)) return 0;
-        if (!recentSet?.has(id)) return 1;
-        return 2;
-      };
-      pool.sort((a, b) => rank(a) - rank(b));
-    }
-    const count = Math.max(3, stageCfg.trickCount || 4);
-    // Compound shows occupy the original slot budget, with at most 1/2/3 per
-    // early/middle/late round so a larger repertoire does not lengthen every turn.
-    const selectedSlots = selectRoutineSlots(pool, count, stageCfg.stage || this.currentStage || 1);
-
-    // Guarantee EYE_LOCK_RHYTHM_CHASE appears in the routine so the eye-contact & green-line rhythm mechanic is always experienced
-    if (!selectedSlots.includes('EYE_LOCK_RHYTHM_CHASE')) {
-      let replaceIdx = -1;
-      for (let i = selectedSlots.length - 1; i >= 0; i--) {
-        if (!isChoreographedRoutine(selectedSlots[i])) {
-          replaceIdx = i;
-          break;
-        }
+    let chosenTricks;
+    if (Array.isArray(this.customTrickList) && this.customTrickList.length > 0) {
+      chosenTricks = this.customTrickList
+        .filter((id) => id && id !== 'FINAL_PISTACHIO_CATCH' && id !== 'SCRAPE_FLAVOR_SCOOP')
+        .slice(0, 8);
+    } else {
+      const discoveredSet = !this.seededMode && Array.isArray(this.save?.data?.discoveredTricks)
+        ? new Set(this.save.data.discoveredTricks)
+        : null;
+      const recentSet = !this.seededMode && this._recentTricks instanceof Set ? this._recentTricks : null;
+      const pool = shuffleArray(stageCfg.trickPool || [], rand);
+      if (discoveredSet || recentSet) {
+        const rank = (id) => {
+          if (discoveredSet && !discoveredSet.has(id) && !recentSet?.has(id)) return 0;
+          if (!recentSet?.has(id)) return 1;
+          return 2;
+        };
+        pool.sort((a, b) => rank(a) - rank(b));
       }
-      selectedSlots[replaceIdx >= 0 ? replaceIdx : 0] = 'EYE_LOCK_RHYTHM_CHASE';
+      const count = Math.max(3, stageCfg.trickCount || 4);
+      const stageNum = stageCfg.stage ?? this.currentStage ?? 3;
+      const selectedSlots = selectRoutineSlots(pool, count, stageNum);
+
+      // Guarantee EYE_LOCK_RHYTHM_CHASE from Stage 3 onward so Stages 1–2 focus on Reach/Pull & Slice
+      if (stageNum >= 3 && !selectedSlots.includes('EYE_LOCK_RHYTHM_CHASE')) {
+        let replaceIdx = -1;
+        for (let i = selectedSlots.length - 1; i >= 0; i--) {
+          if (!isChoreographedRoutine(selectedSlots[i])) {
+            replaceIdx = i;
+            break;
+          }
+        }
+        selectedSlots[replaceIdx >= 0 ? replaceIdx : 0] = 'EYE_LOCK_RHYTHM_CHASE';
+      }
+      chosenTricks = shuffleArray(selectedSlots, rand);
     }
-    const chosenTricks = shuffleArray(selectedSlots);
 
     if (this.practiceTrickId && this.practiceTrickId !== 'FINAL_PISTACHIO_CATCH') {
       const pid = this.practiceTrickId;
@@ -251,7 +288,7 @@ export class TrickDirector {
       }
     }
 
-    if (this && typeof this === 'object') {
+    if (this && typeof this === 'object' && !this.seededMode) {
       this._recentTricks = new Set(chosenTricks);
     }
 
@@ -324,6 +361,11 @@ export class TrickDirector {
     this.tricksSurvived = 0;
     this.penaltiesTaken = 0;
     this.overtimeMisses = 0;
+    this.stepOutcomes = [];
+    this._stepHadMistake = false;
+    this.juice?.reset?.();
+    this.world.applyJuiceFov?.(0);
+    this.world.applyVendorTell?.('neutral');
     this.idleSeconds = 0;
     this.passiveLimitSec = 22.0;
     this.isAfkShowActive = false;
@@ -473,6 +515,7 @@ export class TrickDirector {
       taunt: 'taunt',
       cheer: 'cheer',
       shock: 'shock',
+      trolled: 'shock',
       yakala: 'hoppa',
       afiyet: 'cheer',
     };
@@ -492,6 +535,7 @@ export class TrickDirector {
       taunt: 'speech_taunt',
       cheer: 'speech_cheer',
       shock: 'speech_shock',
+      trolled: 'speech_trolled',
       scrape: 'speech_scrape',
       double_cone: 'speech_double_cone',
       giant: 'speech_giant',
@@ -514,7 +558,8 @@ export class TrickDirector {
     if (customerCone && this.world.conePivot.parent === this.world.heldSocket) {
       this.routine = customerOpeningRoutine(this.routine, this.targetScoopCount);
     }
-    this.flavorFeint=createFlavorFeintPlan(this.routine,this.selectedFlavors.slice(0,this.targetScoopCount),this.targetScoopCount,{random:this.flavorFeintRandom||Math.random});
+    const feintRand = this.flavorFeintRandom || (() => this._rand());
+    this.flavorFeint=createFlavorFeintPlan(this.routine,this.selectedFlavors.slice(0,this.targetScoopCount),this.targetScoopCount,{random:feintRand});
     if(this.flavorFeint)this.routine=this.flavorFeint.routine;
     this.customerConeStart = false;
     this.active = true;
@@ -583,10 +628,13 @@ export class TrickDirector {
     this.rhythmBeatTimer = 0;
     this.rhythmMissCount = 0;
     this.snatchBurstTimer = 0;
-    this.rhythmSide = Math.random() < 0.5 ? -1 : 1;
+    this.rhythmSide = this._rand() < 0.5 ? -1 : 1;
     this.rhythmTargetPos = new THREE.Vector3(0, 1.22, 0.27);
     this.midpointHoverTimer = 0;
     this.isAfkShowActive = false;
+    if (!componentId) {
+      this._stepHadMistake = false;
+    }
 
     const keepCustomerServing = CUSTOMER_SERVICE_IDS.includes(this.currentMechanic) &&
       (this.world.conePivot.parent === this.world.heldSocket || this.world.conePivot.parent === this.world.lArmRig.handGroup);
@@ -736,7 +784,7 @@ export class TrickDirector {
 
       case 'SHELL_SWAP_DUEL': {
         this.world.napkinConeProp.visible = true;this.world.reuseEmptyCone?.(this.world.napkinConeProp);
-        this.swapSide = Math.random() < 0.5 ? -1 : 1;
+        this.swapSide = this._rand() < 0.5 ? -1 : 1;
         this.coneTargetPos.set(this.swapSide * 0.28, 1.25, 0.2);
         this.leftHandCustomTarget = new THREE.Vector3(
           -this.swapSide * 0.28,
@@ -788,7 +836,7 @@ export class TrickDirector {
         this.eyeLockHoldTimer = 0;
         this.rhythmBeatsCompleted = 0;
         this.rhythmBeatTimer = 0;
-        this.rhythmSide = Math.random() < 0.5 ? -1 : 1;
+        this.rhythmSide = this._rand() < 0.5 ? -1 : 1;
         this.rhythmTargetPos.set(0, 1.22, 0.27);
         this.coneTargetPos.copy(this.rhythmTargetPos);
         this.world.setVendorMood('mischief');
@@ -822,6 +870,10 @@ export class TrickDirector {
       return; // Connector animation owns the interval before the next component.
     }
     this.tricksSurvived++;
+    if (componentId !== 'SCRAPE_FLAVOR_SCOOP' && componentId !== 'TUTORIAL_WARMUP') {
+      (this.stepOutcomes ||= []).push(this._stepHadMistake ? '❌' : '✅');
+    }
+    this.juice?.triggerCatchZoom?.();
     this.sound.playShowBoost(2, this.coneWorldPos.x);
     this.sound.playCrowdReaction('cheer');
     this.world.triggerSpectatorReaction('cheer');
@@ -867,16 +919,17 @@ export class TrickDirector {
     this.vendorBubbleTimer = Math.max(0, this.vendorBubbleTimer - Math.max(0, dt));
   }
 
-  update(dt, time, gestureState) {
+  update(dt, time, gestureState, rawDt = dt) {
     this._updateSerial=(this._updateSerial||0)+1;
     if(this.active&&this.world.lArmRig?.handRig&&!this.servingHandoff){this.world.scene.updateMatrixWorld(true);this._servingFrame={parent:this.world.conePivot.parent,matrix:this.world.conePivot.matrixWorld.clone()};}
     this._motionStepKey=`${this.routineIndex}:${this.currentMechanic}:${this.subStep}:${this.choreography?.index??0}`;
-    this.tickSpeech(dt);
+    this.tickSpeech(rawDt);
     let gameDt=dt*(this.config?.tempoFactor||1);
     if(this.active&&!this.roundEnded&&this.rhythmClock){
       const previous=this.rhythmClock.time;
-      const notes=this.rhythmClock.advance(dt);
-      const clockDt=this.rhythmClock.time-previous;
+      const notes=this.rhythmClock.advance(rawDt);
+      const clockScale = rawDt > 0 ? dt / rawDt : 1;
+      const clockDt=(this.rhythmClock.time-previous) * clockScale;
       this.sound.playRhythmNotes?.(notes);
       if(clockDt>0||dt<=0){
         gameDt=clockDt;
@@ -1095,7 +1148,7 @@ export class TrickDirector {
         this.stageTimer = 0;
         this.rhythmBeatsCompleted = 0;
         this.rhythmBeatTimer = 0;
-        this.rhythmSide = Math.random() < 0.5 ? -1 : 1;
+        this.rhythmSide = this._rand() < 0.5 ? -1 : 1;
         this.rhythmTargetPos.set(this.rhythmSide * 0.27, 1.22, 0.27);
         this.coneTargetPos.copy(this.rhythmTargetPos);
         this.world.setVendorMood('mischief');
@@ -1994,7 +2047,7 @@ export class TrickDirector {
               this.rhythmBeatTimer = 0;
               this.rhythmBeatsCompleted = 0;
               this.stepCooldown = 0.28;
-              this.rhythmSide = Math.random() < 0.5 ? -1 : 1;
+              this.rhythmSide = this._rand() < 0.5 ? -1 : 1;
               this.rhythmTargetPos.set(this.rhythmSide * 0.27, 1.22, 0.27);
               this.coneTargetPos.copy(this.rhythmTargetPos);
               this.shaftRoll += Math.PI * 0.5 * this.rhythmSide;
@@ -2017,15 +2070,15 @@ export class TrickDirector {
               this.rhythmBeatTimer = 0;
               this.rhythmSide *= -1;
               const randX =
-                this.rhythmSide * (0.16 + Math.random() * 0.16);
-              const randY = 1.16 + Math.random() * 0.24;
-              const randZ = 0.23 + Math.random() * 0.06;
+                this.rhythmSide * (0.16 + this._rand() * 0.16);
+              const randY = 1.16 + this._rand() * 0.24;
+              const randZ = 0.23 + this._rand() * 0.06;
               this.rhythmTargetPos.set(randX, randY, randZ);
               this.coneTargetPos.copy(this.rhythmTargetPos);
               // Flip the metal rod orientation ("hop hop diye çubuğun yönünü değiştirecek")
-              this.shaftRoll += Math.PI * (Math.random() < 0.5 ? 1 : -1);
-              this.conePitchX = (Math.random() - 0.5) * 0.65;
-              this.coneFlipZ = (Math.random() - 0.5) * 0.5;
+              this.shaftRoll += Math.PI * (this._rand() < 0.5 ? 1 : -1);
+              this.conePitchX = (this._rand() - 0.5) * 0.65;
+              this.coneFlipZ = (this._rand() - 0.5) * 0.5;
               this.sound.playWhoosh(1.25, randX);
                 this._triggerVendorSpeech('hophop');
             }
@@ -2067,8 +2120,8 @@ export class TrickDirector {
             } else {
               // Shift cone and green line to the opposite side for the next rhythmic beat!
               this.rhythmSide *= -1;
-              const nextX = this.rhythmSide * (0.24 + Math.random() * 0.07);
-              const nextY = 1.2 + (Math.random() - 0.5) * 0.08;
+              const nextX = this.rhythmSide * (0.24 + this._rand() * 0.07);
+              const nextY = 1.2 + (this._rand() - 0.5) * 0.08;
               this.rhythmTargetPos.set(nextX, nextY, 0.27);
               this.coneTargetPos.copy(this.rhythmTargetPos);
               this.shaftRoll += Math.PI * 0.65 * this.rhythmSide;
@@ -2085,18 +2138,18 @@ export class TrickDirector {
           } else if (this.rhythmBeatTimer >= 1.15) {
             // Player didn't move to the target in time -> Vendor shouts "Hop! Hop!", flips the rod direction, and darts to a random direction!
             this.rhythmBeatTimer = 0;
-            const randDir = Math.random() < 0.5 ? -1 : 1;
+            const randDir = this._rand() < 0.5 ? -1 : 1;
             const randX =
-              randDir * (0.15 + Math.random() * 0.18) *
+              randDir * (0.15 + this._rand() * 0.18) *
               (Math.sign(this.rhythmTargetPos.x) === randDir ? -1 : 1);
-            const randY = 1.15 + Math.random() * 0.28;
-            const randZ = 0.22 + Math.random() * 0.07;
+            const randY = 1.15 + this._rand() * 0.28;
+            const randZ = 0.22 + this._rand() * 0.07;
             this.rhythmTargetPos.set(randX, randY, randZ);
             this.coneTargetPos.copy(this.rhythmTargetPos);
             // Flip the metal rod direction ("hop hop diye çubuğun yönünü değiştirecek")
             this.shaftRoll += Math.PI;
-            this.conePitchX = (Math.random() - 0.5) * 0.72;
-            this.coneFlipZ = (Math.random() - 0.5) * 0.6;
+            this.conePitchX = (this._rand() - 0.5) * 0.72;
+            this.coneFlipZ = (this._rand() - 0.5) * 0.6;
             this.sound.playWhoosh(1.3, randX);
             this.world.setVendorMood('laugh');
             this._triggerVendorSpeech('hophop');
@@ -2132,6 +2185,7 @@ export class TrickDirector {
             // paddle releases it; no chocolate-colored rope joins it to the man.
             this.world.stretchyStrand.detach();
             this.finalReleaseStart = this.coneWorldPos.clone();
+            this.juice?.triggerCatchZoom?.();
             this.sound.playGripTug(0);
             this._vibrate(35);
             return;
@@ -2144,7 +2198,8 @@ export class TrickDirector {
             this._triggerVendorSpeech('laugh');
             if (this._loseHeart(this.coneWorldPos, '⏳')) return;
 
-            if (this.overtimeMisses >= 3) {
+            const maxOvertimeMisses = this.save?.masterExamMode ? 3 : 6;
+            if (this.overtimeMisses >= maxOvertimeMisses) {
               this._endRound('BAMBOOZLED_OVERTIME');
               return;
             }
@@ -2230,7 +2285,7 @@ export class TrickDirector {
       const canSweep = foodOnCone && enoughIdleTime && !this.heldItem && !this.world.carryScoop?.visible &&
         (this.world.conePivot.parent===this.world.paddleGroup || this.world.coneHeldByVendor);
       const starts=canSweep?[0,1,4]:[0,1];
-      this.afkScenario = starts[Math.floor(Math.random()*starts.length)];
+      this.afkScenario = starts[Math.floor(this._rand()*starts.length)];
       this.world.setVendorMood('mischief');
       this._triggerVendorSpeech(
         this.afkScenario === 0 ? 'afk_table' : this.afkScenario===1?'afk_bells':'afk_wave'
@@ -3055,6 +3110,14 @@ export class TrickDirector {
     this.world.paddleGroup.position.copy(this.coneWorldPos);
 
     this.world.vendorHead.rotation.y = this.coneWorldPos.x * 0.28;
+    if (this.active && !this.roundEnded && !this.isAfkShowActive) {
+      const juiceTell = this.juice
+        ? this.juice.step(0, { mechanic: this.currentMechanic, subStep: this.subStep }).tell
+        : 'neutral';
+      this.world.applyVendorTell?.(juiceTell);
+    } else {
+      this.world.applyVendorTell?.('neutral');
+    }
     this.world.fezTassel.rotation.z =
       0.28 - this.coneWorldPos.x * 0.35 + Math.sin(time * 3.5) * 0.05;
 
@@ -3138,6 +3201,7 @@ export class TrickDirector {
 
       const penalizedScore = Math.max(0, Math.round(this.score * 0.5));
       this.save.recordStageResult(this.currentStage, penalizedScore, 0, false);
+      const stepOutcomes = [...(this.stepOutcomes || []), '💔'];
 
       resultData = {
         outcomeType,
@@ -3146,10 +3210,13 @@ export class TrickDirector {
         title: this.save.t('end_hearts_title'),
         desc: this.save.t('end_hearts_desc'),
         stars: '☆☆☆',
+        starNum: 0,
         score: penalizedScore,
         bestScore: this.save.getStageBestScore(this.currentStage),
         scoopsText: this.save.t('end_hearts_scoop'),
         canAdvance: false,
+        bamboozled: this.penaltiesTaken,
+        stepOutcomes,
       };
     } else if (outcomeType === 'PASSIVE_BORING') {
       this._reattachConeToPaddle();
@@ -3157,6 +3224,7 @@ export class TrickDirector {
       this.sound.playPenalty();
       this._vibrate(80);
       this.save.recordStageResult(this.currentStage, 0, 0, false);
+      const stepOutcomes = [...(this.stepOutcomes || []), '😴'];
 
       resultData = {
         outcomeType,
@@ -3165,10 +3233,13 @@ export class TrickDirector {
         title: this.save.t('end_passive_title'),
         desc: this.save.t('end_passive_desc'),
         stars: '☆☆☆',
+        starNum: 0,
         score: 0,
         bestScore: this.save.getStageBestScore(this.currentStage),
         scoopsText: this.save.t('end_passive_scoop'),
         canAdvance: false,
+        bamboozled: this.penaltiesTaken,
+        stepOutcomes,
       };
     } else if (outcomeType === 'BAMBOOZLED_OVERTIME') {
       this.sound.playBellBurst();
@@ -3183,6 +3254,7 @@ export class TrickDirector {
       this._vibrate([80, 40, 80, 40, 120]);
       const penalizedScore = Math.max(0, Math.round(this.score * 0.4));
       this.save.recordStageResult(this.currentStage, penalizedScore, 0, false);
+      const stepOutcomes = [...(this.stepOutcomes || []), '🧻'];
 
       resultData = {
         outcomeType,
@@ -3191,10 +3263,13 @@ export class TrickDirector {
         title: this.save.t('end_overtime_title'),
         desc: this.save.t('end_overtime_desc'),
         stars: '☆☆☆',
+        starNum: 0,
         score: penalizedScore,
         bestScore: this.save.getStageBestScore(this.currentStage),
         scoopsText: this.save.t('end_overtime_scoop'),
         canAdvance: false,
+        bamboozled: this.penaltiesTaken,
+        stepOutcomes,
       };
     } else if (outcomeType === 'MASTER_CATCH') {
       this.world.heldSocket.add(this.world.conePivot);
@@ -3218,8 +3293,9 @@ export class TrickDirector {
       const wasStageCompleted =
         Array.isArray(this.save.data?.completedStages) &&
         this.save.data.completedStages.includes(this.currentStage);
-      const starNum =
-        this.hearts >= 3 ? 3 : this.hearts === 2 ? 2 : 1;
+      const starNum = this.save?.masterExamMode
+        ? (this.hearts >= 3 ? 3 : this.hearts === 2 ? 2 : 1)
+        : (this.penaltiesTaken <= 1 ? 3 : this.penaltiesTaken <= 3 ? 2 : 1);
       this.save.recordStageResult(
         this.currentStage,
         finalScore,
@@ -3231,6 +3307,7 @@ export class TrickDirector {
         !wasStageCompleted &&
         this.currentStage % 5 === 0 &&
         this.currentStage <= 30;
+      const stepOutcomes = [...(this.stepOutcomes || []), '🍦'];
 
       resultData = {
         outcomeType,
@@ -3244,13 +3321,21 @@ export class TrickDirector {
             : starNum === 2
               ? '⭐⭐☆'
               : '⭐☆☆',
+        starNum,
         score: finalScore,
         bestScore: this.save.getStageBestScore(this.currentStage),
         scoopsText: `${this.targetScoopCount} 🍦 + 🥜`,
         canAdvance: true,
         isNewRecord,
         unlockedNewVenue,
+        bamboozled: this.penaltiesTaken,
+        stepOutcomes,
       };
+    }
+
+    if (outcomeType === 'MASTER_CATCH' && typeof this.ui?.onVictoryBite === 'function') {
+      this.ui.onVictoryBite(resultData);
+      return;
     }
 
     setTimeout(() => {

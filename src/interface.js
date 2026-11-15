@@ -6,6 +6,11 @@ const labels = {
   ru: { order: 'Мой заказ', stages: 'Места', done: 'Готово', close: 'Закрыть', settings: 'Настройки', tricks: 'Трюки мастера' },
   de: { order: 'Meine Bestellung', stages: 'Orte', done: 'Fertig', close: 'Schließen', settings: 'Einstellungen', tricks: 'Tricks des Meisters' },
   ja: { order: '注文', stages: '場所', done: '完了', close: '閉じる', settings: '設定', tricks: '職人の技' },
+  es: { order: 'Mi pedido', stages: 'Lugares', done: 'Listo', close: 'Cerrar', settings: 'Ajustes', tricks: 'Trucos del maestro' },
+  pt: { order: 'Meu pedido', stages: 'Lugares', done: 'Pronto', close: 'Fechar', settings: 'Ajustes', tricks: 'Truques do mestre' },
+  id: { order: 'Pesananku', stages: 'Tempat', done: 'Selesai', close: 'Tutup', settings: 'Pengaturan', tricks: 'Trik Master' },
+  hi: { order: 'मेरा ऑर्डर', stages: 'स्थान', done: 'ठीक है', close: 'बंद करें', settings: 'सेटिंग्स', tricks: 'उस्ताद की ट्रिक्स' },
+  ko: { order: '내 주문', stages: '장소', done: '완료', close: '닫기', settings: '설정', tricks: '장인의 기술' },
 };
 const $ = id => document.getElementById(id);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');

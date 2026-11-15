@@ -27,6 +27,37 @@ export const BELL_MELODIES = Object.freeze([
   }),
 ]);
 
+export const SECRET_BELL_MELODIES = Object.freeze([
+  Object.freeze({
+    id: 'uskudar-katibim',
+    intro: Object.freeze([1, 3, 3, 2, 3, 4, 3, 1]),
+    continuation: Object.freeze([1, 2, 3, 2, 1, 0, 1, 3, 4, 5, 4, 3, 2, 1]),
+    beat: 0.27,
+    beatSeconds: 0.27,
+  }),
+  Object.freeze({
+    id: 'nihavend-longa',
+    intro: Object.freeze([6, 4, 5, 3, 4, 2, 3, 1]),
+    continuation: Object.freeze([0, 2, 4, 6, 5, 3, 4, 2, 1, 0]),
+    beat: 0.24,
+    beatSeconds: 0.24,
+  }),
+  Object.freeze({
+    id: 'maras-halay',
+    intro: Object.freeze([3, 5, 3, 5, 4, 2, 3]),
+    continuation: Object.freeze([3, 5, 6, 5, 4, 3, 2, 1, 3, 3]),
+    beat: 0.26,
+    beatSeconds: 0.26,
+  }),
+  Object.freeze({
+    id: 'golden-salute',
+    intro: Object.freeze([0, 6, 0, 6, 3]),
+    continuation: Object.freeze([3, 4, 5, 6, 5, 4, 3, 0]),
+    beat: 0.25,
+    beatSeconds: 0.25,
+  }),
+]);
+
 function matchesPrefix(intro, candidate) {
   if (candidate.length > intro.length) return false;
   for (let i = 0; i < candidate.length; i++) {

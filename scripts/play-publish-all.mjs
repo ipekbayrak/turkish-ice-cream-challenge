@@ -23,10 +23,11 @@ const UPLOAD = 'https://androidpublisher.googleapis.com/upload/androidpublisher/
 const PKG = process.env.PLAY_PACKAGE ?? 'tr.com.ipekbayrak.turkishicecream';
 const TRACK = process.env.PLAY_TRACK ?? process.argv[2] ?? 'production';
 const DRAFT = process.argv.includes('--draft') || Boolean(process.env.PLAY_DRAFT);
+const AAB_V210 = resolve(ROOT, 'play-store-publish/releases/TurkishIceCreamChallenge-v2.1.0-release.aab');
 const AAB_V201 = resolve(ROOT, 'play-store-publish/releases/TurkishIceCreamChallenge-v2.0.1-release.aab');
 const AAB_V2 = resolve(ROOT, 'play-store-publish/releases/TurkishIceCreamChallenge-v2.0.0-release.aab');
 const AAB_V1 = resolve(ROOT, 'play-store-publish/releases/TurkishIceCreamChallenge-v1.0.0-release.aab');
-const AAB_PATH = existsSync(AAB_V201) ? AAB_V201 : existsSync(AAB_V2) ? AAB_V2 : AAB_V1;
+const AAB_PATH = existsSync(AAB_V210) ? AAB_V210 : existsSync(AAB_V201) ? AAB_V201 : existsSync(AAB_V2) ? AAB_V2 : AAB_V1;
 
 const die = (m) => { console.error(m); process.exit(1); };
 
@@ -114,7 +115,7 @@ console.log(`    ✔ AAB yüklendi: versionCode ${versionCode}`);
 // 3. Assign Track (production + internal)
 const notes = parseReleaseNotes();
 const releaseObj = {
-  name: '2.0.1',
+  name: '2.1.0',
   versionCodes: [versionCode],
   status: DRAFT ? 'draft' : 'completed',
   ...(notes ? { releaseNotes: notes } : {}),
@@ -229,5 +230,5 @@ if (tracksEdit.ok) {
   }
 }
 
-console.log(`\n🎉 TAMAMLANDI! ${PKG} (v2.0.0 / versionCode ${versionCode}) "${TRACK}" ve "internal" kanallarında yayında!`);
+console.log(`\n🎉 TAMAMLANDI! ${PKG} (v2.1.0 / versionCode ${versionCode}) "${TRACK}" ve "internal" kanallarında yayında!`);
 console.log('   https://play.google.com/console/u/0/developers/4920333877961656167/app/publishing');

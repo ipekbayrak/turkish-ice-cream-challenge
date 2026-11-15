@@ -22,6 +22,11 @@ export const ORDER_COPY = {
  de:{ask:'Welche Sorten?',confirm:n=>`Gut, ${n} ${n===1?'Kugel':'Kugeln'}.`,empty:'Dann eine Kugel.'},
  ru:{ask:'Какие вкусы?',confirm:n=>`Хорошо, ${formatRuScoops(n)}.`,empty:'Тогда один шарик.'},
  ja:{ask:'どの味にする？',confirm:n=>`${n}個ですね。`,empty:'では、1個。'},
+ es:{ask:'¿Qué sabores quieres?',confirm:n=>`Vale, ${n} ${n===1?'bola':'bolas'}.`,empty:'Una bola entonces.'},
+ pt:{ask:'Quais sabores?',confirm:n=>`Certo, ${n} ${n===1?'bola':'bolas'}.`,empty:'Uma bola então.'},
+ id:{ask:'Rasa apa saja?',confirm:n=>`Siap, ${n} skop.`,empty:'Satu skop saja.'},
+ hi:{ask:'कौन सा फ्लेवर?',confirm:n=>`ठीक है, ${n} स्कूप।`,empty:'तो एक स्कूप।'},
+ ko:{ask:'어떤 맛으로 드릴까요?',confirm:n=>`좋아요, ${n}스쿱!`,empty:'그럼 한 스쿱!'},
 };
 const shortTr=['sade','fıstıklı','kakaolu','Urmu dutlu'];
 const labelTr=['Sade','Fıstıklı','Kakaolu','Dutlu'];
@@ -33,6 +38,11 @@ const ORDER_HINT={
  de:{choose:'Eine Kugel wählen',hold:'Über der Sorte halten',finish:'Still halten · fertig',confirm:'Fertig',count:n=>`${n} ${n===1?'Kugel':'Kugeln'}`},
  ru:{choose:'Выбери шарик',hold:'Задержи руку над вкусом',finish:'Замри · готово',confirm:'Готово',count:n=>formatRuScoops(n)},
  ja:{choose:'味を選ぶ',hold:'容器の上で待つと1個',finish:'手を止めて決定',confirm:'決まり',count:n=>`${n}個`},
+ es:{choose:'Elige un sabor',hold:'Mantén sobre la cubeta',finish:'Quieto · listo',confirm:'Listo',count:n=>`${n} ${n===1?'bola':'bolas'}`},
+ pt:{choose:'Escolha um sabor',hold:'Segure sobre a cuba',finish:'Parado · pronto',confirm:'Pronto',count:n=>`${n} ${n===1?'bola':'bolas'}`},
+ id:{choose:'Pilih rasa',hold:'Tahan di atas wadah',finish:'Diam · selesai',confirm:'Siap',count:n=>`${n} skop`},
+ hi:{choose:'फ्लेवर चुनें',hold:'टब के ऊपर हाथ रोकें',finish:'स्थिर रहें · तैयार',confirm:'तैयार',count:n=>`${n} स्कूप`},
+ ko:{choose:'맛을 고르세요',hold:'통 위에서 잠시 대기',finish:'멈추면 주문 완료',confirm:'완료',count:n=>`${n}스쿱`},
 };
 
 function pill(ctx,x,y,width,height,radius=12){

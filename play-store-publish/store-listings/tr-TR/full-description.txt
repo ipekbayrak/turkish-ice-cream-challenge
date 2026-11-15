@@ -18,5 +18,6 @@ Usta bakır kazanlardan uzayan gerçekçi Maraş dondurmasını demir kürekle k
   2. Pala Usta (Sultanahmet Meydanı)
   3. Cezmi Dede (Galata Kulesi & Ortaköy)
   4. Başusta Haydar (Kapalıçarşı & Karaköy)
-• 6 Dil Desteği: Türkçe, İngilizce, Arapça (RTL), Rusça, Almanca ve Japonca.
+• Viral Şov & Özelleştirme (v2.1): Günün Ustası, Arkadaşına Tuzak Kur paylaşımı, 6 sn dikey klip kaydı, ustayı trolleme, dondurmayı ısırma ödülü ve el/bileklik/oje özelleştirme!
+• 11 Dil Desteği: Türkçe, İngilizce, Arapça (RTL), Rusça, Almanca, Japonca, İspanyolca, Portekizce, Endonezce, Hintçe ve Korece.
 • %100 Çevrimdışı (Offline) Oynanabilir, Reklamsız ve Veri Toplamaz.

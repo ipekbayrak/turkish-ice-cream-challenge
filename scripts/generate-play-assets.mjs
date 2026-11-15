@@ -249,20 +249,27 @@ Usta bakır kazanlardan uzayan gerçekçi Maraş dondurmasını demir kürekle k
   2. Pala Usta (Sultanahmet Meydanı)
   3. Cezmi Dede (Galata Kulesi & Ortaköy)
   4. Başusta Haydar (Kapalıçarşı & Karaköy)
-• 6 Dil Desteği: Türkçe, İngilizce, Arapça (RTL), Rusça, Almanca ve Japonca.
+• Viral Şov & Özelleştirme (v2.1): Günün Ustası, Arkadaşına Tuzak Kur paylaşımı, 6 sn dikey klip kaydı, ustayı trolleme, dondurmayı ısırma ödülü ve el/bileklik/oje özelleştirme!
+• 11 Dil Desteği: Türkçe, İngilizce, Arapça (RTL), Rusça, Almanca, Japonca, İspanyolca, Portekizce, Endonezce, Hintçe ve Korece.
 • %100 Çevrimdışı (Offline) Oynanabilir, Reklamsız ve Veri Toplamaz.`,
-    releaseNotes: 'v2.0.1: El çabukluğu ve mola dönüşü sırasındaki donma hatası giderildi, mobil akıcılık iyileştirildi ve ustanın yanlış lezzet şakası konuşma balonlarıyla netleştirildi!',
+    releaseNotes: 'v2.1.0: Viral Güncelleme! Kalpsiz akıcı ana mod, dondurmayı ısırma ödülü, Günün Ustası, Arkadaşına Tuzak Kur paylaşımı, 6 sn dikey klip kaydı, ustayı trolleme, el özelleştirme ve 11 dil desteği!',
   },
   'en-US': {
     title: 'Turkish Ice Cream Challenge 3D',
     shortDescription: '112 3D Maraş ice cream tricks & shows! Dodge giant mold & empty cone traps!',
-    fullDescription: `🍦 TURKISH ICE CREAM CHALLENGE 3D (MARAŞ DONDURMA SHOW v2.0)
+    fullDescription: `🍦 TURKISH ICE CREAM CHALLENGE 3D (MARAŞ DONDURMA SHOW v2.1)
 
 Step up to the gleaming copper cart in Istanbul's Grand Bazaar and test your reflexes against legendary Turkish Maraş ice cream masters!
 
 Watch closely as the vendor scrapes stretchy dondurma from copper tubs with his long iron paddle, hoists a 5-kilo ice cream block, rings the brass bells, and shouts "HOPPAAA!" just as your hand reaches for the cone.
 
-✨ NEW IN v2.0 — KEY FEATURES:
+✨ NEW IN v2.1 — KEY FEATURES:
+• Viral Modes & Signature Moments:
+  - Heartless Flow Mode + Optional 3-Heart Master Exam!
+  - Daily Master Challenge & Custom Friend Trap Link Builder!
+  - 6-Second Vertical Highlight Clip Export & Shareable Result Cards!
+  - Counter-Troll the Master (tap his fez, steal the bell, flick empty cones back) & Bite Your Cone at the end!
+  - 3D POV Hand Customization: 6 skin tones, Nazar evil-eye & wristwatch accessories, sleeves & nail polish!
 • 112 Authentic Tricks & Choreographed Shows:
   - 50 Individual Maraş Tricks across Acrobatics, Sleight of Hand, Elastic & Giant Mold, and Rhythm & Bell categories.
   - 60 Multi-Step Show Routines chaining 3 to 5 tricks seamlessly!
@@ -276,9 +283,9 @@ Watch closely as the vendor scrapes stretchy dondurma from copper tubs with his 
   2. Master Pala (Sultanahmet Square)
   3. Grandpa Cezmi (Galata Tower & Ortakoy)
   4. Grandmaster Haydar (Grand Bazaar & Karakoy)
-• 6 Languages Supported: English, Turkish, Arabic (Full RTL), Russian, German, and Japanese.
+• 11 Languages Supported: English, Turkish, Arabic (Full RTL), Russian, German, Japanese, Spanish, Portuguese, Indonesian, Hindi, and Korean.
 • 100% Offline Playable, Haptic Feedback & Zero Data Collection.`,
-    releaseNotes: 'v2.0.1: Stability & clarity update! Fixed rare gameplay freeze after idle recovery, improved mobile timer resilience, and added playful vendor banter for the wrong-flavor prank!',
+    releaseNotes: 'v2.1.0: Viral Show Update! Heartless flow mode, bite your cone payoff, Daily Master, Friend Trap Link builder, 6s vertical highlight clips, counter-troll moves, hand customization, and 11 languages!',
   },
   'ar': {
     title: 'تحدي الآيس كريم التركي 3D',

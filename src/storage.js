@@ -178,6 +178,22 @@ export const SUPPORTED_LANGS = [
   { code: 'ja', flag: '🇯🇵', label: '日本語', dir: 'ltr', locale: 'ja-JP' },
 ];
 
+export const UI_LANGS = [...SUPPORTED_LANGS];
+const EXTENDED_I18N = {};
+
+export function registerExtendedLangs(langMetas = [], dictionaries = {}) {
+  for (const meta of langMetas) {
+    if (meta?.code && !UI_LANGS.some((l) => l.code === meta.code)) {
+      UI_LANGS.push(meta);
+    }
+  }
+  for (const [code, dict] of Object.entries(dictionaries)) {
+    if (dict && typeof dict === 'object') {
+      EXTENDED_I18N[code] = { ...(EXTENDED_I18N[code] || {}), ...dict };
+    }
+  }
+}
+
 export const I18N = {
   tr: {
     gameTitle: 'Maraş Dondurmacısı 3D',
@@ -312,6 +328,22 @@ export const I18N = {
     end_win_title: 'DONDURMAYI KAPTIN!',
     end_win_desc: 'Ustanın tüm hilelerini aştın, bol fıstıklı Maraş dondurması senin!',
     end_win_scoop: 'Tam Külah + Fıstık',
+    qualityLabel: 'Grafik Kalitesi',
+    qualityAuto: 'OTO',
+    qualityHigh: 'YÜKSEK',
+    qualityLow: 'AKICI',
+    masterExamLabel: 'Usta Sınavı (3 ❤️)',
+    bamboozledLabel: 'Sazanlanma',
+    cue_bite_cone: '😋 DOKUN VE ISIR!',
+    cue_wipe_smudge: '🧼 EKRANI SİL!',
+    speech_trolled: 'VAY SENİ GİDİ! USTAYI TROLLEDİN! 😲👑',
+    dailyBtn: '📅 Günün Ustası',
+    challengeBtn: '🎯 Arkadaşına Tuzak Kur',
+    shareCardBtn: '📤 Kart Paylaş',
+    shareClipBtn: '🎬 6 sn Klip',
+    handCustomBtn: '✋ El & Aksesuar',
+    copiedNotice: 'Bağlantı kopyalandı!',
+    challengeBanner: 'Arkadaşının Tuzağı!',
   },
 
   en: {
@@ -442,6 +474,22 @@ export const I18N = {
     end_win_title: 'YOU CAUGHT IT!',
     end_win_desc: 'You beat every trick — pistachio Maraş ice cream is yours!',
     end_win_scoop: 'Full Cone + Pistachio',
+    qualityLabel: 'Graphics Quality',
+    qualityAuto: 'AUTO',
+    qualityHigh: 'HIGH',
+    qualityLow: 'LOW',
+    masterExamLabel: 'Master Exam (3 ❤️)',
+    bamboozledLabel: 'Bamboozled',
+    cue_bite_cone: '😋 TAP TO BITE!',
+    cue_wipe_smudge: '🧼 WIPE SCREEN!',
+    speech_trolled: 'YOU TROLLED THE MASTER! 😲👑',
+    dailyBtn: '📅 Daily Master',
+    challengeBtn: '🎯 Trap a Friend',
+    shareCardBtn: '📤 Share Card',
+    shareClipBtn: '🎬 6s Clip',
+    handCustomBtn: '✋ Hand & Style',
+    copiedNotice: 'Link copied!',
+    challengeBanner: 'Friend’s Trap Challenge!',
   },
 
   ar: {
@@ -572,6 +620,22 @@ export const I18N = {
     end_win_title: 'أمسكت البوظة!',
     end_win_desc: 'تغلبت على كل الخدع — بوظة مرعش بالفستق لك!',
     end_win_scoop: 'قمع كامل + فستق',
+    qualityLabel: 'جودة الرسومات',
+    qualityAuto: 'تلقائي',
+    qualityHigh: 'عالي',
+    qualityLow: 'سلس',
+    masterExamLabel: 'اختبار المعلم (٣ ❤️)',
+    bamboozledLabel: 'مرات الخداع',
+    cue_bite_cone: '😋 المس للقضم!',
+    cue_wipe_smudge: '🧼 امسح الشاشة!',
+    speech_trolled: 'يا لك من ذكي! خدعت المعلم! 😲👑',
+    dailyBtn: '📅 معلم اليوم',
+    challengeBtn: '🎯 اصنع فخاً لصديق',
+    shareCardBtn: '📤 مشاركة البطاقة',
+    shareClipBtn: '🎬 مقطع ٦ ثوانٍ',
+    handCustomBtn: '✋ اليد والإكسسوار',
+    copiedNotice: 'تم نسخ الرابط!',
+    challengeBanner: 'تحدي فخ صديقك!',
   },
 
   ru: {
@@ -702,6 +766,22 @@ export const I18N = {
     end_win_title: 'МОРОЖЕНОЕ ВАШЕ!',
     end_win_desc: 'Вы прошли все уловки мастера! Мороженое с фисташками ваше!',
     end_win_scoop: 'Полный рожок + Фисташки',
+    qualityLabel: 'Качество графики',
+    qualityAuto: 'АВТО',
+    qualityHigh: 'ВЫС.',
+    qualityLow: 'ПЛАВНО',
+    masterExamLabel: 'Экзамен мастера (3 ❤️)',
+    bamboozledLabel: 'Попаданий',
+    cue_bite_cone: '😋 НАЖМИ И ОТКУСИ!',
+    cue_wipe_smudge: '🧼 ПРОТРИ ЭКРАН!',
+    speech_trolled: 'ВОТ ЭТО ДА! ПЕРЕХИТРИЛ МАСТЕРА! 😲👑',
+    dailyBtn: '📅 Мастер дня',
+    challengeBtn: '🎯 Ловушка другу',
+    shareCardBtn: '📤 Поделиться',
+    shareClipBtn: '🎬 Клип 6 сек',
+    handCustomBtn: '✋ Рука и стиль',
+    copiedNotice: 'Ссылка скопирована!',
+    challengeBanner: 'Ловушка от друга!',
   },
 
   de: {
@@ -832,6 +912,22 @@ export const I18N = {
     end_win_title: 'EIS GEFANGEN!',
     end_win_desc: 'Alle Tricks gemeistert — Maraş-Eis mit Pistazien gehört dir!',
     end_win_scoop: 'Volle Waffel + Pistazie',
+    qualityLabel: 'Grafikqualität',
+    qualityAuto: 'AUTO',
+    qualityHigh: 'HOCH',
+    qualityLow: 'FLÜSSIG',
+    masterExamLabel: 'Meisterprüfung (3 ❤️)',
+    bamboozledLabel: 'Ausgetrickst',
+    cue_bite_cone: '😋 TIPPEN ZUM ABBEISSEN!',
+    cue_wipe_smudge: '🧼 BILDSCHIRM WISCHEN!',
+    speech_trolled: 'DU HAST DEN MEISTER GETROLLT! 😲👑',
+    dailyBtn: '📅 Meister des Tages',
+    challengeBtn: '🎯 Falle für Freunde',
+    shareCardBtn: '📤 Karte teilen',
+    shareClipBtn: '🎬 6s-Clip',
+    handCustomBtn: '✋ Hand & Stil',
+    copiedNotice: 'Link kopiert!',
+    challengeBanner: 'Falle deines Freundes!',
   },
 
   ja: {
@@ -962,6 +1058,22 @@ export const I18N = {
     end_win_title: '完全キャッチ成功！',
     end_win_desc: '職人の技を全て見破り、ピスタチオアイスをゲット！',
     end_win_scoop: '特製フルコーン',
+    qualityLabel: 'グラフィック品質',
+    qualityAuto: '自動',
+    qualityHigh: '高画質',
+    qualityLow: '軽量',
+    masterExamLabel: '達人試験 (3 ❤️)',
+    bamboozledLabel: '引っかかり',
+    cue_bite_cone: '😋 タップしてかじろう！',
+    cue_wipe_smudge: '🧼 画面を拭こう！',
+    speech_trolled: 'なんと！親方に一本取ったな！😲👑',
+    dailyBtn: '📅 今日の親方',
+    challengeBtn: '🎯 友達に罠を仕掛ける',
+    shareCardBtn: '📤 結果カード共有',
+    shareClipBtn: '🎬 6秒クリップ',
+    handCustomBtn: '✋ 手とアクセサリー',
+    copiedNotice: 'リンクをコピーしました！',
+    challengeBanner: '友達からの挑戦状！',
   },
 };
 
@@ -969,6 +1081,8 @@ export class SaveManager {
   constructor() {
     this.lang = this._detectDefaultLang();
     this.hapticsEnabled = true;
+    this.masterExamMode = false;
+    this.qualityMode = 'auto';
     this.data = {
       unlockedStage: 1,
       completedStages: [],
@@ -981,6 +1095,10 @@ export class SaveManager {
       conesCaught: 0,
       preferredScoopCount: 3,
       preferredFlavors: [0, 1, 2, 3],
+      handStyle: { skin: 0, bracelet: 'turquoise', sleeve: 0, nails: 'natural' },
+      dailyHistory: {},
+      trollCount: 0,
+      secretMelodiesFound: [],
     };
     this.load();
     this.applyDocumentDirection();
@@ -989,7 +1107,7 @@ export class SaveManager {
   _detectDefaultLang() {
     try {
       const nav = (navigator.language || 'tr').slice(0, 2).toLowerCase();
-      if (SUPPORTED_LANGS.some((l) => l.code === nav)) {
+      if (UI_LANGS.some((l) => l.code === nav)) {
         return nav;
       }
     } catch {
@@ -1054,7 +1172,30 @@ export class SaveManager {
         if (typeof parsed.hapticsEnabled === 'boolean') {
           this.hapticsEnabled = parsed.hapticsEnabled;
         }
-        if (SUPPORTED_LANGS.some((l) => l.code === parsed.lang)) {
+        if (typeof parsed.masterExamMode === 'boolean') {
+          this.masterExamMode = parsed.masterExamMode;
+        }
+        if (['auto', 'high', 'low'].includes(parsed.qualityMode)) {
+          this.qualityMode = parsed.qualityMode;
+        }
+        if (parsed.handStyle && typeof parsed.handStyle === 'object' && !Array.isArray(parsed.handStyle)) {
+          this.data.handStyle = {
+            skin: Number.isInteger(parsed.handStyle.skin) ? Math.max(0, Math.min(5, parsed.handStyle.skin)) : 0,
+            bracelet: typeof parsed.handStyle.bracelet === 'string' ? parsed.handStyle.bracelet : 'turquoise',
+            sleeve: Number.isInteger(parsed.handStyle.sleeve) ? Math.max(0, Math.min(5, parsed.handStyle.sleeve)) : 0,
+            nails: typeof parsed.handStyle.nails === 'string' ? parsed.handStyle.nails : 'natural',
+          };
+        }
+        if (parsed.dailyHistory && typeof parsed.dailyHistory === 'object' && !Array.isArray(parsed.dailyHistory)) {
+          this.data.dailyHistory = { ...parsed.dailyHistory };
+        }
+        if (Number.isFinite(parsed.trollCount)) {
+          this.data.trollCount = Math.max(0, Math.round(parsed.trollCount));
+        }
+        if (Array.isArray(parsed.secretMelodiesFound)) {
+          this.data.secretMelodiesFound = [...new Set(parsed.secretMelodiesFound.filter((s) => typeof s === 'string'))];
+        }
+        if (UI_LANGS.some((l) => l.code === parsed.lang)) {
           this.lang = parsed.lang;
         }
       }
@@ -1071,6 +1212,8 @@ export class SaveManager {
           ...this.data,
           lang: this.lang,
           hapticsEnabled: this.hapticsEnabled,
+          masterExamMode: this.masterExamMode,
+          qualityMode: this.qualityMode,
         })
       );
     } catch {
@@ -1079,7 +1222,7 @@ export class SaveManager {
   }
 
   setLang(langCode) {
-    if (SUPPORTED_LANGS.some((l) => l.code === langCode)) {
+    if (UI_LANGS.some((l) => l.code === langCode)) {
       this.lang = langCode;
       this.save();
       this.applyDocumentDirection();
@@ -1088,7 +1231,7 @@ export class SaveManager {
   }
 
   getLangMeta() {
-    return SUPPORTED_LANGS.find((l) => l.code === this.lang) || SUPPORTED_LANGS[0];
+    return UI_LANGS.find((l) => l.code === this.lang) || SUPPORTED_LANGS[0];
   }
 
   applyDocumentDirection() {
@@ -1116,10 +1259,53 @@ export class SaveManager {
   t(key) {
     return (
       (I18N[this.lang] && I18N[this.lang][key]) ||
+      (EXTENDED_I18N[this.lang] && EXTENDED_I18N[this.lang][key]) ||
       (this.lang !== 'tr' && I18N.en[key]) ||
       I18N.tr[key] ||
       key
     );
+  }
+
+  toggleMasterExam() {
+    this.masterExamMode = !this.masterExamMode;
+    this.save();
+    return this.masterExamMode;
+  }
+
+  cycleQualityMode() {
+    const order = ['auto', 'high', 'low'];
+    const idx = order.indexOf(this.qualityMode);
+    this.qualityMode = order[(idx + 1) % order.length];
+    this.save();
+    return this.qualityMode;
+  }
+
+  setHandStyle(patch = {}) {
+    this.data.handStyle = {
+      ...this.data.handStyle,
+      ...patch,
+    };
+    this.save();
+    return this.data.handStyle;
+  }
+
+  recordDailyResult(dateKey, record = {}) {
+    if (!dateKey || typeof dateKey !== 'string') return;
+    const prev = this.data.dailyHistory?.[dateKey];
+    const nextScore = Math.max(prev?.score || 0, Number(record.score) || 0);
+    const nextStars = Math.max(prev?.stars || 0, Number(record.stars) || 0);
+    this.data.dailyHistory = {
+      ...(this.data.dailyHistory || {}),
+      [dateKey]: {
+        won: Boolean(prev?.won || record.won),
+        score: nextScore,
+        stars: nextStars,
+        bamboozled: prev?.won && !record.won ? prev.bamboozled : (record.bamboozled ?? prev?.bamboozled ?? 0),
+        emojiStrip: record.emojiStrip || prev?.emojiStrip || '',
+      },
+    };
+    this.save();
+    return this.data.dailyHistory[dateKey];
   }
 
   getUstaName(vendorIdx) {

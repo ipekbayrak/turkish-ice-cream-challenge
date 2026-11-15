@@ -6,7 +6,8 @@ export class EncounterCamera {
  constructor(world,onSettled=()=>{}){this.world=world;this.onSettled=onSettled;this.phase='offer';this.position=new Vector3();this.rotation=new Quaternion();this.from=new Vector3();this.fromQ=new Quaternion();this.goal=new Vector3();this.goalQ=new Quaternion();this.age=1;this.width=0;this.height=0;}
  frame(phase,width,height){
   const p=shopCameraProfile(width,height),camera=this.world.camera;
-  camera.fov=p.fov;camera.aspect=width/height;camera.updateProjectionMatrix();
+  this.world.baseFov=p.fov;
+  camera.fov=p.fov+(this.world._lastFovOffset||0);camera.aspect=width/height;camera.updateProjectionMatrix();
   this.goal.fromArray(p.position);camera.updateWorldMatrix(true,false);
   // Fit both actual outside steel rims with a small screen margin.
   const halfWidth=Math.max(...this.world.tubPositions.map(t=>Math.abs(t.x)))+.125;

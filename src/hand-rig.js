@@ -26,6 +26,7 @@ export class HandRig extends Group {
     const segment=(parent,length,radius)=>{const mesh=new Mesh(new CapsuleGeometry(radius,Math.max(.002,length-2*radius),4,10),material);mesh.position.y=length*.5;mesh.castShadow=true;parent.add(mesh);return mesh;};
     this.fingers=[];
     const nailMat=new MeshStandardMaterial({color:material.color.clone().lerp(new Color(0xffe5d2),.48),roughness:.7});
+    this.nailMat=nailMat;
     const offsets=[.033,.011,-.011,-.032],lengths=[.075,.083,.077,.063];
     for(let i=0;i<4;i++){
       const parts=[lengths[i]*.43,lengths[i]*.32,lengths[i]*.25],base=new Group(),middle=new Group(),tip=new Group();

@@ -35,7 +35,8 @@ export function reachLayeredEmpty(d, dt, gestureState, intentPos) {
 }
 
 export function enterNestedService(d) {
-  d.nestedService={from:d.coneWorldPos.clone(),returnFrom:null,variant:Math.random()<.5?'hand':'pole',outerStartY:-.008};
+  const rand = typeof d._rand === 'function' ? () => d._rand() : Math.random;
+  d.nestedService={from:d.coneWorldPos.clone(),returnFrom:null,variant:rand()<.5?'hand':'pole',outerStartY:-.008};
   d.world.handoffOuterCone('nested',true);d.world.reuseEmptyCone?.(d.world.outerConeGroup);
   if(d.world.servingNapkin?.visible)d.world.setServingNapkin({owner:'outer',peel:0});
   d.world.mainConeMesh.visible=true;d.world.heldEmptyCone.visible=false;

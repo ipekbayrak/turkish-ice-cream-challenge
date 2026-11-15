@@ -49,6 +49,7 @@
           <span class="h-icon active">❤️</span>
           <span class="h-icon active">❤️</span>
           <span class="h-icon active">❤️</span>
+          <span id="hud-bamboozled" class="bamboozled-pill" hidden>🎣 0</span>
         </div>
 
         <div class="scoop-dots" aria-label="Scoops">
@@ -95,6 +96,14 @@
         </div>
       </div>
     </footer>
+
+    <div id="challenge-banner" class="challenge-banner" hidden role="status"></div>
+    <div id="counter-viral-bar" class="counter-viral-bar">
+      <button type="button" id="btn-daily-master" class="viral-quick-pill">📅 Günün Ustası</button>
+      <button type="button" id="btn-open-challenge-builder" class="viral-quick-pill">🎯 Arkadaşına Tuzak Kur</button>
+      <button type="button" id="btn-open-hand-style" class="viral-quick-pill">✋ El</button>
+    </div>
+    <div id="viral-toast" class="viral-toast" hidden role="status"></div>
 
     <div id="start-overlay" class="start-sheet-backdrop" aria-hidden="true">
       <h1 id="start-title" hidden>🍦 Maraş Dondurma</h1>
@@ -152,6 +161,26 @@
           <span class="l-flag">🇯🇵</span>
           <span class="l-name">日本語</span>
         </button>
+        <button type="button" class="lang-card-btn" data-lang="es">
+          <span class="l-flag">🇪🇸</span>
+          <span class="l-name">Español</span>
+        </button>
+        <button type="button" class="lang-card-btn" data-lang="pt">
+          <span class="l-flag">🇧🇷</span>
+          <span class="l-name">Português</span>
+        </button>
+        <button type="button" class="lang-card-btn" data-lang="id">
+          <span class="l-flag">🇮🇩</span>
+          <span class="l-name">Indonesia</span>
+        </button>
+        <button type="button" class="lang-card-btn" data-lang="hi">
+          <span class="l-flag">🇮🇳</span>
+          <span class="l-name">हिन्दी</span>
+        </button>
+        <button type="button" class="lang-card-btn" data-lang="ko">
+          <span class="l-flag">🇰🇷</span>
+          <span class="l-name">한국어</span>
+        </button>
       </div>
 
       <div class="settings-toggles">
@@ -162,6 +191,14 @@
         <button type="button" id="btn-toggle-haptics" class="setting-row-btn">
           <span id="lbl-haptics">📳 Titreşim (Haptic)</span>
           <strong id="val-haptics" class="toggle-pill on">ON</strong>
+        </button>
+        <button type="button" id="btn-toggle-master-exam" class="setting-row-btn">
+          <span id="lbl-master-exam">🔥 Usta Sınavı (3 ❤️)</span>
+          <strong id="val-master-exam" class="toggle-pill">KAPALI</strong>
+        </button>
+        <button type="button" id="btn-cycle-quality" class="setting-row-btn">
+          <span id="lbl-quality">⚡ Grafik Kalitesi</span>
+          <strong id="val-quality" class="toggle-pill on">OTO</strong>
         </button>
         <button type="button" id="btn-toggle-fullscreen" class="setting-row-btn">
           <span id="lbl-fullscreen">⛶ Tam Ekran</span>
@@ -215,12 +252,20 @@
       <p id="result-desc" class="result-desc">Bol fıstıklı Maraş dondurması senin!</p>
 
       <p id="result-story" class="result-story"></p>
+      <p id="result-challenge-cmp" class="result-challenge-cmp" hidden></p>
       <div class="stars-row" id="result-stars">⭐⭐⭐</div>
+      <div class="emoji-report-pill" id="result-emoji-strip">✅✅🍦</div>
 
       <div class="stats-row-clean">
         <div><span id="lbl-score">Puan</span><strong id="res-score">1,200</strong></div>
         <div><span id="lbl-best">Rekor</span><strong id="res-best">1,200</strong></div>
         <div><span id="lbl-cone">Sonuç</span><strong id="res-scoops">3 🍦 + 🥜</strong></div>
+      </div>
+
+      <div class="share-actions-row" id="result-share-row">
+        <button type="button" id="btn-share-card" class="viral-share-btn">📤 Kart Paylaş</button>
+        <button type="button" id="btn-share-trap-result" class="viral-share-btn">🎯 Tuzak Kur</button>
+        <button type="button" id="btn-share-clip" class="viral-share-btn">🎬 6 sn Klip</button>
       </div>
 
       <div class="modal-actions">
@@ -278,6 +323,33 @@
       </div>
       <div class="tricks-catalog-list" id="tricks-catalog-list" role="region" aria-live="polite"></div>
       <button type="button" class="play-giant-btn" data-dismiss="dialog-tricks" data-ui-label="done">Tamam</button>
+    </div>
+  </dialog>
+
+  <dialog id="dialog-challenge-builder" closedby="any" aria-labelledby="challenge-builder-title">
+    <div class="modal-card interface-panel">
+      <div class="panel-heading">
+        <h2 id="challenge-builder-title">🎯 Arkadaşına Tuzak Kur</h2>
+        <button type="button" class="panel-dismiss" data-dismiss="dialog-challenge-builder" aria-label="Kapat">×</button>
+      </div>
+      <p id="challenge-builder-desc" class="result-desc">3–5 numara seç; arkadaşına kurulum gerektirmeyen tuzak bağlantısı gönder!</p>
+      <div id="challenge-selected-strip" class="challenge-selected-strip"></div>
+      <div id="challenge-trick-picker" class="challenge-trick-picker" role="group"></div>
+      <div class="modal-actions">
+        <button type="button" id="btn-play-own-trap" class="secondary-pill-btn">▶ Kendin Dene</button>
+        <button type="button" id="btn-share-built-trap" class="play-giant-btn">📤 Bağlantıyı Paylaş</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="dialog-hand-style" closedby="any" aria-labelledby="hand-style-title">
+    <div class="modal-card interface-panel">
+      <div class="panel-heading">
+        <h2 id="hand-style-title">✋ El &amp; Aksesuar</h2>
+        <button type="button" class="panel-dismiss" data-dismiss="dialog-hand-style" aria-label="Kapat">×</button>
+      </div>
+      <div id="hand-style-body" class="hand-style-body"></div>
+      <button type="button" class="play-giant-btn" data-dismiss="dialog-hand-style" data-ui-label="done">Tamam</button>
     </div>
   </dialog>
   <script type="module" src="/src/main.js"></script>

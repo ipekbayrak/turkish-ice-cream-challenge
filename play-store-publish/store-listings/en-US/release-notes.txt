@@ -1,1 +1,1 @@
-v2.0.1: Stability & clarity update! Fixed rare gameplay freeze after idle recovery, improved mobile timer resilience, and added playful vendor banter for the wrong-flavor prank!
+v2.1.0: Viral Show Update! Heartless flow mode, bite your cone payoff, Daily Master, Friend Trap Link builder, 6s vertical highlight clips, counter-troll moves, hand customization, and 11 languages!

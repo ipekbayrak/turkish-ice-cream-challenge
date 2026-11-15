@@ -2435,6 +2435,45 @@ export class GameWorld {
     }
   }
 
+  applyVendorTell(tell = 'neutral') {
+    if (
+      this._faceTouch ||
+      this._vendorReaction ||
+      !this.leftBrow ||
+      !this.rightBrow ||
+      !this.vendorHead
+    ) {
+      return;
+    }
+    if (tell === 'feint') {
+      this.leftBrow.position.y = 0.106;
+      this.rightBrow.position.y = 0.085;
+      this.leftBrow.rotation.z = Math.PI * 0.5 - 0.22;
+      this.rightBrow.rotation.z = Math.PI * 0.5 + 0.14;
+      this.vendorHead.rotation.z = 0.055;
+    } else if (tell === 'true_offer') {
+      this.leftBrow.position.y = 0.095;
+      this.rightBrow.position.y = 0.095;
+      this.leftBrow.rotation.z = Math.PI * 0.5 + 0.08;
+      this.rightBrow.rotation.z = Math.PI * 0.5 - 0.08;
+      this.vendorHead.rotation.z = 0;
+    } else {
+      this.vendorHead.rotation.z = 0;
+    }
+  }
+
+  applyJuiceFov(fovOffset = 0) {
+    const prev = this._lastFovOffset || 0;
+    if (Math.abs(fovOffset - prev) < 0.02 && !(fovOffset === 0 && prev !== 0)) {
+      return;
+    }
+    this._lastFovOffset = fovOffset;
+    if (this.camera && Number.isFinite(this.baseFov)) {
+      this.camera.fov = this.baseFov + fovOffset;
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
   setVendorCharacter(vendorIndex) {
     const idx = vendorIndex % 4;
     if (idx === 0) {
@@ -2784,7 +2823,9 @@ export class GameWorld {
   }
 
   spawnBurst(worldPos, color = 0xf5b942, count = 16) {
-    count=Math.max(0,Math.ceil(count));
+    const scale = typeof this.particleScale === 'number' && this.particleScale > 0 ? this.particleScale : 1;
+    const rawCount = scale === 1 ? count : Math.max(1, Math.round(count * scale));
+    count=Math.max(0,Math.ceil(rawCount));
     if(!Number.isFinite(count)||count===0)return;
     const geo = new THREE.OctahedronGeometry(0.017, 0);
     const mat = new THREE.MeshBasicMaterial({ color });
@@ -3631,17 +3672,34 @@ export class GameWorld {
     this._poseFrameManaged=false;
   }
 
+  setQualitySpec(spec = {}) {
+    const nextMaxDpr = typeof spec.maxDpr === 'number' && spec.maxDpr > 0 ? spec.maxDpr : 2;
+    const nextShadows = spec.shadows !== false;
+    const nextParticles = typeof spec.particleScale === 'number' && spec.particleScale > 0 ? spec.particleScale : 1;
+    this.qualityMaxDpr = nextMaxDpr;
+    this.particleScale = nextParticles;
+    if (this.renderer?.shadowMap && this.renderer.shadowMap.enabled !== nextShadows) {
+      this.renderer.shadowMap.enabled = nextShadows;
+      this.renderer.shadowMap.needsUpdate = true;
+    }
+    if (typeof window !== 'undefined') {
+      this.onResize();
+    }
+  }
+
   onResize() {
     const w = Math.max(1, window.visualViewport?.width || window.innerWidth);
     const h = Math.max(1, window.visualViewport?.height || window.innerHeight);
-    const size=resizeRenderer(this.renderer,w,h,Math.min(window.devicePixelRatio||1,2),this._renderSize);
+    const maxDpr = this.qualityMaxDpr ?? 2;
+    const size=resizeRenderer(this.renderer,w,h,Math.min(window.devicePixelRatio||1,maxDpr),this._renderSize);
     // The constructor allocates the buffer before the first camera fitting.
     if(size===this._renderSize&&size===this._cameraSize)return;
     this._renderSize=size;this._cameraSize=size;
     const aspect = w / h;
     this.camera.aspect = aspect;
     const framing=shopCameraProfile(w,h);
-    this.camera.fov=framing.fov;
+    this.baseFov=framing.fov;
+    this.camera.fov=framing.fov+(this._lastFovOffset||0);
     this.baseCamPos.fromArray(framing.position);
     this.baseCamTarget.fromArray(framing.target);
     this.camera.position.copy(this.baseCamPos);

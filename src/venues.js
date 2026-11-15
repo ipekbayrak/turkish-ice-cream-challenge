@@ -12,7 +12,7 @@ const venue = (id, names, subtitles, firstStage, palette, lightColor, lightInten
 export const VENUES = Object.freeze([
   venue(
     'istiklal',
-    { tr: 'İstiklal', en: 'Istiklal', ar: 'الاستقلال', ru: 'Истикляль', de: 'Istiklal', ja: 'イスティクラル' },
+    { tr: 'İstiklal', en: 'Istiklal', ar: 'الاستقلال', ru: 'Истикляль', de: 'Istiklal', ja: 'イスティクラル', es: 'Istiklal', pt: 'Istiklal', id: 'Istiklal', hi: 'इस्तिकलाल', ko: '이스티클랄' },
     {
       tr: 'Tramvay köşesindeki ilk tezgâh',
       en: 'The first stall by the tram',
@@ -20,13 +20,18 @@ export const VENUES = Object.freeze([
       ru: 'Первый прилавок у трамвайного угла',
       de: 'Der erste Eisstand an der Straßenbahnecke',
       ja: 'トラム角の最初の屋台',
+      es: 'El primer puesto junto al tranvía',
+      pt: 'A primeira banca perto do bonde',
+      id: 'Gerobak pertama di sudut trem',
+      hi: 'ट्राम के कोने वाला पहला स्टॉल',
+      ko: '트램 모퉁이의 첫 번째 가판대',
     },
     1,
     { wall: 0x70513a, tile: 0x296d6b, wood: 0x4a2c1c, metal: 0xb89b62, accent: 0xb43f32 }, 0xffe2b8, 1, 'tram', 1
   ),
   venue(
     'galata',
-    { tr: 'Galata', en: 'Galata', ar: 'غلطة', ru: 'Галата', de: 'Galata', ja: 'ガラタ' },
+    { tr: 'Galata', en: 'Galata', ar: 'غلطة', ru: 'Галата', de: 'Galata', ja: 'ガラタ', es: 'Gálata', pt: 'Gálata', id: 'Galata', hi: 'गलाटा', ko: '갈라타' },
     {
       tr: 'Taş sokaklarda yeni numaralar',
       en: 'New tricks on the cobbled lanes',
@@ -34,13 +39,18 @@ export const VENUES = Object.freeze([
       ru: 'Новые трюки на мощёных улочках',
       de: 'Neue Tricks in den Kopfsteinpflastergassen',
       ja: '石畳の路地で始まる新しい技',
+      es: 'Nuevos trucos en las calles empedradas',
+      pt: 'Novos truques nas ruas de pedra',
+      id: 'Trik baru di gang berbatu',
+      hi: 'पत्थर की गलियों में नई चालें',
+      ko: '자갈길 골목의 새로운 기술',
     },
     6,
     { wall: 0xcfc2a7, tile: 0x3f6668, wood: 0x594331, metal: 0xa9966d, accent: 0x386e71 }, 0xffe6c3, .96, 'tower', 1.025
   ),
   venue(
     'karakoy',
-    { tr: 'Karaköy', en: 'Karakoy', ar: 'قره كوي', ru: 'Каракёй', de: 'Karaköy', ja: 'カラキョイ' },
+    { tr: 'Karaköy', en: 'Karakoy', ar: 'قره كوي', ru: 'Каракёй', de: 'Karaköy', ja: 'カラキョイ', es: 'Karaköy', pt: 'Karaköy', id: 'Karakoy', hi: 'काराकोय', ko: '카라쾨이' },
     {
       tr: 'Rıhtımda daha büyük siparişler',
       en: 'Bigger orders by the harbor',
@@ -48,13 +58,18 @@ export const VENUES = Object.freeze([
       ru: 'Большие заказы у морской пристани',
       de: 'Größere Bestellungen am Hafenkai',
       ja: '港の桟橋で増える大きな注文',
+      es: 'Pedidos más grandes junto al puerto',
+      pt: 'Pedidos maiores perto do porto',
+      id: 'Pesanan lebih besar di dermaga',
+      hi: 'बंदरगाह के पास बड़े ऑर्डर',
+      ko: '항구 부두의 더 커진 주문',
     },
     11,
     { wall: 0xd5d5c8, tile: 0x426979, wood: 0x674e3a, metal: 0xb77f56, accent: 0xd17c48 }, 0xe0f0ff, 1.04, 'harbor', 1.06
   ),
   venue(
     'kadikoy',
-    { tr: 'Kadıköy', en: 'Kadikoy', ar: 'قاضي كوي', ru: 'Кадыкёй', de: 'Kadıköy', ja: 'カドゥキョイ' },
+    { tr: 'Kadıköy', en: 'Kadikoy', ar: 'قاضي كوي', ru: 'Кадыкёй', de: 'Kadıköy', ja: 'カドゥキョイ', es: 'Kadıköy', pt: 'Kadıköy', id: 'Kadikoy', hi: 'कादिकोय', ko: '카드쾨이' },
     {
       tr: 'Çarşının renkli ritmi',
       en: 'The colorful rhythm of the market',
@@ -62,13 +77,18 @@ export const VENUES = Object.freeze([
       ru: 'Красочный ритм оживлённого базара',
       de: 'Der farbenfrohe Rhythmus des Basars',
       ja: '市場に響くカラフルなリズム',
+      es: 'El ritmo colorido del mercado',
+      pt: 'O ritmo colorido do mercado',
+      id: 'Irama pasar yang penuh warna',
+      hi: 'बाज़ार की रंगीन लय',
+      ko: '시장의 다채로운 리듬',
     },
     16,
     { wall: 0xe5d7b9, tile: 0x6d805b, wood: 0x6b4935, metal: 0xc4a16a, accent: 0xa14b67 }, 0xffedc8, 1.02, 'market', 1.1
   ),
   venue(
     'uskudar',
-    { tr: 'Üsküdar', en: 'Uskudar', ar: 'أسكدار', ru: 'Ускюдар', de: 'Üsküdar', ja: 'ユスキュダル' },
+    { tr: 'Üsküdar', en: 'Uskudar', ar: 'أسكدار', ru: 'Ускюдар', de: 'Üsküdar', ja: 'ユスキュダル', es: 'Üsküdar', pt: 'Üsküdar', id: 'Uskudar', hi: 'उस्कुदार', ko: '위스퀴다르' },
     {
       tr: 'Vapur iskelesinde sabır oyunu',
       en: 'A patient duel by the ferry',
@@ -76,13 +96,18 @@ export const VENUES = Object.freeze([
       ru: 'Дуэль терпения у паромного причала',
       de: 'Ein Geduldsduell am Fähranleger',
       ja: '連絡船の桟橋で挑む忍耐の勝負',
+      es: 'Un duelo de paciencia en el muelle',
+      pt: 'Um duelo de paciência na balsa',
+      id: 'Duel kesabaran di dermaga feri',
+      hi: 'फेरी घाट पर सब्र का इम्तिहान',
+      ko: '유람선 선착장의 인내심 대결',
     },
     21,
     { wall: 0xe9e1cb, tile: 0x4f7495, wood: 0x72533d, metal: 0xb19c78, accent: 0x508ba5 }, 0xe3edff, 1, 'ferry', 1.14
   ),
   venue(
     'ustalar-avlusu',
-    { tr: 'Ustalar Avlusu', en: 'Masters’ Courtyard', ar: 'ساحة المعلمين', ru: 'Двор мастеров', de: 'Hof der Meister', ja: '名人の中庭' },
+    { tr: 'Ustalar Avlusu', en: 'Masters’ Courtyard', ar: 'ساحة المعلمين', ru: 'Двор мастеров', de: 'Hof der Meister', ja: '名人の中庭', es: 'Patio de los Maestros', pt: 'Pátio dos Mestres', id: 'Pelataran Para Master', hi: 'उस्तादों का आँगन', ko: '장인들의 안뜰' },
     {
       tr: 'Büyüyen siparişler, dört usta, ustalık sınavı',
       en: 'Growing orders, four masters, a test of mastery',
@@ -90,6 +115,11 @@ export const VENUES = Object.freeze([
       ru: 'Растущие заказы, четыре мастера и экзамен мастерства',
       de: 'Wachsende Bestellungen, vier Meister, die Meisterprüfung',
       ja: '増える注文、四人の親方、名人への試練',
+      es: 'Pedidos crecientes, cuatro maestros y la prueba final',
+      pt: 'Pedidos crescentes, quatro mestres e o teste final',
+      id: 'Pesanan membesar, empat master, ujian kemahiran',
+      hi: 'बढ़ते ऑर्डर, चार उस्ताद और महारत की परीक्षा',
+      ko: '커지는 주문, 네 명의 장인, 마스터의 시험',
     },
     26,
     { wall: 0xdac9a9, tile: 0x8a4039, wood: 0x583b29, metal: 0xc3a257, accent: 0xbf8d36 }, 0xffddb0, .98, 'courtyard', 1.18

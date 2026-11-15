@@ -1,1 +1,1 @@
-v2.0.1: El çabukluğu ve mola dönüşü sırasındaki donma hatası giderildi, mobil akıcılık iyileştirildi ve ustanın yanlış lezzet şakası konuşma balonlarıyla netleştirildi!
+v2.1.0: Viral Güncelleme! Kalpsiz akıcı ana mod, dondurmayı ısırma ödülü, Günün Ustası, Arkadaşına Tuzak Kur paylaşımı, 6 sn dikey klip kaydı, ustayı trolleme, el özelleştirme ve 11 dil desteği!

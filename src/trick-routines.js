@@ -219,12 +219,18 @@ export function routineSignature(routine) {
   }));
 }
 export function routineIdsForStage(stage) { return CHOREOGRAPHED_ROUTINES.filter(routine => routine.unlockStage <= stage).map(routine => routine.id); }
-export function compoundLimitForStage(stage) { return stage <= 10 ? 1 : stage <= 20 ? 2 : 3; }
+export function compoundLimitForStage(stage) { return stage <= 1 ? 0 : stage <= 10 ? 1 : stage <= 20 ? 2 : 3; }
 
 /** Receives an already shuffled pool; keep the original round slot budget. */
 export function selectRoutineSlots(pool, count, stage) {
   const unique = [...new Set(pool)];
-  const compounds = unique.filter(id => BY_ID.has(id) && BY_ID.get(id).unlockStage <= stage).slice(0, compoundLimitForStage(stage));
+  const compounds = unique.filter(id => {
+    if (!BY_ID.has(id)) return false;
+    const routine = BY_ID.get(id);
+    if (routine.unlockStage > stage) return false;
+    if (stage < 3 && routine.componentIds.includes('EYE_LOCK_RHYTHM_CHASE')) return false;
+    return true;
+  }).slice(0, compoundLimitForStage(stage));
   let researchChosen = false;
   const base = unique.filter(id => !BY_ID.has(id)).filter(id => {
     if (!isResearchedService(id)) return true;
