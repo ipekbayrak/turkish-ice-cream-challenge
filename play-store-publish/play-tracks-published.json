@@ -5,34 +5,34 @@
       "track": "production",
       "releases": [
         {
-          "name": "2.1.1",
+          "name": "2.1.2",
           "versionCodes": [
-            "5"
+            "6"
           ],
           "releaseNotes": [
             {
               "language": "tr-TR",
-              "text": "v2.1.1: Kritik kararlılık ve performans düzeltmesi! Kare hızı denetleyicisindeki sonsuz döngü hatası giderildi. 4 Maraş ustası karşısında kalpsiz akıcı ana mod, tur sonu dondurma ısırma ödülü, Günün Ustası, Arkadaşına Tuzak Kur, 6 sn klip kaydı, ustayı trolleme, el özelleştirme ve 11 dil desteği!"
+              "text": "v2.1.2: Sarsıntısız sabit kamera ve net kazanma/kaybetme geri bildirimi! 4 Maraş ustası karşısında klasik 3 can (❤️❤️❤️) göstergesi, her hatada açık neden bildirimi, adım sayacı, Günün Ustası, Arkadaşına Tuzak Kur, 6 sn klip kaydı ve 11 dil desteği!"
             },
             {
               "language": "en-US",
-              "text": "v2.1.1: Critical render-loop stability & CPU hotfix! Face 4 masters in heartless flow mode, bite your cone at round end, play Daily Master, build & share Trap Links, export 6s vertical highlight clips, counter-troll the vendor, customize hand & accessories, plus 11 languages!"
+              "text": "v2.1.2: Rock-steady POV camera (zero jarring zoom or screen bounce) & crystal-clear win/loss feedback! Face 4 masters with classic 3-Heart stakes, explicit mistake reasons, step counter, Daily Master, Trap Links, 6s highlight clips, and 11 languages!"
             },
             {
               "language": "ar",
-              "text": "الإصدار 2.1.1: إصلاح هام للاستقرار والأداء! وضع لعب انسيابي بدون قلوب، قضمة البوظة عند الفوز، معلم اليوم، مشاركة فخ مع صديق، مقطع فيديو 6 ثوانٍ، مقالب مضادة للمعلم، تخصيص اليد والإكسسوارات ودعم 11 لغة!"
+              "text": "الإصدار 2.1.2: كاميرا ثابتة تماماً بدون اهتزاز أو تقريب مفاجئ، وتوضيح كامل لأسباب الفوز والخسارة مع نظام ٣ قلوب الكلاسيكي، معلم اليوم، مشاركة فخ مع صديق ودعم 11 لغة!"
             },
             {
               "language": "ru-RU",
-              "text": "v2.1.1: Важное исправление стабильности и нагрузки на процессор! Свободный режим без сердец, укус рожка в финале, «Мастер дня», ссылка-ловушка для друзей, 6-сек вертикальные клипы, троллинг мороженщика, кастомизация руки и 11 языков!"
+              "text": "v2.1.2: Стабильная камера без резких приближений и тряски экрана + понятные причины побед и ошибок! Классические 3 сердца, счётчик шагов, «Мастер дня», ловушки для друзей и 11 языков!"
             },
             {
               "language": "de-DE",
-              "text": "v2.1.1: Wichtiger Stabilitäts- und Performance-Hotfix! Flüssiger Hauptmodus ohne Herzen, Eis abbeißen im Finale, Meister des Tages, Fallen-Link für Freunde, 6-Sek.-Clips, den Eismeister trollen, Hand-Anpassung sowie 11 Sprachen!"
+              "text": "v2.1.2: Ruhige POV-Kamera ohne ruckartige Zooms oder Wackeln & glasklares Gewinn-/Verlust-Feedback! Klassische 3-Herzen-Regel, klare Fehlerhinweise, Meister des Tages, Fallen-Links und 11 Sprachen!"
             },
             {
               "language": "ja-JP",
-              "text": "v2.1.1: 描画ループの安定性と負荷に関する重要な修正アップデート！ハート制限なしの快適モード、最後のアイスかじり演出、「今日の親方」、友達への罠リンク共有、6秒縦型クリップ保存、逆イタズラ、手の着せ替え、11言語対応！"
+              "text": "v2.1.2: カメラの激しいズームや画面の揺れを解消し、勝敗・ミスの理由が一目でわかるように改善！クラシック3ハート制、ステップ表示、「今日の親方」、罠リンク共有、11言語対応！"
             }
           ],
           "status": "completed"
@@ -49,34 +49,34 @@
       "track": "internal",
       "releases": [
         {
-          "name": "2.1.1",
+          "name": "2.1.2",
           "versionCodes": [
-            "5"
+            "6"
           ],
           "releaseNotes": [
             {
               "language": "tr-TR",
-              "text": "v2.1.1: Kritik kararlılık ve performans düzeltmesi! Kare hızı denetleyicisindeki sonsuz döngü hatası giderildi. 4 Maraş ustası karşısında kalpsiz akıcı ana mod, tur sonu dondurma ısırma ödülü, Günün Ustası, Arkadaşına Tuzak Kur, 6 sn klip kaydı, ustayı trolleme, el özelleştirme ve 11 dil desteği!"
+              "text": "v2.1.2: Sarsıntısız sabit kamera ve net kazanma/kaybetme geri bildirimi! 4 Maraş ustası karşısında klasik 3 can (❤️❤️❤️) göstergesi, her hatada açık neden bildirimi, adım sayacı, Günün Ustası, Arkadaşına Tuzak Kur, 6 sn klip kaydı ve 11 dil desteği!"
             },
             {
               "language": "en-US",
-              "text": "v2.1.1: Critical render-loop stability & CPU hotfix! Face 4 masters in heartless flow mode, bite your cone at round end, play Daily Master, build & share Trap Links, export 6s vertical highlight clips, counter-troll the vendor, customize hand & accessories, plus 11 languages!"
+              "text": "v2.1.2: Rock-steady POV camera (zero jarring zoom or screen bounce) & crystal-clear win/loss feedback! Face 4 masters with classic 3-Heart stakes, explicit mistake reasons, step counter, Daily Master, Trap Links, 6s highlight clips, and 11 languages!"
             },
             {
               "language": "ar",
-              "text": "الإصدار 2.1.1: إصلاح هام للاستقرار والأداء! وضع لعب انسيابي بدون قلوب، قضمة البوظة عند الفوز، معلم اليوم، مشاركة فخ مع صديق، مقطع فيديو 6 ثوانٍ، مقالب مضادة للمعلم، تخصيص اليد والإكسسوارات ودعم 11 لغة!"
+              "text": "الإصدار 2.1.2: كاميرا ثابتة تماماً بدون اهتزاز أو تقريب مفاجئ، وتوضيح كامل لأسباب الفوز والخسارة مع نظام ٣ قلوب الكلاسيكي، معلم اليوم، مشاركة فخ مع صديق ودعم 11 لغة!"
             },
             {
               "language": "ru-RU",
-              "text": "v2.1.1: Важное исправление стабильности и нагрузки на процессор! Свободный режим без сердец, укус рожка в финале, «Мастер дня», ссылка-ловушка для друзей, 6-сек вертикальные клипы, троллинг мороженщика, кастомизация руки и 11 языков!"
+              "text": "v2.1.2: Стабильная камера без резких приближений и тряски экрана + понятные причины побед и ошибок! Классические 3 сердца, счётчик шагов, «Мастер дня», ловушки для друзей и 11 языков!"
             },
             {
               "language": "de-DE",
-              "text": "v2.1.1: Wichtiger Stabilitäts- und Performance-Hotfix! Flüssiger Hauptmodus ohne Herzen, Eis abbeißen im Finale, Meister des Tages, Fallen-Link für Freunde, 6-Sek.-Clips, den Eismeister trollen, Hand-Anpassung sowie 11 Sprachen!"
+              "text": "v2.1.2: Ruhige POV-Kamera ohne ruckartige Zooms oder Wackeln & glasklares Gewinn-/Verlust-Feedback! Klassische 3-Herzen-Regel, klare Fehlerhinweise, Meister des Tages, Fallen-Links und 11 Sprachen!"
             },
             {
               "language": "ja-JP",
-              "text": "v2.1.1: 描画ループの安定性と負荷に関する重要な修正アップデート！ハート制限なしの快適モード、最後のアイスかじり演出、「今日の親方」、友達への罠リンク共有、6秒縦型クリップ保存、逆イタズラ、手の着せ替え、11言語対応！"
+              "text": "v2.1.2: カメラの激しいズームや画面の揺れを解消し、勝敗・ミスの理由が一目でわかるように改善！クラシック3ハート制、ステップ表示、「今日の親方」、罠リンク共有、11言語対応！"
             }
           ],
           "status": "completed"

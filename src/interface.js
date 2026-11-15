@@ -66,11 +66,3 @@ for (const id of ['stage-selector', 'lang-grid']) {
 }
 syncSelections();
 
-// React once to each changed instruction, rather than pulsing continuously.
-new MutationObserver(() => {
-  if (reducedMotion.matches || document.body.classList.contains('interface-home')) return;
-  $('hud-card').animate([
-    { opacity: 0.65, transform: 'translateY(5px)' },
-    { opacity: 1, transform: 'translateY(0)' },
-  ], { duration: 190, easing: 'ease-out' });
-}).observe($('hud-action-badge'), { childList: true, characterData: true, subtree: true });

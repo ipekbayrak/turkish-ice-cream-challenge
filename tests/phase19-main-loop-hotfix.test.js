@@ -120,5 +120,5 @@ test('animate() has circuit-breaker protection, coneIntro uses pause(), and sw.j
   assert.match(mainSrc, /coneIntro\.pause\(\)/);
 
   const swSrc = fs.readFileSync(path.join(ROOT, 'public/sw.js'), 'utf8');
-  assert.match(swSrc, /CACHE_NAME\s*=\s*'maras-dondurma-v47-hotfix'/);
+  assert.match(swSrc, /CACHE_NAME\s*=\s*'maras-dondurma-v(4[7-9]|[5-9]\d)/);
 });

@@ -1,1 +1,1 @@
-v2.1.1: Critical render-loop stability hotfix! Face 4 masters in heartless flow mode, bite your cone, play Daily Master, share Trap Links, export 6s clips, counter-troll, and 11 languages!
+v2.1.2: Rock-steady POV camera (zero jarring zoom or bounce) & clear win/loss feedback! Face 4 masters with classic 3-Heart stakes, mistake reasons, Daily Master, Trap Links, and 11 languages!

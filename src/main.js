@@ -565,7 +565,7 @@ function applyLanguageUI() {
   settingsTitle.textContent = saveManager.t('settingsTitle');
   lblSound.textContent = `🔊 ${saveManager.t('soundLabel')}`;
   lblHaptics.textContent = `📳 ${saveManager.t('hapticsLabel')}`;
-  if (lblMasterExam) lblMasterExam.textContent = `🔥 ${saveManager.t('masterExamLabel')}`;
+  if (lblMasterExam) lblMasterExam.textContent = `❤️ ${saveManager.t('masterExamLabel')}`;
   if (lblQuality) lblQuality.textContent = `⚡ ${saveManager.t('qualityLabel')}`;
   lblFullscreen.textContent = `⛶ ${saveManager.t('fullscreenLabel')}`;
   btnCloseSettings.textContent = saveManager.t('closeBtn');
@@ -652,21 +652,6 @@ const uiCallbacks = {
     relationships?.onReaction(event);
     if (event?.kind === 'mistake') {
       highlightBuffer.markMoment('mistake', 2.4);
-      const mech = event.componentId || event.trickId || director.currentMechanic;
-      if (screenSmudge.shouldTriggerForMistake(mech)) {
-        const fIdx = (director.selectedFlavors?.[0] ?? 0) % ICE_CREAM_FLAVORS.length;
-        const cssColor = ICE_CREAM_FLAVORS[fIdx]?.cssColor || '#fff5e4';
-        screenSmudge.trigger({
-          colorCss: cssColor,
-          rand: () => director._rand(),
-        });
-      }
-      if (hudBamboozled && !saveManager.masterExamMode) {
-        hudBamboozled.classList.remove('bump');
-        void hudBamboozled.offsetWidth;
-        hudBamboozled.classList.add('bump');
-        setTimeout(() => hudBamboozled.classList.remove('bump'), 220);
-      }
     }
   },
 
@@ -1837,9 +1822,13 @@ function projectBellRest(down=0){
 function updateHUD(guide) {
   // Project the canopy's real position, leaving the whole bell and face clear.
   projectBellRest();
-  const {cueTop}=encounterHudLayout(viewportWidth,viewportHeight,infoTopInset,(1-hudBellPoint.y)*viewportHeight*.5);
-  if(hudCache.cueTop!==cueTop){hudCache.cueTop=cueTop;hudBottom.style.top=`${cueTop}px`;}
-  tubOrderView.headerInset=cueTop;
+  const rawCueTop = encounterHudLayout(viewportWidth,viewportHeight,infoTopInset,(1-hudBellPoint.y)*viewportHeight*.5).cueTop;
+  const cueTop = Math.round(rawCueTop);
+  if (hudCache.cueTop === undefined || Math.abs(cueTop - hudCache.cueTop) >= 2) {
+    hudCache.cueTop = cueTop;
+    hudBottom.style.top = `${cueTop}px`;
+  }
+  tubOrderView.headerInset = hudCache.cueTop;
   const roundActive=Boolean(director.active&&!director.isAfkShowActive&&!orderFlow.active&&!guide?.quiet);
   if(hudCache.roundActive!==roundActive){hudCache.roundActive=roundActive;document.body.classList.toggle('round-active',roundActive);}
   const speaking=Boolean(guide?.vendorBubble?.text)&&!orderFlow.active;
@@ -1924,10 +1913,18 @@ function updateHUD(guide) {
       hudActionBadge.textContent = guide.badgeText;
     }
 
-    const nextTrickTitle = guide.trickTitle || '';
-    if (hudTrickTitle && hudCache.trickTitle !== nextTrickTitle) {
-      hudCache.trickTitle = nextTrickTitle;
-      hudTrickTitle.textContent = nextTrickTitle;
+    let nextStepBadge = '';
+    if (director.active && !director.roundEnded && !guide.quiet) {
+      const totalSteps = Math.max(1, director.routine?.length || 1);
+      const stepNum = Math.min(totalSteps, (director.routineIndex || 0) + 1);
+      nextStepBadge =
+        director.currentMechanic === 'FINAL_PISTACHIO_CATCH'
+          ? (saveManager.lang === 'tr' ? 'FİNAL' : 'FINAL')
+          : `${stepNum}/${totalSteps}`;
+    }
+    if (hudTrickTitle && hudCache.trickTitle !== nextStepBadge) {
+      hudCache.trickTitle = nextStepBadge;
+      hudTrickTitle.textContent = nextStepBadge;
     }
 
     const nextRoutineWidth = `${Math.round(
@@ -2034,7 +2031,7 @@ function drawTargetRings(ctx, rings, elapsed) {
 
   rings.forEach((ring) => {
     const pal = PALETTE[ring.color] || PALETTE.green;
-    const pulse = 1 + Math.sin(elapsed * 6.5) * 0.1;
+    const pulse = 1 + Math.sin(elapsed * 3.0) * 0.03;
     const r = ring.radius * pulse;
 
     ctx.beginPath();
@@ -2146,18 +2143,40 @@ function drawFloatingPopupsAndVignette(ctx, guide) {
 
   if (guide.floatingPopups && guide.floatingPopups.length > 0) {
     ctx.save();
-    ctx.font = '900 18px system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
     guide.floatingPopups.forEach((fp) => {
       const pal = PALETTE[fp.color] || PALETTE.green;
       ctx.globalAlpha = Math.min(1, fp.life * 1.4);
-      ctx.strokeStyle = 'rgba(14, 7, 4, 0.9)';
-      ctx.lineWidth = 4;
-      ctx.strokeText(fp.text, fp.x, fp.y);
-      ctx.fillStyle = pal.bright;
-      ctx.fillText(fp.text, fp.x, fp.y);
+      if (fp.pill) {
+        ctx.font = '800 13px system-ui, -apple-system, sans-serif';
+        const padX = 11;
+        const boxH = 26;
+        const maxW = Math.max(140, viewportWidth - 28);
+        const rawW = ctx.measureText(fp.text).width + padX * 2;
+        const boxW = Math.min(maxW, rawW);
+        const cx = THREE.MathUtils.clamp(fp.x, 14 + boxW * 0.5, Math.max(14 + boxW * 0.5, viewportWidth - 14 - boxW * 0.5));
+        const cy = THREE.MathUtils.clamp(fp.y, 108, Math.max(112, viewportHeight - 88));
+        ctx.fillStyle = 'rgba(20, 9, 6, 0.92)';
+        ctx.strokeStyle = pal.bright;
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.roundRect(cx - boxW * 0.5, cy - boxH * 0.5, boxW, boxH, 13);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#fff5f5';
+        ctx.fillText(fp.text, cx, cy + 0.5, boxW - padX);
+      } else {
+        ctx.font = '900 17px system-ui, -apple-system, sans-serif';
+        const cx = THREE.MathUtils.clamp(fp.x, 48, Math.max(48, viewportWidth - 48));
+        const cy = THREE.MathUtils.clamp(fp.y, 96, Math.max(100, viewportHeight - 80));
+        ctx.strokeStyle = 'rgba(14, 7, 4, 0.9)';
+        ctx.lineWidth = 4;
+        ctx.strokeText(fp.text, cx, cy);
+        ctx.fillStyle = pal.bright;
+        ctx.fillText(fp.text, cx, cy);
+      }
     });
     ctx.restore();
   }
@@ -2462,7 +2481,6 @@ function animateFrame(now) {
     elapsed
   );
 
-  let activeJuiceFov = 0;
   if (coneIntro.active) {
     if(!document.hidden&&!document.querySelector('dialog[open]'))director.tickSpeech(dt);
     coneIntro.update(dt,elapsed,gestureState,document.hidden || Boolean(document.querySelector('dialog[open]')));
@@ -2470,15 +2488,16 @@ function animateFrame(now) {
     if (!document.hidden && !document.querySelector('dialog[open]')) director.tickSpeech(dt);
   } else if (!document.hidden && !coneBiteFinale?.active) {
     try {
-      const juiceSnap =
-        director.active && !director.roundEnded && director.juice
-          ? director.juice.step(dt, {
-              mechanic: director.currentMechanic,
-              subStep: director.subStep,
-            })
-          : { visualDt: dt, fovOffset: 0 };
-      activeJuiceFov = juiceSnap.fovOffset || 0;
-      director.update(juiceSnap.visualDt, elapsed, gestureState, dt);
+      if (director.active && !director.roundEnded && director.juice) {
+        const tellSnap = director.juice.step(0, {
+          mechanic: director.currentMechanic,
+          subStep: director.subStep,
+        });
+        world.applyVendorTell?.(tellSnap.tell);
+      } else {
+        world.applyVendorTell?.('neutral');
+      }
+      director.update(dt, elapsed, gestureState, dt);
     } catch (err) {
       console.error('[TrickDirector.update]', err);
       clearVendorFlourish(director);
@@ -2507,6 +2526,8 @@ function animateFrame(now) {
     }
   }
 
+  encounterCamera.update(dt);
+  world.applyJuiceFov(0);
   const voiceMouthOpen = sound.getVoiceMouthOpen();
   world.updateEnvironmentAnimations(
     elapsed,
@@ -2517,8 +2538,6 @@ function animateFrame(now) {
       sound.playBellNote(bellIdx ?? 3, bellIntensity, panX),
     voiceMouthOpen
   );
-  encounterCamera.update(dt);
-  world.applyJuiceFov(activeJuiceFov);
   if (coneBiteFinale?.active) {
     coneBiteFinale.update(dt);
   }
@@ -2531,18 +2550,14 @@ function animateFrame(now) {
         quiet: false,
         theme: 'green',
         icon: '😋🍦',
-        badgeText: saveManager.t('cue_bite_cone'),
-        trickTitle: saveManager.t('speech_afiyet'),
+        badgeText: saveManager.t('speech_afiyet'),
+        trickTitle: '',
         routineProgress: 1,
-        stageProgress: Math.max(0, 1 - coneBiteFinale.elapsed / 2.2),
+        stageProgress: 1,
         comets: [],
         rings: [],
       }
     : director.getGestureGuide();
-  if (guide && !coneBiteFinale?.active && screenSmudge.needsWipeCue) {
-    guide.badgeText = saveManager.t('cue_wipe_smudge');
-    guide.icon = '🧼✋';
-  }
   if ((director.active && !director.roundEnded) || coneBiteFinale?.active) {
     const coneProj = world.projectToScreen(director.coneWorldPos);
     const flavorColors = director.selectedFlavors

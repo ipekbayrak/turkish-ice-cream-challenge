@@ -159,20 +159,50 @@ export class TrickDirector {
     }
   }
 
-  _spawnScorePopup(delta, worldPos = this.coneWorldPos, suffix = '') {
+  _describeMistake(icon = '💔') {
+    const isTr = (this.save?.lang || 'tr') === 'tr';
+    if (isTr) {
+      switch (icon) {
+        case '🧊': return 'Kalıp tuzağı! Kırmızıda geri çekil';
+        case '🙃': return 'Ters külah! Kırmızıda geri çekil';
+        case '😱': return 'Sahte düşürme! Elini geri çek';
+        case '🔔': return 'Erken uzandın! 3. çanı bekle';
+        case '👑': return 'Yukarıdaki yem! İnmesini bekle';
+        case '🧻': return 'Peçete tuzağına dokundun!';
+        case '⏳': return 'Süre doldu! Fırsatı kaçırdın';
+        case '🍦': return 'Boş külahı seçtin!';
+        default: return 'Sahte uzatma! Kırmızıda geri çekil';
+      }
+    }
+    switch (icon) {
+      case '🧊': return 'Block trap! Pull back on red';
+      case '🙃': return 'Upside-down cone! Pull back';
+      case '😱': return 'Fake drop! Pull your hand back';
+      case '🔔': return 'Too early! Wait for 3rd bell';
+      case '👑': return 'Overhead bait! Wait for drop';
+      case '🧻': return 'Fell for the napkin decoy!';
+      case '⏳': return 'Time up! Missed catch window';
+      case '🍦': return 'Picked the empty cone!';
+      default: return 'Fake offer! Pull back on red';
+    }
+  }
+
+  _spawnScorePopup(delta, worldPos = this.coneWorldPos, suffix = '', opts = {}) {
     const screen = this.world.projectToScreen(worldPos);
     const isPos = delta >= 0;
+    const text = opts.customText || `${isPos ? '+' : ''}${delta}${suffix ? ' ' + suffix : ''}`;
     this.floatingPopups.push({
       x: screen.x,
       y: screen.y - 26,
-      text: `${isPos ? '+' : ''}${delta}${suffix ? ' ' + suffix : ''}`,
+      text,
       color: isPos ? 'green' : 'red',
-      life: 1.0,
+      life: opts.life || 1.15,
+      pill: Boolean(opts.pill),
     });
     if (!isPos) {
       this.vignetteFlash = {
         color: 'red',
-        alpha: 0.16,
+        alpha: 0.14,
       };
     }
   }
@@ -181,18 +211,22 @@ export class TrickDirector {
     this.penaltiesTaken++;
     this._stepHadMistake = true;
     this.hearts = Math.max(0, this.hearts - 1);
-    this.juice?.triggerNearMiss?.();
+    const reason = this._describeMistake(icon);
+    this.lastMistakeReason = reason;
+    (this.mistakeLog ||= []).push(reason);
     this.score = Math.max(0, this.score - 160);
-    this._spawnScorePopup(-160, worldPos, icon);
+    const strictHearts = Boolean(this.save?.masterExamMode);
+    const popupText = strictHearts ? `💔 -1: ${reason}` : `-160 · ${reason}`;
+    this._spawnScorePopup(-160, worldPos, icon, { customText: popupText, life: 1.55, pill: true });
     this.sound.playPenalty();
     this.sound.playCrowdReaction('gasp');
     this.world.triggerSpectatorReaction('gasp');
     this.world.ringBells(0.85);
     this.world.setVendorMood('laugh');
     this._vibrate([60, 40, 75]);
-    this.ui?.onReaction?.({ kind: 'mistake', trickId: this.currentShowId || this.currentMechanic, componentId: this.currentMechanic, stage: this.currentStage, vendorIndex: this.levelIndex, index: this.routineIndex, score: this.score, bamboozled: this.penaltiesTaken });
+    this.ui?.onReaction?.({ kind: 'mistake', reason, trickId: this.currentShowId || this.currentMechanic, componentId: this.currentMechanic, stage: this.currentStage, vendorIndex: this.levelIndex, index: this.routineIndex, score: this.score, bamboozled: this.penaltiesTaken });
 
-    if (this.hearts <= 0 && Boolean(this.save?.masterExamMode)) {
+    if (this.hearts <= 0 && strictHearts) {
       this._triggerVendorSpeech('laugh');
       this._endRound('OUT_OF_HEARTS');
       return true;
@@ -363,11 +397,13 @@ export class TrickDirector {
     this.overtimeMisses = 0;
     this.stepOutcomes = [];
     this._stepHadMistake = false;
+    this.lastMistakeReason = '';
+    this.mistakeLog = [];
     this.juice?.reset?.();
     this.world.applyJuiceFov?.(0);
     this.world.applyVendorTell?.('neutral');
     this.idleSeconds = 0;
-    this.passiveLimitSec = 22.0;
+    this.passiveLimitSec = 65.0;
     this.isAfkShowActive = false;
     clearVendorFlourish(this);
     this.afkPromptTimer=null;
@@ -870,14 +906,18 @@ export class TrickDirector {
       return; // Connector animation owns the interval before the next component.
     }
     this.tricksSurvived++;
-    if (componentId !== 'SCRAPE_FLAVOR_SCOOP' && componentId !== 'TUTORIAL_WARMUP') {
+    const isTrickChallenge = componentId !== 'SCRAPE_FLAVOR_SCOOP' && componentId !== 'TUTORIAL_WARMUP';
+    if (isTrickChallenge) {
       (this.stepOutcomes ||= []).push(this._stepHadMistake ? '❌' : '✅');
     }
-    this.juice?.triggerCatchZoom?.();
-    this.sound.playShowBoost(2, this.coneWorldPos.x);
-    this.sound.playCrowdReaction('cheer');
-    this.world.triggerSpectatorReaction('cheer');
-    this.world.spawnBurst(this.coneWorldPos, 0xf5b942, 12);
+    if (!isTrickChallenge) {
+      this.sound.playShowBoost(1, this.coneWorldPos.x);
+    } else if (!this._stepHadMistake) {
+      this.sound.playShowBoost(2, this.coneWorldPos.x);
+      this.sound.playCrowdReaction('cheer');
+      this.world.triggerSpectatorReaction('cheer');
+      this.world.spawnBurst(this.coneWorldPos, 0xf5b942, 10);
+    }
     this._enterRoutineStep(this.routineIndex + 1);
   }
 
@@ -956,8 +996,8 @@ export class TrickDirector {
     }
     for (let i = this.floatingPopups.length - 1; i >= 0; i--) {
       const fp = this.floatingPopups[i];
-      fp.life -= dt * 1.3;
-      fp.y -= dt * 48;
+      fp.life -= dt * 0.95;
+      fp.y -= dt * 20;
       if (fp.life <= 0) this.floatingPopups.splice(i, 1);
     }
 
@@ -2185,7 +2225,6 @@ export class TrickDirector {
             // paddle releases it; no chocolate-colored rope joins it to the man.
             this.world.stretchyStrand.detach();
             this.finalReleaseStart = this.coneWorldPos.clone();
-            this.juice?.triggerCatchZoom?.();
             this.sound.playGripTug(0);
             this._vibrate(35);
             return;
@@ -2484,7 +2523,11 @@ export class TrickDirector {
         'cue_afk_wave',
       ];
       guide.icon = afkIcons[this.afkScenario % 5] || '🔔🎵';
-      guide.badgeText = this.save.t(afkCueKeys[this.afkScenario % 5]);
+      const remainingIdle = Math.max(1, Math.ceil(this.passiveLimitSec - (this.idleSeconds || 0)));
+      const baseAfkText = this.save.t(afkCueKeys[this.afkScenario % 5]);
+      guide.badgeText = remainingIdle <= 15
+        ? `${baseAfkText} (${remainingIdle}s)`
+        : baseAfkText;
       guide.stageProgress = Math.max(
         0.1,
         1 - this.idleSeconds / this.passiveLimitSec
@@ -2546,6 +2589,9 @@ export class TrickDirector {
       guide.theme = 'green';
       guide.icon = '✊⬇️';
       guide.badgeText = this.save.t('cue_tug');
+      guide.stageProgress = this.heldItem === 'FULL_CONE_TUG'
+        ? THREE.MathUtils.clamp((0.36 - this.tugTimer) / 0.36, 0.18, 1)
+        : 0.65;
       guide.comets.push({
         color: 'green',
         points: buildCurvedScreenPath(coneScreen, safePullScreen, 16),
@@ -3202,13 +3248,20 @@ export class TrickDirector {
       const penalizedScore = Math.max(0, Math.round(this.score * 0.5));
       this.save.recordStageResult(this.currentStage, penalizedScore, 0, false);
       const stepOutcomes = [...(this.stepOutcomes || []), '💔'];
+      const isTr = this.save?.lang === 'tr';
+      const isEn = this.save?.lang === 'en';
+      const lossReasonDesc = this.lastMistakeReason && (isTr || isEn)
+        ? (isTr
+            ? `3 canın da bitti (🖤🖤🖤)! Son hata: ${this.lastMistakeReason}.`
+            : `All 3 hearts lost (🖤🖤🖤)! Last mistake: ${this.lastMistakeReason}.`)
+        : this.save.t('end_hearts_desc');
 
       resultData = {
         outcomeType,
         badge: this.save.t('end_hearts_badge'),
         icon: '💔',
         title: this.save.t('end_hearts_title'),
-        desc: this.save.t('end_hearts_desc'),
+        desc: lossReasonDesc,
         stars: '☆☆☆',
         starNum: 0,
         score: penalizedScore,
@@ -3308,13 +3361,35 @@ export class TrickDirector {
         this.currentStage % 5 === 0 &&
         this.currentStage <= 30;
       const stepOutcomes = [...(this.stepOutcomes || []), '🍦'];
+      const strictHearts = Boolean(this.save?.masterExamMode);
+      const heartsRow = '❤️'.repeat(Math.max(0, this.hearts)) + '🖤'.repeat(Math.max(0, 3 - this.hearts));
+      const isTr = this.save?.lang === 'tr';
+      const isEn = this.save?.lang === 'en';
+      let winReasonDesc = this.save.t('end_win_desc');
+      if (isTr) {
+        if (strictHearts) {
+          winReasonDesc = this.penaltiesTaken === 0
+            ? `Hiç hata yapmadan tüm numaraları aşıp külahı kendine çektin! (${heartsRow})`
+            : `${this.penaltiesTaken} kez tuzağa düştün ama canların bitmeden tüm numaraları aşıp külahı kaptın! (${heartsRow})`;
+        } else {
+          winReasonDesc = `Rahat Mod: ${this.penaltiesTaken} kez kandırıldın, tüm topları tamamlayıp son külahı kaptın!`;
+        }
+      } else if (isEn) {
+        if (strictHearts) {
+          winReasonDesc = this.penaltiesTaken === 0
+            ? `Flawless! You beat every trick without a mistake and pulled the cone free! (${heartsRow})`
+            : `You survived with ${heartsRow} remaining and pulled the final cone free!`;
+        } else {
+          winReasonDesc = `Relax Mode: Bamboozled ${this.penaltiesTaken}x, completed every scoop, and caught the final cone!`;
+        }
+      }
 
       resultData = {
         outcomeType,
         badge: `${this.save.t('stageLabel')} ${this.currentStage} • ${ustaDisplayName}`,
         icon: '🏆',
         title: this.save.t('end_win_title'),
-        desc: this.save.t('end_win_desc'),
+        desc: winReasonDesc,
         stars:
           starNum === 3
             ? '⭐⭐⭐'

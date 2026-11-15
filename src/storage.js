@@ -332,7 +332,7 @@ export const I18N = {
     qualityAuto: 'OTO',
     qualityHigh: 'YÜKSEK',
     qualityLow: 'AKICI',
-    masterExamLabel: 'Usta Sınavı (3 ❤️)',
+    masterExamLabel: '3 Can Kuralı (3 ❤️)',
     bamboozledLabel: 'Sazanlanma',
     cue_bite_cone: '😋 DOKUN VE ISIR!',
     cue_wipe_smudge: '🧼 EKRANI SİL!',
@@ -478,7 +478,7 @@ export const I18N = {
     qualityAuto: 'AUTO',
     qualityHigh: 'HIGH',
     qualityLow: 'LOW',
-    masterExamLabel: 'Master Exam (3 ❤️)',
+    masterExamLabel: '3 Hearts Rule (3 ❤️)',
     bamboozledLabel: 'Bamboozled',
     cue_bite_cone: '😋 TAP TO BITE!',
     cue_wipe_smudge: '🧼 WIPE SCREEN!',
@@ -1081,7 +1081,7 @@ export class SaveManager {
   constructor() {
     this.lang = this._detectDefaultLang();
     this.hapticsEnabled = true;
-    this.masterExamMode = false;
+    this.masterExamMode = true;
     this.qualityMode = 'auto';
     this.data = {
       unlockedStage: 1,
@@ -1172,8 +1172,8 @@ export class SaveManager {
         if (typeof parsed.hapticsEnabled === 'boolean') {
           this.hapticsEnabled = parsed.hapticsEnabled;
         }
-        if (typeof parsed.masterExamMode === 'boolean') {
-          this.masterExamMode = parsed.masterExamMode;
+        if (typeof parsed.strictHeartsMode === 'boolean') {
+          this.masterExamMode = parsed.strictHeartsMode;
         }
         if (['auto', 'high', 'low'].includes(parsed.qualityMode)) {
           this.qualityMode = parsed.qualityMode;
@@ -1212,7 +1212,7 @@ export class SaveManager {
           ...this.data,
           lang: this.lang,
           hapticsEnabled: this.hapticsEnabled,
-          masterExamMode: this.masterExamMode,
+          strictHeartsMode: this.masterExamMode,
           qualityMode: this.qualityMode,
         })
       );

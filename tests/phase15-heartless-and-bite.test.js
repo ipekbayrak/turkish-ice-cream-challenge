@@ -52,9 +52,10 @@ test('Phase 15.1: Heartless main mode never aborts mid-show on 3+ mistakes and g
   assert.equal(res2.starNum, 2, '2 mistakes in Heartless mode earns 2 stars');
 });
 
-test('Phase 15.2: Master Exam Mode (3 Hearts) enforces classic OUT_OF_HEARTS on 3rd mistake', () => {
+test('Phase 15.2: Classic 3-Hearts Mode is default and enforces OUT_OF_HEARTS on 3rd mistake', () => {
   const save = new SaveManager();
-  assert.equal(save.masterExamMode, false);
+  assert.equal(save.masterExamMode, true);
+  assert.equal(save.toggleMasterExam(), false);
   assert.equal(save.toggleMasterExam(), true);
 
   const f = makeEncounterFixture({ stage: 2, count: 2, vendor: 0 });

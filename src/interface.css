@@ -37,7 +37,19 @@ button:active:not(:disabled) { transform: scale(.97); }
 .gesture-hud-card { padding: 12px 18px 15px; border-radius: 17px; border-width: 1px; box-shadow: 0 8px 22px #0005; }
 .gesture-pictogram { animation: none; font-size: 1.45rem; }
 .action-mode-label { font-size: .78rem; font-weight: 750; letter-spacing: .015em; }
-#hud-trick-title { display: none; }
+.cue-text-stack { flex-direction: row; align-items: center; gap: 7px; }
+#hud-trick-title {
+  display: inline-block;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #fde68a;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 1px 6px;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+#hud-trick-title:empty { display: none; }
 
 /* Panels share the same entrance, exit and touch-sized controls. */
 dialog { border: 1px solid #f5b94235; border-radius: 24px; background: #20120bf7; max-height: min(86dvh, 720px); transform: translateY(16px) scale(.985); transition-duration: 180ms; }
@@ -126,10 +138,10 @@ body.ordering .counter-viral-bar,
 }
 .challenge-banner {
   position: fixed;
-  top: calc(54px + env(safe-area-inset-top, 0px));
+  bottom: calc(58px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 17;
+  z-index: 16;
   background: rgba(180, 83, 9, 0.92);
   border: 1px solid #fcd34d;
   color: #fffbeb;
@@ -140,6 +152,8 @@ body.ordering .counter-viral-bar,
   white-space: nowrap;
   pointer-events: none;
 }
+body.round-active .challenge-banner,
+body.ordering .challenge-banner,
 .challenge-banner[hidden], .viral-toast[hidden], .result-challenge-cmp[hidden] {
   display: none !important;
 }

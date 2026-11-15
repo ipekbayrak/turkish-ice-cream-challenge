@@ -3647,20 +3647,20 @@ export class GameWorld {
     this.updateBurstParticles(dt);
 
     const swayX =
-      Math.sin(time * 1.6) * 0.005 +
-      Math.sin(time * 4.5) * (0.04 * dizzyAmount);
+      dizzyAmount > 0 ? Math.sin(time * 4.5) * (0.04 * dizzyAmount) : 0;
     const swayY =
-      Math.cos(time * 1.3) * 0.005 +
-      Math.cos(time * 3.8) * (0.025 * dizzyAmount);
-    const shakeX = (Math.random() - 0.5) * cameraShake * 0.05;
-    const shakeY = (Math.random() - 0.5) * cameraShake * 0.05;
+      dizzyAmount > 0 ? Math.cos(time * 3.8) * (0.025 * dizzyAmount) : 0;
+    const shakeX = cameraShake > 0 ? (Math.random() - 0.5) * cameraShake * 0.05 : 0;
+    const shakeY = cameraShake > 0 ? (Math.random() - 0.5) * cameraShake * 0.05 : 0;
 
-    this.camera.position.set(
-      this.baseCamPos.x + swayX + shakeX,
-      this.baseCamPos.y + swayY + shakeY,
-      this.baseCamPos.z
-    );
-    this.camera.rotation.z = Math.sin(time * 4.2) * (0.04 * dizzyAmount);
+    if (dizzyAmount > 0 || cameraShake > 0 || !this.encounterCamera) {
+      this.camera.position.set(
+        this.baseCamPos.x + swayX + shakeX,
+        this.baseCamPos.y + swayY + shakeY,
+        this.baseCamPos.z
+      );
+      this.camera.rotation.z = dizzyAmount > 0 ? Math.sin(time * 4.2) * (0.04 * dizzyAmount) : 0;
+    }
     this.vendorBody?.update(time,dt);
     this.stretchCutView?.update(dt);
     this.culturalScene?.update(dt);

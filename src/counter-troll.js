@@ -87,7 +87,6 @@ export class CounterTroll {
     this.sound?.playBell?.(0.9, 0);
     this.sound?.playCrowdReaction?.('cheer');
     this.director._triggerVendorSpeech?.('trolled');
-    this.director.juice?.triggerCatchZoom?.(1.15);
 
     if (this.save?.data) {
       this.save.data.trollCount = (this.save.data.trollCount || 0) + 1;
@@ -151,20 +150,23 @@ export class CounterTroll {
 
     const movedDist = prev ? Math.hypot(x - prev.x, y - prev.y) : 0;
 
-    // 1. Hat Tap / Swipe-Tilt ("Fes / Kep Tıklatma")
+    // 1. Hat Tap ("Fes / Kep Tıklatma") — intentional tap only, never upward cone swipes
     if (!this._usedThisRound.has('hat_tilt') && this.world?.vendorHead) {
       this.world.vendorHead.updateWorldMatrix(true, false);
       const hatWorld = this._proj.set(0, 0.22, 0.04).applyMatrix4(this.world.vendorHead.matrixWorld).clone();
       const hatScreen = this._projectWorld(hatWorld, width, height);
-      const hitRadius = Math.max(26, Math.min(46, width * 0.075));
-      const directTap = hatScreen.visible && Math.hypot(x - hatScreen.x, y - hatScreen.y) <= hitRadius;
-      const crossedHat =
+      const coneScreen = this.director.coneWorldPos
+        ? this._projectWorld(this.director.coneWorldPos, width, height)
+        : { x: -999, y: -999 };
+      const coneAwayFromHat = Math.hypot(coneScreen.x - hatScreen.x, coneScreen.y - hatScreen.y) > 72;
+      const hitRadius = Math.max(24, Math.min(40, width * 0.065));
+      const directTap =
         hatScreen.visible &&
-        prev &&
-        movedDist > 4 &&
-        segmentDist2D(hatScreen.x, hatScreen.y, prev.x, prev.y, x, y) <= hitRadius;
+        coneAwayFromHat &&
+        movedDist <= 8 &&
+        Math.hypot(x - hatScreen.x, y - hatScreen.y) <= hitRadius;
 
-      if (directTap || crossedHat) {
+      if (directTap) {
         const swipeSign = prev && x < prev.x ? -1 : 1;
         this._hatTilt = swipeSign * 0.36;
         this._hatTiltVel = swipeSign * 2.8;
@@ -174,7 +176,7 @@ export class CounterTroll {
       }
     }
 
-    // 2. Early Overhead Bell Steal ("Çanı Ustadan Önce Çal!")
+    // 2. Early Overhead Bell Steal ("Çanı Ustadan Önce Çal!") — horizontal swipe across bell only
     if (
       !this._usedThisRound.has('bell_steal') &&
       BELL_STEAL_MECHANICS.has(this.director.currentMechanic) &&
@@ -182,11 +184,13 @@ export class CounterTroll {
     ) {
       const bellWorld = this.world.getBellBodyCenter(3, new Vector3());
       const bellScreen = this._projectWorld(bellWorld, width, height);
-      const bellRadius = Math.max(22, Math.min(38, width * 0.06));
+      const bellRadius = Math.max(22, Math.min(36, width * 0.055));
+      const horizontalSwipe = prev ? Math.abs(x - prev.x) > Math.abs(y - prev.y) * 1.15 : false;
       const crossedBell =
         bellScreen.visible &&
         prev &&
-        movedDist > 6 &&
+        horizontalSwipe &&
+        movedDist > 8 &&
         segmentDist2D(bellScreen.x, bellScreen.y, prev.x, prev.y, x, y) <= bellRadius;
       if (crossedBell) {
         this.world.strikeBell?.(3, 0.95);

@@ -392,16 +392,7 @@ body.ios-immersive .hud-bottom {
   font-size: 1.38rem;
   line-height: 1;
   display: inline-block;
-  animation: cuePulse 0.85s ease-in-out infinite alternate;
-
-  @media (prefers-reduced-motion: reduce) {
-    animation: none;
-  }
-}
-
-@keyframes cuePulse {
-  from { transform: scale(0.94) translateY(1px); }
-  to { transform: scale(1.12) translateY(-2px); }
+  animation: none;
 }
 
 .action-mode-label {

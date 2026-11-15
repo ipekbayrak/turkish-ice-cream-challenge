@@ -124,17 +124,14 @@ export class ConeBiteFinale {
 
     if (this.nodEnergy > 0) {
       this.nodEnergy = Math.max(0, this.nodEnergy - stepDt * 3.6);
-      if (this.world?.camera) {
-        this.world.camera.position.y -= Math.sin(this.nodEnergy * Math.PI) * 0.018;
-      }
     }
 
-    // Auto-bite if the player watches happily without tapping so flow never stalls
-    if (!this.finishing && this.bitesTaken === 0 && this.elapsed >= 1.35) {
+    // Crisp celebratory bite without stalling the win modal or bouncing the camera
+    if (!this.finishing && this.bitesTaken === 0 && this.elapsed >= 0.52) {
       this.triggerBite();
-    } else if (!this.finishing && this.bitesTaken > 0 && this.elapsed >= 2.15) {
+    } else if (!this.finishing && this.bitesTaken > 0 && this.elapsed >= 0.88) {
       this.finishing = true;
-      this.finishTimer = 0.38;
+      this.finishTimer = 0.22;
     }
 
     if (this.finishing) {
