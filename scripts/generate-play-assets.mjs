@@ -252,7 +252,7 @@ Usta bakır kazanlardan uzayan gerçekçi Maraş dondurmasını demir kürekle k
 • Viral Şov & Özelleştirme (v2.1): Günün Ustası, Arkadaşına Tuzak Kur paylaşımı, 6 sn dikey klip kaydı, ustayı trolleme, dondurmayı ısırma ödülü ve el/bileklik/oje özelleştirme!
 • 11 Dil Desteği: Türkçe, İngilizce, Arapça (RTL), Rusça, Almanca, Japonca, İspanyolca, Portekizce, Endonezce, Hintçe ve Korece.
 • %100 Çevrimdışı (Offline) Oynanabilir, Reklamsız ve Veri Toplamaz.`,
-    releaseNotes: 'v2.1.0: Viral Güncelleme! Kalpsiz akıcı ana mod, dondurmayı ısırma ödülü, Günün Ustası, Arkadaşına Tuzak Kur paylaşımı, 6 sn dikey klip kaydı, ustayı trolleme, el özelleştirme ve 11 dil desteği!',
+    releaseNotes: 'v2.1.1: Kritik kararlılık düzeltmesi! 4 Maraş ustası karşısında kalpsiz akıcı mod, dondurma ısırma ödülü, Günün Ustası, Arkadaşına Tuzak Kur, 6 sn klip kaydı, ustayı trolleme ve 11 dil!',
   },
   'en-US': {
     title: 'Turkish Ice Cream Challenge 3D',
@@ -285,7 +285,7 @@ Watch closely as the vendor scrapes stretchy dondurma from copper tubs with his 
   4. Grandmaster Haydar (Grand Bazaar & Karakoy)
 • 11 Languages Supported: English, Turkish, Arabic (Full RTL), Russian, German, Japanese, Spanish, Portuguese, Indonesian, Hindi, and Korean.
 • 100% Offline Playable, Haptic Feedback & Zero Data Collection.`,
-    releaseNotes: 'v2.1.0: Viral Show Update! Heartless flow mode, bite your cone payoff, Daily Master, Friend Trap Link builder, 6s vertical highlight clips, counter-troll moves, hand customization, and 11 languages!',
+    releaseNotes: 'v2.1.1: Critical render-loop stability hotfix! Face 4 masters in heartless flow mode, bite your cone, play Daily Master, share Trap Links, export 6s clips, counter-troll, and 11 languages!',
   },
   'ar': {
     title: 'تحدي الآيس كريم التركي 3D',

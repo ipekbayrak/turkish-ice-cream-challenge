@@ -290,7 +290,10 @@ document.addEventListener(
 // Register PWA Service Worker in production
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+    navigator.serviceWorker
+      .register('./sw.js', { updateViaCache: 'none' })
+      .then((reg) => reg.update?.())
+      .catch(() => {});
   });
 }
 
@@ -465,6 +468,7 @@ function renderTricksCatalog(category = activeTrickCategory) {
         closeTopLayer(document.getElementById('dialog-tricks'));
         closeTopLayer(dialogSettings);
         prepareCounter();
+        coneIntro.pause();
         startOverlay.classList.add('hidden');
         document.querySelector('.hud-bottom')?.setAttribute('aria-hidden', 'false');
         director.setOrderConfig(Math.max(2, selectedScoopCount), selectedFlavors, selectedStage);
@@ -878,6 +882,7 @@ document.getElementById('btn-tutorial-warmup')?.addEventListener('click', () => 
   closeTopLayer(document.getElementById('dialog-tricks'));
   closeTopLayer(dialogSettings);
   prepareCounter();
+  coneIntro.pause();
   startOverlay.classList.add('hidden');
   document.querySelector('.hud-bottom')?.setAttribute('aria-hidden', 'false');
   director.startTutorialRound(selectedStage);
@@ -1447,7 +1452,7 @@ function startSeededRound(spec, { customerCone = false } = {}) {
   document.querySelector('.hud-bottom')?.setAttribute('aria-hidden', 'false');
   world.cancelVendorReaction?.();
   if (!customerCone) {
-    coneIntro.active = false;
+    coneIntro.pause();
   }
   counterTroll?.resetRound();
   screenSmudge.reset();
@@ -2292,16 +2297,35 @@ if(import.meta.env.DEV && new URLSearchParams(location.search).get('flow-check')
  }));});
 }
 
+let consecutiveFrameErrors = 0;
+
 function animate(now) {
+  try {
+    animateFrame(now);
+    consecutiveFrameErrors = 0;
+  } catch (err) {
+    consecutiveFrameErrors++;
+    console.error('[animate]', err);
+    if (consecutiveFrameErrors >= 5) {
+      console.error('[animate] Halting render loop after 5 consecutive unhandled frame errors.');
+      return;
+    }
+  }
   requestAnimationFrame(animate);
+}
+
+function animateFrame(now) {
   performanceProbe?.beginFrame(now);
 
-  const dt = Math.max(0, Math.min(0.05, (now - prevTime) / 1000));
+  const rawDt = (now - prevTime) / 1000;
+  const dt = Math.max(0, Math.min(0.05, rawDt));
   prevTime = now;
-  qualityGovernor.recordFrame(dt * 1000);
+  const frameVisible = !document.hidden && !discovery?.active && !document.querySelector('dialog[open]');
+  const framePlaying = Boolean(director.active && !director.roundEnded);
+  qualityGovernor.sampleFrame(rawDt, { visible: frameVisible, active: framePlaying });
   const elapsed = now / 1000;
   gestureState.frameTime=elapsed;
-  gameAnalytics.tick(dt,{visible:!document.hidden&&!discovery?.active&&!document.querySelector('dialog[open]'),playing:director.active&&!director.roundEnded});
+  gameAnalytics.tick(dt,{visible:frameVisible,playing:framePlaying});
   if (discovery?.active) {
     world.updateEnvironmentAnimations(elapsed,dt,0,0,null,0);
     world.render();trailCtx.clearRect(0,0,viewportWidth,viewportHeight);

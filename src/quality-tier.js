@@ -40,15 +40,20 @@ const DOWNGRADE_AVG_DT_SEC = 0.024; // >24ms average (~<41.6 FPS)
 const MAX_VALID_FRAME_SEC = 0.25;   // Ignore tab switches / background pauses
 
 export class QualityGovernor {
-  constructor({ mode = 'auto', onChange = null } = {}) {
+  constructor({ mode = 'auto', onChange = null, onTierChange = null } = {}) {
     this.mode = normalizeQualityMode(mode);
-    this.onChange = typeof onChange === 'function' ? onChange : null;
+    const cb = onChange ?? onTierChange;
+    this.onChange = typeof cb === 'function' ? cb : null;
     this.activeTier = this.mode === 'low' ? 'low' : 'high';
     this.autoDowngraded = false;
     this._samples = new Float32Array(WINDOW_SIZE);
     this._index = 0;
     this._count = 0;
     this._sum = 0;
+  }
+
+  get spec() {
+    return this.getSpec();
   }
 
   getSpec() {
@@ -124,5 +129,12 @@ export class QualityGovernor {
       }
     }
     return false;
+  }
+
+  /**
+   * Millisecond convenience alias for `sampleFrame(frameMs / 1000, opts)`.
+   */
+  recordFrame(frameMs, opts = {}) {
+    return this.sampleFrame((Number(frameMs) || 0) / 1000, opts);
   }
 }

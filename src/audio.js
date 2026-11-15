@@ -628,6 +628,10 @@ export class SoundEngine {
     crunch.stop(now + 0.13);
   }
 
+  playCrunchBite(panX = 0) {
+    return this.playConeBite(panX);
+  }
+
   playSmudgeSplat(panX = 0) {
     if (!this.enabled) return;
     this.init();

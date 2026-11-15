@@ -8,7 +8,15 @@ const MAX_DURATION_MS = 3_600_000;
 const MAX_STEP_INDEX = 200;
 const MAX_BAMBOOZLED = 999;
 const MAX_SCOOPS_META = 12;
-const ALLOWED_MODES = new Set(['standard', 'master_exam', 'daily', 'challenge']);
+const ALLOWED_MODES = new Set([
+  'standard',
+  'master_exam',
+  'exam',
+  'daily',
+  'challenge',
+  'seeded',
+  'stage',
+]);
 const MAX_QUEUE_LENGTH = 32;
 const MAX_RETRIES = 30;
 const RETRY_INTERVAL_MS = 500;
@@ -296,13 +304,17 @@ export class GameAnalytics {
     return this.track('game_started', { stage: normalized });
   }
 
-  startRound(stage = this.currentStage) {
+  startRound(stage = this.currentStage, { scoops, mode } = {}) {
     const normalized = normalizeStage(stage);
     if(this.roundActive&&this.currentStage===normalized)return false;
     this.currentStage = normalized;
     this.roundActive = true;
     this.activeMs = 0;
-    return this.track('round_started', { stage: normalized });
+    return this.track('round_started', {
+      stage: normalized,
+      ...(scoops !== undefined ? { scoops } : {}),
+      ...(mode !== undefined ? { mode } : {}),
+    });
   }
 
   tick(dt, { visible = true, playing = true } = {}) {
@@ -344,11 +356,12 @@ export class GameAnalytics {
     });
   }
 
-  recordConeBitten(stage = this.currentStage, { bamboozled, mode } = {}) {
+  recordConeBitten(stage = this.currentStage, { bamboozled, scoops, mode } = {}) {
     const normalized = normalizeStage(stage);
     return this.track('cone_bitten', {
       stage: normalized,
       ...(bamboozled !== undefined ? { bamboozled } : {}),
+      ...(scoops !== undefined ? { scoops } : {}),
       ...(mode !== undefined ? { mode } : {}),
     });
   }
@@ -370,7 +383,14 @@ export class GameAnalytics {
     });
   }
 
-  recordShare({ kind = 'link', stage = this.currentStage, mode } = {}) {
+  recordShare(stageOrOpts = {}, maybeOpts = {}) {
+    const opts =
+      typeof stageOrOpts === 'number'
+        ? { ...(maybeOpts && typeof maybeOpts === 'object' ? maybeOpts : {}), stage: stageOrOpts }
+        : stageOrOpts && typeof stageOrOpts === 'object'
+          ? stageOrOpts
+          : {};
+    const { kind = 'link', stage = this.currentStage, mode } = opts;
     const normalized = normalizeStage(stage);
     const safeKind = typeof kind === 'string' && SAFE_TOKEN_RE.test(kind) ? kind : 'link';
     return this.track('share_triggered', {

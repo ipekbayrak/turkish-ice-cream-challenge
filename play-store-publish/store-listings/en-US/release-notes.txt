@@ -1,1 +1,1 @@
-v2.1.0: Viral Show Update! Heartless flow mode, bite your cone payoff, Daily Master, Friend Trap Link builder, 6s vertical highlight clips, counter-troll moves, hand customization, and 11 languages!
+v2.1.1: Critical render-loop stability hotfix! Face 4 masters in heartless flow mode, bite your cone, play Daily Master, share Trap Links, export 6s clips, counter-troll, and 11 languages!
